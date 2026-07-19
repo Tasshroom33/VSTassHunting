@@ -1,16 +1,16 @@
-using System;
+﻿using System;
 using HarmonyLib;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
 using Vintagestory.GameContent;
 
-namespace TasshroomHunting
+namespace TassHunting
 {
     /// <summary>
     /// HARVEST OVERHAUL (playtest 2026-07-19). Decompile-verified pipeline, 1.22.3:
     /// ItemKnife times the harvest hold CLIENT-side (OnHeldInteractStep) and
-    /// re-verifies the same formula SERVER-side (OnHeldInteractStop) — both via
+    /// re-verifies the same formula SERVER-side (OnHeldInteractStop) â€” both via
     /// IHarvestable.GetHarvestDuration, then the server calls SetHarvested ->
     /// GenerateDrops, which rolls loot into the behavior's InventoryGeneric.
     /// The carcass window (GuiDialogCreatureContents "carcasscontents") opens ONLY
@@ -24,12 +24,12 @@ namespace TasshroomHunting
     ///  - HarvestTimeMult: scales GetHarvestDuration (patched process-wide, so
     ///    client hold time and server verification always agree).
     ///  - Auto-drop: SetHarvested postfix spills the rolled loot at the corpse and
-    ///    decays it instantly — the window never opens, nothing to click and drag.
+    ///    decays it instantly â€” the window never opens, nothing to click and drag.
     ///  - Empty-corpse removal: player kills PRE-ROLL their loot at death (killer
-    ///    stands in for the harvester — no vanilla entity drop is tool-gated,
+    ///    stands in for the harvester â€” no vanilla entity drop is tool-gated,
     ///    asset-grep-verified). Rolled empty => flagged harvested (no ghost
     ///    "harvest" prompt) + timed DecayNow, so the death animation stays
-    ///    visible. Corpses that were never harvestable (bells, locusts — their
+    ///    visible. Corpses that were never harvestable (bells, locusts â€” their
     ///    loot drops via Entity.Die->GetDrops at death) get the same timer.
     ///    Non-player kills (wolf takes a sheep) keep the vanilla corpse so the
     ///    player can still come skin it.
@@ -62,7 +62,7 @@ namespace TasshroomHunting
         }
     }
 
-    /// <summary>Playtest #2: no loot window — knife finishes, loot pops out,
+    /// <summary>Playtest #2: no loot window â€” knife finishes, loot pops out,
     /// carcass poofs. SetHarvested also runs client-side from the knife's
     /// OnHeldInteractStop (GenerateDrops no-ops there), hence the side gate.</summary>
     [HarmonyPatch(typeof(EntityBehaviorHarvestable), nameof(EntityBehaviorHarvestable.SetHarvested))]
@@ -102,7 +102,7 @@ namespace TasshroomHunting
     }
 
     /// <summary>Playtest #1 + #3: corpses with nothing in them self-remove after a
-    /// few seconds, globally — animals, bells, bowtorns, locusts, drifters.</summary>
+    /// few seconds, globally â€” animals, bells, bowtorns, locusts, drifters.</summary>
     [HarmonyPatch(typeof(EntityBehaviorDeadDecay), "OnEntityDeath")]
     public static class Patch_EmptyCorpseRemoval
     {

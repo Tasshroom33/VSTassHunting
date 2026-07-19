@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using HarmonyLib;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
@@ -6,17 +6,17 @@ using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Vintagestory.GameContent;
 
-namespace TasshroomHunting
+namespace TassHunting
 {
     /// <summary>
     /// Hunting AI and awareness tweaks (moved OUT of Tasshroom Hardcore Winter
-    /// 2026-07-18 — hunting is not winter; every mod stays single-purpose):
+    /// 2026-07-18 â€” hunting is not winter; every mod stays single-purpose):
     ///  - FLEE AWAY FROM THE HUNTER: hit from beyond seeking range, animals run
     ///    in a random direction within the 180-degree arc AWAY from the shooter
-    ///    (vanilla runs blindly in the direction the animal happened to face —
+    ///    (vanilla runs blindly in the direction the animal happened to face â€”
     ///    sometimes straight at the gun). Harmony on AiTaskFleeEntity.TryInstaFlee.
     ///  - PREDATOR FOOTSTEP RANGES (asset patches): wolf stalk 10->22, wolf run
-    ///    15->30, bear walk 15->30, bear charge 25->44 — audible before lethal.
+    ///    15->30, bear walk 15->30, bear charge 25->44 â€” audible before lethal.
     /// Future home for the awareness layer (goals Hunting 5).
     /// </summary>
     public class HuntingConfig
@@ -61,13 +61,28 @@ namespace TasshroomHunting
         // ---- HARVEST OVERHAUL (playtest 2026-07-19, see HarvestOverhaul.cs) ----
         // Knife harvest hold time multiplier (0.5 = half of vanilla).
         public float HarvestTimeMult = 0.5f;
-        // Finished harvest spills loot on the ground and poofs the corpse —
+        // Finished harvest spills loot on the ground and poofs the corpse â€”
         // the carcass window never opens.
         public bool HarvestAutoDrop = true;
         // Player kills roll their loot at death; empty roll (or never-harvestable
         // corpses like bells/locusts) => corpse self-removes after the delay.
         public bool EmptyCorpseAutoRemove = true;
         public float EmptyCorpseRemoveSeconds = 10f;
+
+        // ---- STICKY PROJECTILES (absorbed from StickyArrow 0.1.1, 2026-07-19,
+        //      see StickyProjectiles.cs) ----
+        // Master: arrows/spears ride the animal they hit instead of vanishing.
+        public bool StickyProjectilesEnabled = true;
+        // Riding projectile despawns after this long if the animal never dies.
+        public float StickSeconds = 300f;
+        // A stuck SPEAR can be grabbed back at vanilla touch range (arrows stay
+        // uncollectible until released — walking near must not yank them out).
+        public bool SpearTouchRetrieve = true;
+
+        // ---- ARCHERY (absorbed from AccurateArchery via the 0.0.5 asset
+        //      patches; config-gated code since 0.3.0, see ArcheryTweaks.cs) ----
+        public bool BowAccuracyEnabled = true;       // all bows: rangedWeaponsAcc 1.0
+        public bool UnbreakableArrowsEnabled = true; // all arrows: breakChanceOnImpact 0
     }
 
     public class HuntingModSystem : ModSystem
@@ -76,7 +91,7 @@ namespace TasshroomHunting
 
         // ONE Harmony application per PROCESS, not per ModSystem instance: in
         // single player the client and the local server each get their own
-        // instance in the SAME process, and Harmony patches are process-wide —
+        // instance in the SAME process, and Harmony patches are process-wide â€”
         // patching from both would run every postfix twice (duration x0.25).
         // Applying in Start() (runs on both sides) instead of StartServerSide
         // also puts the harvest patches on REMOTE clients of a dedicated
@@ -89,35 +104,43 @@ namespace TasshroomHunting
         {
             // Config on BOTH sides (harvest timing + the highlighter shim are
             // client-side). Re-store after load so new fields show up in the file.
+            // 0.3.0 rename: TassHunting.json, falling back once to the legacy
+            // TasshroomHunting.json so existing dials survive the rename.
             try
             {
-                var loaded = api.LoadModConfig<HuntingConfig>("TasshroomHunting.json");
+                var loaded = api.LoadModConfig<HuntingConfig>("TassHunting.json")
+                          ?? api.LoadModConfig<HuntingConfig>("TasshroomHunting.json");
                 if (loaded != null) Cfg = loaded;
                 Cfg.HarvestTimeMult = Vintagestory.API.MathTools.GameMath.Clamp(Cfg.HarvestTimeMult, 0.05f, 10f);
-                api.StoreModConfig(Cfg, "TasshroomHunting.json");
+                api.StoreModConfig(Cfg, "TassHunting.json");
             }
-            catch (Exception ex) { api.Logger.Warning("[TasshroomHunting] config load failed: {0}", ex.Message); }
+            catch (Exception ex) { api.Logger.Warning("[TassHunting] config load failed: {0}", ex.Message); }
 
             lock (harmonyGate)
             {
                 harmonyRefs++;
                 if (harmony == null)
                 {
-                    harmony = new Harmony("tasshroomhunting");
-                    harmony.PatchAll(); // flee-away + harvest overhaul attribute patches
+                    harmony = new Harmony("tasshunting");
+                    harmony.PatchAll(); // flee-away + harvest overhaul + sticky projectile attribute patches
                     TryPatchTrueAim(api);
+                    StickyProjectiles.PatchInterpolationHook(api, harmony);
                 }
             }
         }
 
-        /// <summary>Entity AI numbers are rewritten here - assets are loaded and
-        /// byType-resolved, no entities have initialized yet, and only the server
-        /// runs AI (taskai is a server behavior).</summary>
+        /// <summary>Entity AI numbers and item attributes are rewritten here -
+        /// assets are loaded and byType-resolved, no entities have initialized
+        /// yet. Archery runs BOTH sides (item attributes exist per side, like
+        /// the JSON patches it replaced); AI only on the server (taskai is a
+        /// server behavior).</summary>
         public override void AssetsFinalize(ICoreAPI api)
         {
+            try { ArcheryTweaks.Apply(api); }
+            catch (Exception ex) { api.Logger.Error("[TassHunting] archery tweaks failed: {0}", ex); }
             if (api.Side != EnumAppSide.Server) return;
             try { PredatorAI.ApplyServer(api); }
-            catch (Exception ex) { api.Logger.Error("[TasshroomHunting] PredatorAI apply failed: {0}", ex); }
+            catch (Exception ex) { api.Logger.Error("[TassHunting] PredatorAI apply failed: {0}", ex); }
         }
 
         private ICoreServerAPI sapi;
@@ -126,10 +149,11 @@ namespace TasshroomHunting
         public override void StartServerSide(ICoreServerAPI api)
         {
             sapi = api;
+            StickyProjectiles.StartServer(api);
             if (Cfg.ProjectilePickupRadius > 0f)
                 pickupTickId = api.Event.RegisterGameTickListener(PickupTick, 400);
-            api.Logger.Event("[TasshroomHunting] active (flee-away-from-hunter, predator footstep ranges, projectile pickup radius {0}, harvest overhaul: time x{1}, autodrop {2}, empty-corpse removal {3}).",
-                Cfg.ProjectilePickupRadius, Cfg.HarvestTimeMult, Cfg.HarvestAutoDrop, Cfg.EmptyCorpseAutoRemove);
+            api.Logger.Event("[TassHunting] 0.3.0 active (sticky projectiles {0}, spear grab-back {1}, flee-away-from-hunter, predator footstep ranges, projectile pickup radius {2}, harvest overhaul: time x{3}, autodrop {4}, empty-corpse removal {5}).",
+                Cfg.StickyProjectilesEnabled, Cfg.SpearTouchRetrieve, Cfg.ProjectilePickupRadius, Cfg.HarvestTimeMult, Cfg.HarvestAutoDrop, Cfg.EmptyCorpseAutoRemove);
         }
 
         /// <summary>Extended projectile pickup: settled arrows/spears within the
@@ -182,11 +206,11 @@ namespace TasshroomHunting
                     typeof(Vintagestory.GameContent.EntityProjectile).GetMethods(
                         System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic),
                     m => m.Name == "PreInitialize" || m.Name.EndsWith(".PreInitialize"));
-                if (mi == null) { api.Logger.Warning("[TasshroomHunting] PreInitialize not found; true-aim inactive."); return; }
+                if (mi == null) { api.Logger.Warning("[TassHunting] PreInitialize not found; true-aim inactive."); return; }
                 harmony.Patch(mi, postfix: new HarmonyMethod(typeof(HuntingModSystem), nameof(TrueAimPostfix)));
-                api.Logger.Event("[TasshroomHunting] true-aim spawn correction active.");
+                api.Logger.Event("[TassHunting] true-aim spawn correction active.");
             }
-            catch (Exception ex) { api.Logger.Warning("[TasshroomHunting] true-aim patch failed: {0}", ex.Message); }
+            catch (Exception ex) { api.Logger.Warning("[TassHunting] true-aim patch failed: {0}", ex.Message); }
         }
 
         public static void TrueAimPostfix(object __instance)
@@ -216,13 +240,14 @@ namespace TasshroomHunting
         public override void Dispose()
         {
             try { if (sapi != null && pickupTickId != 0) sapi.Event.UnregisterGameTickListener(pickupTickId); } catch { }
+            if (sapi != null) StickyProjectiles.StopServer();
             sapi = null; pickupTickId = 0;
             lock (harmonyGate)
             {
                 harmonyRefs--;
                 if (harmonyRefs <= 0)
                 {
-                    try { harmony?.UnpatchAll("tasshroomhunting"); } catch { }
+                    try { harmony?.UnpatchAll("tasshunting"); } catch { }
                     harmony = null; harmonyRefs = 0;
                 }
             }
@@ -231,7 +256,7 @@ namespace TasshroomHunting
 
     /// <summary>
     /// Vanilla's OnEntityHurt already knows the shooter (targetEntity = damage
-    /// cause) — TryInstaFlee just doesn't use its position in the blind branch
+    /// cause) â€” TryInstaFlee just doesn't use its position in the blind branch
     /// (decompile-verified). The prefix captures the shooter before the branch
     /// nulls it; the postfix redirects the run into the away arc.
     /// </summary>
@@ -248,7 +273,7 @@ namespace TasshroomHunting
             if (!HuntingModSystem.Cfg.FleeAwayFromHunterEnabled) return;
             if (__state == null) return; // shooter genuinely unknown: vanilla stands
             var tv = Traverse.Create(__instance);
-            // Non-null after the call means the NORMAL in-range flee branch ran —
+            // Non-null after the call means the NORMAL in-range flee branch ran â€”
             // it already flees properly; only the blind branch (which nulled it)
             // needs redirecting.
             if (tv.Field("targetEntity").GetValue<Entity>() != null) return;

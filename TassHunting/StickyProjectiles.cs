@@ -1,0 +1,347 @@
+using System;
+using System.Collections.Generic;
+using HarmonyLib;
+using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
+using Vintagestory.API.MathTools;
+using Vintagestory.API.Server;
+using Vintagestory.GameContent;
+
+namespace TassHunting
+{
+    /// <summary>
+    /// STICKY PROJECTILES — absorbed from the standalone StickyArrow mod at its
+    /// 0.1.1 (2026-07-19, naming standardization; the standalone is retired like
+    /// AccurateArchery before it). Arrows and spears STICK to the creatures they
+    /// hit, minecraft-style: the projectile rides the animal at the spot and
+    /// angle it hit, turns with the body, and drops recoverable when the animal
+    /// dies or the stick times out. Spears can be grabbed back at vanilla touch
+    /// range while riding (your melee/ranged all-in-one is never lost).
+    ///
+    /// THE RIDING RENDERER (single-writer, root-caused 2026-07-19,
+    /// decompile-proven):
+    /// (a) client entity.Pos is a MAILBOX — SystemNetworkProcess
+    ///     .HandleSinglePacket writes every position packet RAW into Pos at
+    ///     15ms tick cadence; it only becomes the smooth render position after
+    ///     that entity's OWN EntityBehaviorInterpolatePosition lerps it later
+    ///     the same frame;
+    /// (b) ClientEventManager.RegisterRenderer inserts new renderers BEFORE
+    ///     existing entries of equal RenderOrder (all interpolators are 0.0) —
+    ///     the LATER-spawned projectile renders FIRST, so reading target.Pos
+    ///     from the projectile's own pass gets raw-server/stale values
+    ///     alternately (the "two locations" flicker).
+    /// Therefore: a PREFIX skips a riding projectile's own interpolation
+    /// entirely, and a POSTFIX on the TARGET's interpolation pass re-anchors
+    /// every rider to the position that pass wrote IN THE SAME CALL. Ordering
+    /// cannot exist as a concept; the arrow glides exactly like the animal.
+    ///
+    /// Config gates (all runtime, mod absorb request 2026-07-19):
+    /// StickyProjectilesEnabled (master: off = vanilla die/drop on hit),
+    /// SpearTouchRetrieve, StickSeconds.
+    /// </summary>
+    internal class StickyProjectiles
+    {
+        internal static StickyProjectiles Instance;
+
+        private ICoreServerAPI sapi;
+        private long tickId;
+
+        private class StuckArrow
+        {
+            public long ArrowId;
+            public long TargetId;
+            public double LocalX, LocalY, LocalZ; // surface anchor in the target's body frame
+            public float YawOff;                  // projectile yaw relative to target body yaw
+            public float Roll;                    // vanilla puts the vertical angle in ROLL
+            public float SecondsLeft;
+        }
+
+        private readonly Dictionary<long, StuckArrow> stuck = new Dictionary<long, StuckArrow>();
+
+        internal static void StartServer(ICoreServerAPI api)
+        {
+            Instance = new StickyProjectiles { sapi = api };
+            Instance.tickId = api.Event.RegisterGameTickListener(Instance.OnTick, 50);
+        }
+
+        internal static void StopServer()
+        {
+            try { if (Instance?.sapi != null && Instance.tickId != 0) Instance.sapi.Event.UnregisterGameTickListener(Instance.tickId); } catch { }
+            Instance?.stuck.Clear();
+            RidersByTarget.Clear();
+            Instance = null;
+        }
+
+        /// <summary>The interpolation hook is a manual patch (the behavior class
+        /// sits in the global namespace, resolve by name). Called once per
+        /// process from HuntingModSystem's guarded patch block.</summary>
+        internal static void PatchInterpolationHook(ICoreAPI api, Harmony harmony)
+        {
+            var t = AccessTools.TypeByName("EntityBehaviorInterpolatePosition")
+                 ?? AccessTools.TypeByName("Vintagestory.GameContent.EntityBehaviorInterpolatePosition");
+            var mi = t?.GetMethod("OnRenderFrame");
+            if (mi == null)
+            {
+                api.Logger.Warning("[TassHunting] EntityBehaviorInterpolatePosition.OnRenderFrame not found - riding projectiles will use raw packet positions.");
+                return;
+            }
+            harmony.Patch(mi,
+                prefix: new HarmonyMethod(typeof(StickyProjectiles), nameof(RideRenderPrefix)),
+                postfix: new HarmonyMethod(typeof(StickyProjectiles), nameof(RideRenderPostfix)));
+        }
+
+        // CLIENT-side rider registry: target entity id -> projectile ids riding
+        // it. Touched only from the render pass (the interpolate behavior is
+        // client-only; its constructor throws server-side, decompile-verified).
+        private static readonly Dictionary<long, List<long>> RidersByTarget = new Dictionary<long, List<long>>();
+
+        public static bool RideRenderPrefix(object __instance)
+        {
+            var arrow = (__instance as EntityBehavior)?.entity as EntityProjectileBase;
+            if (arrow == null) return true;
+            long tid = arrow.WatchedAttributes.GetLong("sa_target", 0L);
+            if (tid == 0L) return true;
+
+            List<long> riders;
+            if (!RidersByTarget.TryGetValue(tid, out riders))
+            {
+                // Rare housekeeping: drop registry entries whose target entity is
+                // gone (its render pass stopped running, so nobody else cleans up).
+                if (RidersByTarget.Count > 32)
+                {
+                    var dead = new List<long>();
+                    foreach (long id in RidersByTarget.Keys)
+                        if (arrow.World.GetEntityById(id) == null) dead.Add(id);
+                    foreach (long id in dead) RidersByTarget.Remove(id);
+                }
+                RidersByTarget[tid] = riders = new List<long>(2);
+            }
+            if (!riders.Contains(arrow.EntityId)) riders.Add(arrow.EntityId);
+            return false; // while riding, the TARGET's render pass owns this Pos
+        }
+
+        public static void RideRenderPostfix(object __instance)
+        {
+            var target = (__instance as EntityBehavior)?.entity;
+            if (target == null) return;
+            List<long> riders;
+            if (!RidersByTarget.TryGetValue(target.EntityId, out riders)) return;
+
+            for (int i = riders.Count - 1; i >= 0; i--)
+            {
+                var arrow = target.World.GetEntityById(riders[i]);
+                if (arrow == null || arrow.WatchedAttributes.GetLong("sa_target", 0L) != target.EntityId)
+                {
+                    riders.RemoveAt(i); // released or despawned
+                    continue;
+                }
+                // target.Pos was written by the interpolation lerp in THIS call.
+                float t = target.Pos.Yaw;
+                float lx = arrow.WatchedAttributes.GetFloat("sa_lx");
+                float ly = arrow.WatchedAttributes.GetFloat("sa_ly");
+                float lz = arrow.WatchedAttributes.GetFloat("sa_lz");
+                double cos = Math.Cos(t), sin = Math.Sin(t);
+                double wx = lx * cos + lz * sin;
+                double wz = -lx * sin + lz * cos;
+                arrow.Pos.SetPos(target.Pos.X + wx, target.Pos.Y + ly, target.Pos.Z + wz);
+                arrow.Pos.Yaw = t + arrow.WatchedAttributes.GetFloat("sa_yawoff");
+                arrow.Pos.Pitch = 0f;
+                arrow.Pos.Roll = arrow.WatchedAttributes.GetFloat("sa_roll");
+            }
+            if (riders.Count == 0) RidersByTarget.Remove(target.EntityId);
+        }
+
+        internal void Attach(EntityProjectileBase arrow, Entity target)
+        {
+            // Impact orientation from the FLIGHT motion, using VANILLA's exact
+            // formula (SetRotationFromMotion, decompile-verified): yaw carries a
+            // +PI flip, the VERTICAL angle lives in ROLL, pitch is always 0.
+            var m = arrow.Pos.Motion;
+            double n = m.Length();
+            float impactYaw, impactRoll;
+            if (n > 0.01)
+            {
+                impactYaw = (float)Math.PI + (float)Math.Atan2(m.X / n, m.Z / n);
+                impactRoll = -(float)Math.Asin(GameMath.Clamp((0.0 - m.Y) / n, -1.0, 1.0));
+            }
+            else { impactYaw = arrow.Pos.Yaw; impactRoll = arrow.Pos.Roll; }
+
+            // SURFACE ANCHOR: by DamageProjectile time the projectile has
+            // penetrated to the body core. Re-anchor on the collision box
+            // SURFACE along the reverse flight direction, at the impact height,
+            // 20% embedded (boxes are fatter than the visual body).
+            double wy = GameMath.Clamp(arrow.Pos.Y - target.Pos.Y,
+                target.CollisionBox?.Y1 ?? 0f, target.CollisionBox?.Y2 ?? 1f);
+            const double EmbedFraction = 0.20;
+            double radius = 0.3;
+            if (target.CollisionBox != null)
+                radius = Math.Max(target.CollisionBox.XSize, target.CollisionBox.ZSize) * 0.5;
+            radius *= 1.0 - EmbedFraction;
+            double hx = 0, hz = -1;
+            double horiz = Math.Sqrt(m.X * m.X + m.Z * m.Z);
+            if (horiz > 0.001) { hx = -m.X / horiz; hz = -m.Z / horiz; } // back toward the shooter
+            double wxAnchor = hx * radius;
+            double wzAnchor = hz * radius;
+
+            float ty = target.Pos.Yaw;
+            double tcos = Math.Cos(ty), tsin = Math.Sin(ty);
+
+            var s = new StuckArrow
+            {
+                ArrowId = arrow.EntityId,
+                TargetId = target.EntityId,
+                // world -> local: R(-t)
+                LocalX = wxAnchor * tcos - wzAnchor * tsin,
+                LocalY = wy,
+                LocalZ = wxAnchor * tsin + wzAnchor * tcos,
+                YawOff = impactYaw - ty,
+                Roll = impactRoll,
+                SecondsLeft = Math.Max(10f, HuntingModSystem.Cfg.StickSeconds)
+            };
+            stuck[arrow.EntityId] = s;
+
+            arrow.WatchedAttributes.SetBool("stuck", true);
+            // Ride parameters travel WITH the projectile (watched attributes sync
+            // automatically): each client's render hook derives position locally.
+            // Server tick stays authoritative for state, saves and modless clients.
+            arrow.WatchedAttributes.SetLong("sa_target", target.EntityId);
+            arrow.WatchedAttributes.SetFloat("sa_lx", (float)s.LocalX);
+            arrow.WatchedAttributes.SetFloat("sa_ly", (float)s.LocalY);
+            arrow.WatchedAttributes.SetFloat("sa_lz", (float)s.LocalZ);
+            arrow.WatchedAttributes.SetFloat("sa_yawoff", s.YawOff);
+            arrow.WatchedAttributes.SetFloat("sa_roll", s.Roll);
+            ApplyRide(arrow, target, s);
+        }
+
+        private static void ApplyRide(Entity arrow, Entity target, StuckArrow s)
+        {
+            float t = target.Pos.Yaw;
+            double cos = Math.Cos(t), sin = Math.Sin(t);
+            // local -> world: R(t)
+            double wx = s.LocalX * cos + s.LocalZ * sin;
+            double wz = -s.LocalX * sin + s.LocalZ * cos;
+            arrow.Pos.SetPos(target.Pos.X + wx, target.Pos.Y + s.LocalY, target.Pos.Z + wz);
+            arrow.Pos.Yaw = t + s.YawOff;
+            arrow.Pos.Pitch = 0f;
+            arrow.Pos.Roll = s.Roll;
+            arrow.Pos.Motion.Set(0.0, 0.0, 0.0);
+            // The projectile's own tick recomputes+overwrites this flag from
+            // collision state every 25ms — reassert so the CLIENT keeps treating
+            // the projectile as stuck (no rotation-from-motion, no gravity).
+            arrow.WatchedAttributes.SetBool("stuck", true);
+        }
+
+        private readonly List<long> toRemove = new List<long>();
+
+        private void OnTick(float dt)
+        {
+            if (stuck.Count == 0) return;
+            toRemove.Clear();
+
+            foreach (var kv in stuck)
+            {
+                var s = kv.Value;
+                s.SecondsLeft -= dt;
+                var arrow = sapi.World.GetEntityById(s.ArrowId);
+                if (arrow == null || !arrow.Alive) { toRemove.Add(kv.Key); continue; }
+
+                if (s.SecondsLeft <= 0f)
+                {
+                    arrow.Die();
+                    toRemove.Add(kv.Key);
+                    continue;
+                }
+
+                var target = sapi.World.GetEntityById(s.TargetId);
+                if (target == null || !target.Alive)
+                {
+                    // Release: clear the stuck flag so gravity resumes — the
+                    // projectile falls with the kill and lands recoverable.
+                    arrow.WatchedAttributes.SetBool("stuck", false);
+                    arrow.WatchedAttributes.RemoveAttribute("sa_target"); // client stops driving it
+                    arrow.Pos.Motion.Set(0.0, -0.02, 0.0);
+                    toRemove.Add(kv.Key);
+                    continue;
+                }
+
+                ApplyRide(arrow, target, s);
+            }
+
+            foreach (long id in toRemove) { stuck.Remove(id); }
+        }
+    }
+
+    /// <summary>
+    /// Vanilla touch-collect (1.5 block radius) checks only "settled + alive +
+    /// zero motion" — a RIDING arrow passes and gets yanked out of the animal
+    /// when you walk near it (playtest 2026-07-18). Riding ARROWS are not
+    /// collectible until released. SPEARS are the exception (playtest
+    /// 2026-07-19: your melee/ranged all-in-one must be retrievable): a stuck
+    /// spear can be grabbed back at vanilla touch range. The extended pickup
+    /// vacuum skips riders via its own sa_target check, so spear retrieval
+    /// stays a deliberate melee-range grab, never magnetic.
+    /// </summary>
+    [HarmonyPatch(typeof(EntityProjectileBase), "CanCollect")]
+    public static class Patch_NoCollectWhileRiding
+    {
+        public static void Postfix(EntityProjectileBase __instance, ref bool __result)
+        {
+            if (!__result) return;
+            if (__instance.WatchedAttributes.GetLong("sa_target", 0L) == 0L) return;
+            if (HuntingModSystem.Cfg.SpearTouchRetrieve
+                && __instance.Code?.Path?.Contains("spear") == true) return; // grab your spear back
+            __result = false;
+        }
+    }
+
+    /// <summary>
+    /// While a projectile rides a target, its own OnGameTick must not run: it
+    /// recomputes Stuck from collision state (air = false) and overwrites the
+    /// synced flag every 25ms, after which the CLIENT re-derives rotation from
+    /// zero motion (the old "flat arrow facing me" bug). Keyed on the SYNCED
+    /// sa_target attribute so dedicated-server remote clients skip it too.
+    /// </summary>
+    [HarmonyPatch(typeof(EntityProjectile), "OnGameTick")]
+    public static class Patch_SkipTickWhileRiding
+    {
+        public static bool Prefix(EntityProjectile __instance)
+        {
+            return __instance.WatchedAttributes.GetLong("sa_target", 0L) == 0L;
+        }
+    }
+
+    /// <summary>
+    /// DamageProjectile decides the projectile's FATE after an entity hit
+    /// (durability hit, then die-or-drop — decompile-verified). We keep the
+    /// durability hit, then ATTACH instead of dying. Damage was already dealt
+    /// by DealDamage before this runs, so gameplay damage is untouched.
+    /// </summary>
+    [HarmonyPatch(typeof(EntityProjectileBase), "DamageProjectile")]
+    public static class Patch_ArrowSticksInsteadOfVanishing
+    {
+        public static bool Prefix(EntityProjectileBase __instance, Entity target)
+        {
+            if (!HuntingModSystem.Cfg.StickyProjectilesEnabled) return true; // vanilla fate
+            if (__instance.World.Side != EnumAppSide.Server) return true;
+            if (target == null) return true;
+            // Arrows AND spears stick; thrown stones keep vanilla behavior.
+            if (__instance.Code == null) return true;
+            string path = __instance.Code.Path;
+            if (!path.Contains("arrow") && !path.Contains("spear")) return true;
+
+            if (__instance.DamageStackOnImpact && __instance.ProjectileStack != null)
+            {
+                __instance.ProjectileStack.Collectible.DamageItem(
+                    target.World, target, new DummySlot(__instance.ProjectileStack));
+                if (__instance.ProjectileStack.Collectible.GetRemainingDurability(__instance.ProjectileStack) <= 0)
+                {
+                    __instance.Die();  // the projectile broke on impact: vanilla outcome
+                    return false;
+                }
+            }
+
+            StickyProjectiles.Instance?.Attach(__instance, target);
+            return false; // skip vanilla die/drop — the projectile now rides the target
+        }
+    }
+}

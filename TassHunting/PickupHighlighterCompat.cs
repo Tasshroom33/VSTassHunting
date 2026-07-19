@@ -1,20 +1,20 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common.Entities;
 
-namespace TasshroomHunting
+namespace TassHunting
 {
     /// <summary>
     /// Compat shim for tacf's Item Pickup Highlighter (user request 2026-07-18):
-    /// its projectile filter highlights EVERY projectile-class entity — including
+    /// its projectile filter highlights EVERY projectile-class entity â€” including
     /// enemy-thrown ones. The engine already syncs the shooter (the projectile's
     /// "firedBy" watched attribute carries the shooter's entity id, decompile-
     /// verified in EntityProjectileBase.ToBytes), so this postfixes the mod's
     /// compiler-generated filter lambda: projectiles not fired by YOU stop
-    /// highlighting. Reflection-only — no reference to their assembly, no effect
+    /// highlighting. Reflection-only â€” no reference to their assembly, no effect
     /// when the mod is absent, and if a future version renames things we just log
     /// and do nothing. Toggle: HighlightOnlyOwnProjectiles in TasshroomHunting.json.
     /// </summary>
@@ -30,7 +30,7 @@ namespace TasshroomHunting
                 var asm = AppDomain.CurrentDomain.GetAssemblies()
                     .FirstOrDefault(a => a.GetName().Name == "ItemPickupHighlighter");
                 var sysType = asm?.GetType("ItemPickupHighlighter.ItemPickupHighlighterModSystem");
-                if (sysType == null) { capi.Logger.Warning("[TasshroomHunting] pickup highlighter type not found; own-projectile filter inactive."); return; }
+                if (sysType == null) { capi.Logger.Warning("[TassHunting] pickup highlighter type not found; own-projectile filter inactive."); return; }
 
                 // The filter is a static lambda inside HighlightNearbyItems, compiled
                 // into a nested "<>c" class as bool <HighlightNearbyItems>b__N(Entity).
@@ -41,14 +41,14 @@ namespace TasshroomHunting
                         && m.ReturnType == typeof(bool)
                         && m.GetParameters().Length == 1
                         && typeof(Entity).IsAssignableFrom(m.GetParameters()[0].ParameterType));
-                if (lambda == null) { capi.Logger.Warning("[TasshroomHunting] pickup highlighter filter lambda not found; own-projectile filter inactive."); return; }
+                if (lambda == null) { capi.Logger.Warning("[TassHunting] pickup highlighter filter lambda not found; own-projectile filter inactive."); return; }
 
                 harmony.Patch(lambda, postfix: new HarmonyMethod(typeof(PickupHighlighterCompat), nameof(FilterPostfix)));
-                capi.Logger.Event("[TasshroomHunting] pickup highlighter own-projectile filter active.");
+                capi.Logger.Event("[TassHunting] pickup highlighter own-projectile filter active.");
             }
             catch (Exception ex)
             {
-                capi.Logger.Warning("[TasshroomHunting] pickup highlighter compat failed: {0}", ex.Message);
+                capi.Logger.Warning("[TassHunting] pickup highlighter compat failed: {0}", ex.Message);
             }
         }
 

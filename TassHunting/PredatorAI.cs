@@ -1,11 +1,11 @@
-using System;
+﻿using System;
 using HarmonyLib;
 using Newtonsoft.Json.Linq;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.GameContent;
 
-namespace TasshroomHunting
+namespace TassHunting
 {
     /// <summary>
     /// PREDATOR OVERHAUL (user design 2026-07-18): "build them more like real ai."
@@ -61,7 +61,7 @@ namespace TasshroomHunting
                     if (AdjustPackHunter(et, cfg)) pack++;
                 }
             }
-            api.Logger.Event("[TasshroomHunting] PredatorAI: hardened {0} apex types, adjusted {1} pack-hunter types.", apex, pack);
+            api.Logger.Event("[TassHunting] PredatorAI: hardened {0} apex types, adjusted {1} pack-hunter types.", apex, pack);
         }
 
         private static bool MatchesAny(string path, string[] prefixes)
