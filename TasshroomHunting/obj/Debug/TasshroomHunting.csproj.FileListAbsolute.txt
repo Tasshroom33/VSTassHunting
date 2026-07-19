@@ -12,3 +12,5 @@ j:\Root\Games\VintageStoryCustomMods\TasshroomHunting\TasshroomHunting\obj\Debug
 j:\Root\Games\VintageStoryCustomMods\TasshroomHunting\TasshroomHunting\obj\Debug\refint\TasshroomHunting.dll
 j:\Root\Games\VintageStoryCustomMods\TasshroomHunting\TasshroomHunting\obj\Debug\TasshroomHunting.pdb
 j:\Root\Games\VintageStoryCustomMods\TasshroomHunting\TasshroomHunting\obj\Debug\ref\TasshroomHunting.dll
+j:\Root\Games\VintageStoryCustomMods\TasshroomHunting\TasshroomHunting\bin\Debug\Mods\mod\assets\tasshroomhunting\patches\hunting-arrow-durability.json
+j:\Root\Games\VintageStoryCustomMods\TasshroomHunting\TasshroomHunting\bin\Debug\Mods\mod\assets\tasshroomhunting\patches\hunting-bow-accuracy.json
