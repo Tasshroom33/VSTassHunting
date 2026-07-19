@@ -26,6 +26,13 @@ namespace TasshroomHunting
         // With Item Pickup Highlighter installed: only YOUR projectiles highlight
         // (enemy-thrown stones/arrows stay unmarked). Client-side.
         public bool HighlightOnlyOwnProjectiles = true;
+
+        // Extended pickup for LANDED arrows/spears (vanilla collect range is a
+        // touch-range 1.5 blocks, decompile-verified). 0 = vanilla only.
+        public float ProjectilePickupRadius = 4f;
+        // Only vacuum projectiles YOU fired (matches the highlighter filter);
+        // walking over someone else's still collects the vanilla way.
+        public bool PickupOnlyOwnProjectiles = true;
     }
 
     public class HuntingModSystem : ModSystem
@@ -45,11 +52,55 @@ namespace TasshroomHunting
             catch (Exception ex) { api.Logger.Warning("[TasshroomHunting] config load failed: {0}", ex.Message); }
         }
 
+        private ICoreServerAPI sapi;
+        private long pickupTickId;
+
         public override void StartServerSide(ICoreServerAPI api)
         {
+            sapi = api;
             harmony = new Harmony("tasshroomhunting");
             harmony.PatchAll();
-            api.Logger.Event("[TasshroomHunting] active (flee-away-from-hunter, predator footstep ranges).");
+            if (Cfg.ProjectilePickupRadius > 0f)
+                pickupTickId = api.Event.RegisterGameTickListener(PickupTick, 400);
+            api.Logger.Event("[TasshroomHunting] active (flee-away-from-hunter, predator footstep ranges, projectile pickup radius {0}).", Cfg.ProjectilePickupRadius);
+        }
+
+        /// <summary>Extended projectile pickup: settled arrows/spears within the
+        /// configured radius get collected through the ENGINE'S own contract
+        /// (CanCollect -> OnCollected -> TryGiveItemStack), so durability, stack
+        /// resolution and the collect delay all behave exactly like walking over
+        /// them. Riding arrows (sa_target set by StickyArrow) are skipped.</summary>
+        private void PickupTick(float dt)
+        {
+            float radius = Cfg.ProjectilePickupRadius;
+            if (radius <= 0f || sapi == null) return;
+
+            foreach (var plr in sapi.World.AllOnlinePlayers)
+            {
+                var e = (plr as IServerPlayer)?.Entity;
+                if (e == null || !e.Alive) continue;
+                if (plr.WorldData?.CurrentGameMode == EnumGameMode.Spectator) continue;
+                long meId = e.EntityId;
+
+                var found = sapi.World.GetEntitiesAround(e.Pos.XYZ, radius, radius, ent =>
+                {
+                    var p = ent as Vintagestory.GameContent.EntityProjectileBase;
+                    if (p == null || !p.CanCollect(e)) return false;
+                    if (ent.WatchedAttributes.GetLong("sa_target", 0L) != 0L) return false; // riding a target
+                    if (Cfg.PickupOnlyOwnProjectiles
+                        && ent.WatchedAttributes.GetLong("firedBy", 0L) != meId) return false;
+                    return true;
+                });
+
+                foreach (var ent in found)
+                {
+                    var stack = (ent as Vintagestory.GameContent.EntityProjectileBase)?.OnCollected(e);
+                    if (stack == null) continue;
+                    if (!e.TryGiveItemStack(stack)) continue; // inventory full: leave it
+                    sapi.World.PlaySoundAt(new AssetLocation("sounds/player/collect"), ent, null, true, 16f);
+                    ent.Die(EnumDespawnReason.PickedUp);
+                }
+            }
         }
 
         public override void StartClientSide(Vintagestory.API.Client.ICoreClientAPI api)
@@ -63,8 +114,9 @@ namespace TasshroomHunting
 
         public override void Dispose()
         {
+            try { if (sapi != null && pickupTickId != 0) sapi.Event.UnregisterGameTickListener(pickupTickId); } catch { }
             try { harmony?.UnpatchAll("tasshroomhunting"); } catch { }
-            harmony = null;
+            harmony = null; sapi = null; pickupTickId = 0;
         }
     }
 
