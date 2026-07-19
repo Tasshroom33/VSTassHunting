@@ -23,6 +23,9 @@ namespace TasshroomHunting
     {
         public int Version = 1;
         public bool FleeAwayFromHunterEnabled = true;
+        // With Item Pickup Highlighter installed: only YOUR projectiles highlight
+        // (enemy-thrown stones/arrows stay unmarked). Client-side.
+        public bool HighlightOnlyOwnProjectiles = true;
     }
 
     public class HuntingModSystem : ModSystem
@@ -30,8 +33,9 @@ namespace TasshroomHunting
         public static HuntingConfig Cfg = new HuntingConfig();
         private Harmony harmony;
 
-        public override void StartServerSide(ICoreServerAPI api)
+        public override void Start(ICoreAPI api)
         {
+            // Config on BOTH sides (the highlighter shim is client-side).
             try
             {
                 var loaded = api.LoadModConfig<HuntingConfig>("TasshroomHunting.json");
@@ -39,10 +43,22 @@ namespace TasshroomHunting
                 else api.StoreModConfig(Cfg, "TasshroomHunting.json");
             }
             catch (Exception ex) { api.Logger.Warning("[TasshroomHunting] config load failed: {0}", ex.Message); }
+        }
 
+        public override void StartServerSide(ICoreServerAPI api)
+        {
             harmony = new Harmony("tasshroomhunting");
             harmony.PatchAll();
             api.Logger.Event("[TasshroomHunting] active (flee-away-from-hunter, predator footstep ranges).");
+        }
+
+        public override void StartClientSide(Vintagestory.API.Client.ICoreClientAPI api)
+        {
+            if (api.ModLoader.IsModEnabled("itempickuphighlighter"))
+            {
+                harmony = harmony ?? new Harmony("tasshroomhunting");
+                PickupHighlighterCompat.TryPatch(api, harmony);
+            }
         }
 
         public override void Dispose()

@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("TasshroomHunting")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+6472803f57fabf521d324858db0af39ee3d10695")]
 [assembly: System.Reflection.AssemblyProductAttribute("TasshroomHunting")]
 [assembly: System.Reflection.AssemblyTitleAttribute("TasshroomHunting")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
