@@ -33,6 +33,14 @@ namespace TasshroomHunting
         // Only vacuum projectiles YOU fired (matches the highlighter filter);
         // walking over someone else's still collects the vanilla way.
         public bool PickupOnlyOwnProjectiles = true;
+
+        // TRUE AIM (playtest 2026-07-18: "have to aim at their feet when close").
+        // Vanilla spawns the projectile 0.21 blocks horizontally BEHIND the
+        // player at full eye height (decompile-verified) - above the descending
+        // camera ray, so close shots land high. This re-seats the spawn ONTO the
+        // aim ray: eye position + 0.3 along the flight direction. Bows and
+        // spears; player-fired only.
+        public bool TrueAimSpawnEnabled = true;
     }
 
     public class HuntingModSystem : ModSystem
@@ -60,6 +68,7 @@ namespace TasshroomHunting
             sapi = api;
             harmony = new Harmony("tasshroomhunting");
             harmony.PatchAll();
+            TryPatchTrueAim(api);
             if (Cfg.ProjectilePickupRadius > 0f)
                 pickupTickId = api.Event.RegisterGameTickListener(PickupTick, 400);
             api.Logger.Event("[TasshroomHunting] active (flee-away-from-hunter, predator footstep ranges, projectile pickup radius {0}).", Cfg.ProjectilePickupRadius);
@@ -101,6 +110,40 @@ namespace TasshroomHunting
                     ent.Die(EnumDespawnReason.PickedUp);
                 }
             }
+        }
+
+        /// <summary>PreInitialize is the surgical moment: FiredBy/Pos/Motion are
+        /// set, the entity is not yet spawned. Explicit interface implementation,
+        /// so the method is found by reflection rather than name-attribute.</summary>
+        private void TryPatchTrueAim(ICoreServerAPI api)
+        {
+            try
+            {
+                var mi = System.Linq.Enumerable.FirstOrDefault(
+                    typeof(Vintagestory.GameContent.EntityProjectile).GetMethods(
+                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic),
+                    m => m.Name == "PreInitialize" || m.Name.EndsWith(".PreInitialize"));
+                if (mi == null) { api.Logger.Warning("[TasshroomHunting] PreInitialize not found; true-aim inactive."); return; }
+                harmony.Patch(mi, postfix: new HarmonyMethod(typeof(HuntingModSystem), nameof(TrueAimPostfix)));
+                api.Logger.Event("[TasshroomHunting] true-aim spawn correction active.");
+            }
+            catch (Exception ex) { api.Logger.Warning("[TasshroomHunting] true-aim patch failed: {0}", ex.Message); }
+        }
+
+        public static void TrueAimPostfix(object __instance)
+        {
+            if (!Cfg.TrueAimSpawnEnabled) return;
+            var p = __instance as Vintagestory.GameContent.EntityProjectileBase;
+            var shooter = p?.FiredBy as EntityPlayer;
+            if (p == null || shooter == null) return;
+            var m = p.Pos.Motion;
+            double len = m.Length();
+            if (len < 0.01) return;
+            double f = 0.3 / len; // 0.3 blocks forward along the aim ray
+            p.Pos.SetPos(
+                shooter.Pos.X + m.X * f,
+                shooter.Pos.Y + shooter.LocalEyePos.Y + m.Y * f,
+                shooter.Pos.Z + m.Z * f);
         }
 
         public override void StartClientSide(Vintagestory.API.Client.ICoreClientAPI api)

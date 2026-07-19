@@ -4,7 +4,7 @@
   "name": "Tasshroom Hunting",
   "authors": [ "Tasshroom33" ],
   "description": "Hunting AI and awareness tweaks: animals flee AWAY from the hunter when shot, predator footsteps audible at realistic ranges",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "side": "universal",
   "dependencies": { "game": "1.22.0" }
 }
