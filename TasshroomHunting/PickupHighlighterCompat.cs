@@ -57,9 +57,14 @@ namespace TasshroomHunting
         public static void FilterPostfix(object __0, ref bool __result)
         {
             if (!__result || !(__0 is Entity val)) return;
-            if (!HuntingModSystem.Cfg.HighlightOnlyOwnProjectiles) return;
             // Only constrain PROJECTILES; ground items keep the mod's own rules.
             if (val.Class == null || val.Class.IndexOf("projectile", StringComparison.OrdinalIgnoreCase) < 0) return;
+            // RIDING a target (StickyArrow's synced sa_target attr): a marker
+            // dancing on a live animal is noise, and a riding spear (collectible
+            // since StickyArrow 0.1.1) would light the whole animal up as loot.
+            // No highlight until the projectile is released (playtest 2026-07-19).
+            if (val.WatchedAttributes.GetLong("sa_target", 0L) != 0L) { __result = false; return; }
+            if (!HuntingModSystem.Cfg.HighlightOnlyOwnProjectiles) return;
             long me = _capi?.World?.Player?.Entity?.EntityId ?? 0;
             if (me == 0) return;
             long firedBy = val.WatchedAttributes.GetLong("firedBy", 0L);

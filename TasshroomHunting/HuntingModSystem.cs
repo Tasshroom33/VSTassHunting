@@ -57,23 +57,57 @@ namespace TasshroomHunting
         public bool PackSuppressFlee = true;
         public float PackAggroSeekRange = 25f;   // vanilla 15
         public float PackMaxFollowTimeSec = 240f;
+
+        // ---- HARVEST OVERHAUL (playtest 2026-07-19, see HarvestOverhaul.cs) ----
+        // Knife harvest hold time multiplier (0.5 = half of vanilla).
+        public float HarvestTimeMult = 0.5f;
+        // Finished harvest spills loot on the ground and poofs the corpse —
+        // the carcass window never opens.
+        public bool HarvestAutoDrop = true;
+        // Player kills roll their loot at death; empty roll (or never-harvestable
+        // corpses like bells/locusts) => corpse self-removes after the delay.
+        public bool EmptyCorpseAutoRemove = true;
+        public float EmptyCorpseRemoveSeconds = 10f;
     }
 
     public class HuntingModSystem : ModSystem
     {
         public static HuntingConfig Cfg = new HuntingConfig();
-        private Harmony harmony;
+
+        // ONE Harmony application per PROCESS, not per ModSystem instance: in
+        // single player the client and the local server each get their own
+        // instance in the SAME process, and Harmony patches are process-wide —
+        // patching from both would run every postfix twice (duration x0.25).
+        // Applying in Start() (runs on both sides) instead of StartServerSide
+        // also puts the harvest patches on REMOTE clients of a dedicated
+        // server, where the client times the knife hold.
+        private static Harmony harmony;
+        private static int harmonyRefs;
+        private static readonly object harmonyGate = new object();
 
         public override void Start(ICoreAPI api)
         {
-            // Config on BOTH sides (the highlighter shim is client-side).
+            // Config on BOTH sides (harvest timing + the highlighter shim are
+            // client-side). Re-store after load so new fields show up in the file.
             try
             {
                 var loaded = api.LoadModConfig<HuntingConfig>("TasshroomHunting.json");
                 if (loaded != null) Cfg = loaded;
-                else api.StoreModConfig(Cfg, "TasshroomHunting.json");
+                Cfg.HarvestTimeMult = Vintagestory.API.MathTools.GameMath.Clamp(Cfg.HarvestTimeMult, 0.05f, 10f);
+                api.StoreModConfig(Cfg, "TasshroomHunting.json");
             }
             catch (Exception ex) { api.Logger.Warning("[TasshroomHunting] config load failed: {0}", ex.Message); }
+
+            lock (harmonyGate)
+            {
+                harmonyRefs++;
+                if (harmony == null)
+                {
+                    harmony = new Harmony("tasshroomhunting");
+                    harmony.PatchAll(); // flee-away + harvest overhaul attribute patches
+                    TryPatchTrueAim(api);
+                }
+            }
         }
 
         /// <summary>Entity AI numbers are rewritten here - assets are loaded and
@@ -92,12 +126,10 @@ namespace TasshroomHunting
         public override void StartServerSide(ICoreServerAPI api)
         {
             sapi = api;
-            harmony = new Harmony("tasshroomhunting");
-            harmony.PatchAll();
-            TryPatchTrueAim(api);
             if (Cfg.ProjectilePickupRadius > 0f)
                 pickupTickId = api.Event.RegisterGameTickListener(PickupTick, 400);
-            api.Logger.Event("[TasshroomHunting] active (flee-away-from-hunter, predator footstep ranges, projectile pickup radius {0}).", Cfg.ProjectilePickupRadius);
+            api.Logger.Event("[TasshroomHunting] active (flee-away-from-hunter, predator footstep ranges, projectile pickup radius {0}, harvest overhaul: time x{1}, autodrop {2}, empty-corpse removal {3}).",
+                Cfg.ProjectilePickupRadius, Cfg.HarvestTimeMult, Cfg.HarvestAutoDrop, Cfg.EmptyCorpseAutoRemove);
         }
 
         /// <summary>Extended projectile pickup: settled arrows/spears within the
@@ -140,8 +172,9 @@ namespace TasshroomHunting
 
         /// <summary>PreInitialize is the surgical moment: FiredBy/Pos/Motion are
         /// set, the entity is not yet spawned. Explicit interface implementation,
-        /// so the method is found by reflection rather than name-attribute.</summary>
-        private void TryPatchTrueAim(ICoreServerAPI api)
+        /// so the method is found by reflection rather than name-attribute.
+        /// Applied process-wide; dormant on pure clients (FiredBy is null there).</summary>
+        private void TryPatchTrueAim(ICoreAPI api)
         {
             try
             {
@@ -176,7 +209,6 @@ namespace TasshroomHunting
         {
             if (api.ModLoader.IsModEnabled("itempickuphighlighter"))
             {
-                harmony = harmony ?? new Harmony("tasshroomhunting");
                 PickupHighlighterCompat.TryPatch(api, harmony);
             }
         }
@@ -184,8 +216,16 @@ namespace TasshroomHunting
         public override void Dispose()
         {
             try { if (sapi != null && pickupTickId != 0) sapi.Event.UnregisterGameTickListener(pickupTickId); } catch { }
-            try { harmony?.UnpatchAll("tasshroomhunting"); } catch { }
-            harmony = null; sapi = null; pickupTickId = 0;
+            sapi = null; pickupTickId = 0;
+            lock (harmonyGate)
+            {
+                harmonyRefs--;
+                if (harmonyRefs <= 0)
+                {
+                    try { harmony?.UnpatchAll("tasshroomhunting"); } catch { }
+                    harmony = null; harmonyRefs = 0;
+                }
+            }
         }
     }
 
