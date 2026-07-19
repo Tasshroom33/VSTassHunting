@@ -1,10 +1,10 @@
-{
+﻿{
   "type": "code",
   "modid": "tasshroomhunting",
   "name": "Tasshroom Hunting",
   "authors": [ "Tasshroom33" ],
   "description": "Hunting tweaks: true-aim spawn, 100 percent bow accuracy, unbreakable arrows, animals flee AWAY from the hunter, predator footsteps audible at realistic ranges, extended projectile pickup",
-  "version": "0.0.5",
+  "version": "0.1.0",
   "side": "universal",
   "dependencies": { "game": "1.22.0" }
 }

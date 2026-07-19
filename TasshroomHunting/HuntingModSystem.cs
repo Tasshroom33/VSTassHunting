@@ -41,6 +41,22 @@ namespace TasshroomHunting
         // aim ray: eye position + 0.3 along the flight direction. Bows and
         // spears; player-fired only.
         public bool TrueAimSpawnEnabled = true;
+
+        // ---- PREDATOR OVERHAUL (see PredatorAI.cs) ----
+        public bool PredatorOverhaulEnabled = true;
+        // Apex predators: always charge, never flee, spot you from range.
+        public string[] ApexCodes = { "bear-black", "bear-brown", "bear-polar" };
+        public float ApexSeekRange = 30f;        // unprovoked (vanilla 16)
+        public float ApexAggroSeekRange = 40f;   // after you hurt it (vanilla 30)
+        public float ApexMaxFollowTimeSec = 240f;// chase timer (vanilla 60)
+        public float ApexIdleStopRange = 30f;    // wakes/stands seeing you (vanilla 10/5)
+        // Pack hunters: swarm together, hit-and-run alone, flee only when solo.
+        public string[] PackCodes = { "wolf", "hyena" };
+        public float PackRadius = 24f;           // packmate = same species within this
+        public bool SoloHitAndRun = true;
+        public bool PackSuppressFlee = true;
+        public float PackAggroSeekRange = 25f;   // vanilla 15
+        public float PackMaxFollowTimeSec = 240f;
     }
 
     public class HuntingModSystem : ModSystem
@@ -58,6 +74,16 @@ namespace TasshroomHunting
                 else api.StoreModConfig(Cfg, "TasshroomHunting.json");
             }
             catch (Exception ex) { api.Logger.Warning("[TasshroomHunting] config load failed: {0}", ex.Message); }
+        }
+
+        /// <summary>Entity AI numbers are rewritten here - assets are loaded and
+        /// byType-resolved, no entities have initialized yet, and only the server
+        /// runs AI (taskai is a server behavior).</summary>
+        public override void AssetsFinalize(ICoreAPI api)
+        {
+            if (api.Side != EnumAppSide.Server) return;
+            try { PredatorAI.ApplyServer(api); }
+            catch (Exception ex) { api.Logger.Error("[TasshroomHunting] PredatorAI apply failed: {0}", ex); }
         }
 
         private ICoreServerAPI sapi;
