@@ -84,6 +84,20 @@ namespace TassHunting
         public bool BowAccuracyEnabled = true;       // all bows: rangedWeaponsAcc 1.0
         public bool UnbreakableArrowsEnabled = true; // all arrows: breakChanceOnImpact 0
 
+        // ---- STACKING HYBRID BLEED (2026-07-19, see BleedSystem.cs; replaces
+        //      BloodTrail's damage - keep that mod for its particles, set its
+        //      BleedDamageEnabled false) ----
+        public bool BleedEnabled = true;
+        public int BleedMaxStacks = 3;
+        public float BleedTickSeconds = 10f;
+        public float BleedStaticPerTick = 0.1f;        // flat hp per stack per tick
+        public float BleedPctMaxHealthPerTick = 1f;    // % of max hp per stack per tick
+        public float BleedDurationSeconds = 60f;       // per stack; at cap a new hit refreshes the shortest
+        public int BleedChancePct = 80;                // per qualifying hit
+        public float BleedDamageThreshold = 1f;        // min post-mitigation hit damage
+        public bool BleedPlayerCausedOnly = true;
+        public bool BleedAffectsPlayers = true;        // PvP: humans bleed too
+
         // ---- WOUNDED SLOWDOWN (2026-07-19, see WoundedSlowdown.cs; replaces
         //      FleeExhaustion - all AI states, tiered, per the user's table) ----
         public bool WoundedSlowdownEnabled = true;
