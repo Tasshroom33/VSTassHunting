@@ -83,6 +83,17 @@ namespace TassHunting
         //      patches; config-gated code since 0.3.0, see ArcheryTweaks.cs) ----
         public bool BowAccuracyEnabled = true;       // all bows: rangedWeaponsAcc 1.0
         public bool UnbreakableArrowsEnabled = true; // all arrows: breakChanceOnImpact 0
+
+        // ---- WOUNDED SLOWDOWN (2026-07-19, see WoundedSlowdown.cs; replaces
+        //      FleeExhaustion - all AI states, tiered, per the user's table) ----
+        public bool WoundedSlowdownEnabled = true;
+        public WoundedSlowTier[] WoundedSlowTiers = {
+            new WoundedSlowTier { HealthPctMax = 10f, SlowPct = 50f },
+            new WoundedSlowTier { HealthPctMax = 20f, SlowPct = 40f },
+            new WoundedSlowTier { HealthPctMax = 30f, SlowPct = 30f },
+            new WoundedSlowTier { HealthPctMax = 40f, SlowPct = 20f },
+            new WoundedSlowTier { HealthPctMax = 50f, SlowPct = 10f },
+        };
     }
 
     public class HuntingModSystem : ModSystem
