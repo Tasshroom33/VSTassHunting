@@ -166,34 +166,45 @@ namespace TassHunting
             }
             else { impactYaw = arrow.Pos.Yaw; impactRoll = arrow.Pos.Roll; }
 
-            // SURFACE ANCHOR: by DamageProjectile time the projectile has
-            // penetrated to the body core. Re-anchor on the collision box
-            // SURFACE along the reverse flight direction, at the impact height,
-            // 20% embedded (boxes are fatter than the visual body).
+            // BODY-ELLIPSE ANCHOR (playtest 2026-07-19: arrows floated outside a
+            // goat's flank). VS collision boxes are SQUARE in plan while the
+            // visual body is a narrow ellipse - long along the spine, skinny
+            // across - so a circle-radius anchor leaves side shots hanging in
+            // air. Model the body as an ellipse in the target's local frame:
+            // semi-axis a = box half (spine, local Z), b = a x BodyWidthFraction
+            // (across, local X). Anchor where the reverse flight ray exits that
+            // ellipse, embedded by StickEmbedFraction. Side hits sink deep,
+            // lengthwise hits stay shallow, every species scales by its own box.
             double wy = GameMath.Clamp(arrow.Pos.Y - target.Pos.Y,
                 target.CollisionBox?.Y1 ?? 0f, target.CollisionBox?.Y2 ?? 1f);
-            const double EmbedFraction = 0.20;
-            double radius = 0.3;
+            double embed = GameMath.Clamp(HuntingModSystem.Cfg.StickEmbedFraction, 0f, 0.9f);
+            double widthFrac = GameMath.Clamp(HuntingModSystem.Cfg.StickBodyWidthFraction, 0.15f, 1f);
+            double a = 0.3;
             if (target.CollisionBox != null)
-                radius = Math.Max(target.CollisionBox.XSize, target.CollisionBox.ZSize) * 0.5;
-            radius *= 1.0 - EmbedFraction;
+                a = Math.Max(target.CollisionBox.XSize, target.CollisionBox.ZSize) * 0.5;
+            double b = a * widthFrac;
+
             double hx = 0, hz = -1;
             double horiz = Math.Sqrt(m.X * m.X + m.Z * m.Z);
             if (horiz > 0.001) { hx = -m.X / horiz; hz = -m.Z / horiz; } // back toward the shooter
-            double wxAnchor = hx * radius;
-            double wzAnchor = hz * radius;
 
             float ty = target.Pos.Yaw;
             double tcos = Math.Cos(ty), tsin = Math.Sin(ty);
+            // Reverse flight direction in the target's local frame (R(-t));
+            // local +Z = spine/facing, local X = across the body.
+            double ldx = hx * tcos - hz * tsin;
+            double ldz = hx * tsin + hz * tcos;
+            // Radius where a unit ray from center exits the body ellipse.
+            double ellipseR = 1.0 / Math.Sqrt((ldx * ldx) / (b * b) + (ldz * ldz) / (a * a) + 1e-9);
+            double r = ellipseR * (1.0 - embed);
 
             var s = new StuckArrow
             {
                 ArrowId = arrow.EntityId,
                 TargetId = target.EntityId,
-                // world -> local: R(-t)
-                LocalX = wxAnchor * tcos - wzAnchor * tsin,
+                LocalX = ldx * r,
                 LocalY = wy,
-                LocalZ = wxAnchor * tsin + wzAnchor * tcos,
+                LocalZ = ldz * r,
                 YawOff = impactYaw - ty,
                 Roll = impactRoll,
                 SecondsLeft = Math.Max(10f, HuntingModSystem.Cfg.StickSeconds)

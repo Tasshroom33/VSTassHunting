@@ -78,6 +78,11 @@ namespace TassHunting
         // A stuck SPEAR can be grabbed back at vanilla touch range (arrows stay
         // uncollectible until released — walking near must not yank them out).
         public bool SpearTouchRetrieve = true;
+        // Body-ellipse anchoring (goat-flank playtest): how deep past the body
+        // surface the arrow embeds, and how wide the body is across vs along
+        // the spine (collision boxes are square; real bodies aren't).
+        public float StickEmbedFraction = 0.35f;
+        public float StickBodyWidthFraction = 0.45f;
 
         // ---- ARCHERY (absorbed from AccurateArchery via the 0.0.5 asset
         //      patches; config-gated code since 0.3.0, see ArcheryTweaks.cs) ----
