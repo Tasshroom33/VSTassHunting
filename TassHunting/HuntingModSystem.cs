@@ -86,8 +86,9 @@ namespace TassHunting
         public float StickBodyWidthFraction = 0.45f;
 
         // ---- ARCHERY (absorbed from AccurateArchery via the 0.0.5 asset
-        //      patches; config-gated code since 0.3.0, see ArcheryTweaks.cs) ----
-        public bool BowAccuracyEnabled = true;       // all bows: rangedWeaponsAcc 1.0
+        //      patches; config-gated code since 0.3.0, see ArcheryTweaks.cs).
+        //      0.6.2: bow accuracy flatten REMOVED - bows are pure vanilla
+        //      (crude -0.05 .. recurve +0.3); only arrows are tuned now. ----
 
         // Per-material arrow break chance (0.6.1; replaces the 0.3.0-0.6.0
         // UnbreakableArrowsEnabled blanket zero, which had flattened the old
