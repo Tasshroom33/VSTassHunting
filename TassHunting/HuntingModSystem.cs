@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using HarmonyLib;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
@@ -87,7 +88,40 @@ namespace TassHunting
         // ---- ARCHERY (absorbed from AccurateArchery via the 0.0.5 asset
         //      patches; config-gated code since 0.3.0, see ArcheryTweaks.cs) ----
         public bool BowAccuracyEnabled = true;       // all bows: rangedWeaponsAcc 1.0
-        public bool UnbreakableArrowsEnabled = true; // all arrows: breakChanceOnImpact 0
+
+        // Per-material arrow break chance (0.6.1; replaces the 0.3.0-0.6.0
+        // UnbreakableArrowsEnabled blanket zero, which had flattened the old
+        // AccurateArchery per-line list). USER CURVE 2026-07-21, halving per
+        // tech tier working back from steel-never-breaks:
+        //   reed 32% -> neolithic 16% -> stone 8% -> copper 4% ->
+        //   bronze 2% -> iron 1% -> steel 0%.
+        // Keys match the arrow code suffix (arrow-<material>). Materials NOT
+        // listed here (modded arrows) are left completely untouched - they
+        // keep whatever their own mod ships. Values clamp 0..1.
+        public bool ArrowBreakTuningEnabled = true;
+        public Dictionary<string, float> ArrowBreakChanceByMaterial = new Dictionary<string, float>
+        {
+            // neolithic
+            ["erel"] = 0.32f,   // reed practice arrow
+            ["crude"] = 0.16f,
+            ["bone"] = 0.16f,
+            // stone
+            ["flint"] = 0.08f,
+            ["obsidian"] = 0.08f,
+            // copper age (castables)
+            ["copper"] = 0.04f,
+            ["gold"] = 0.04f,
+            ["silver"] = 0.04f,
+            // bronze age
+            ["tinbronze"] = 0.02f,
+            ["bismuthbronze"] = 0.02f,
+            ["blackbronze"] = 0.02f,
+            // iron age
+            ["iron"] = 0.01f,
+            ["meteoriciron"] = 0.01f,
+            // steel
+            ["steel"] = 0f,
+        };
 
         // ---- STACKING HYBRID BLEED (2026-07-19, see BleedSystem.cs; damage
         //      half. 0.6.0: visuals now in-house too - BloodTrail fully
