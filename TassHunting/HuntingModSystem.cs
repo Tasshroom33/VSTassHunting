@@ -89,9 +89,9 @@ namespace TassHunting
         public bool BowAccuracyEnabled = true;       // all bows: rangedWeaponsAcc 1.0
         public bool UnbreakableArrowsEnabled = true; // all arrows: breakChanceOnImpact 0
 
-        // ---- STACKING HYBRID BLEED (2026-07-19, see BleedSystem.cs; replaces
-        //      BloodTrail's damage - keep that mod for its particles, set its
-        //      BleedDamageEnabled false) ----
+        // ---- STACKING HYBRID BLEED (2026-07-19, see BleedSystem.cs; damage
+        //      half. 0.6.0: visuals now in-house too - BloodTrail fully
+        //      replaced, remove it from the stack) ----
         public bool BleedEnabled = true;
         public int BleedMaxStacks = 3;
         public float BleedTickSeconds = 10f;
@@ -102,6 +102,26 @@ namespace TassHunting
         public float BleedDamageThreshold = 1f;        // min post-mitigation hit damage
         public bool BleedPlayerCausedOnly = true;
         public bool BleedAffectsPlayers = true;        // PvP: humans bleed too
+
+        // ---- BLOOD VISUALS (0.6.0, see BloodVisuals.cs; replaces BloodTrail
+        //      entirely). Server-authoritative spot ledger + water diffusion,
+        //      per-player proximity-scoped sync - late joiners and players
+        //      walking up to old blood see the same trail as everyone else. ----
+        public bool BloodVisualsEnabled = true;
+        // How long a ground blood spot stays followable (REAL seconds - same
+        // law-7 combat-pacing carve-out as the bleed itself).
+        public float BloodSpotLifetimeSeconds = 600f;
+        // Server deposit cadence while something bleeds. 0.35s at animal flee
+        // speed lays a spot roughly every 1.5-2.5 blocks.
+        public float BloodDepositIntervalSeconds = 0.35f;
+        // Drips closer together than this GROW the previous spot into a pool
+        // (stationary/dying animals pool instead of spamming spots).
+        public float BloodSpotMinSpacingBlocks = 0.8f;
+        public int BloodMaxSpots = 4096;          // server ledger cap, oldest pruned
+        public float BloodRenderDistanceBlocks = 64f;
+        public int BloodMaxRenderedSpots = 1200;  // client per-tick render budget
+        public float CorpseBleedSeconds = 8f;     // death pool keeps growing this long
+        public bool WaterBloodEnabled = true;     // blood in water diffuses as tiles
 
         // ---- WOUNDED SLOWDOWN (2026-07-19, see WoundedSlowdown.cs; replaces
         //      FleeExhaustion - all AI states, tiered, per the user's table) ----
@@ -182,8 +202,8 @@ namespace TassHunting
             StickyProjectiles.StartServer(api);
             if (Cfg.ProjectilePickupRadius > 0f)
                 pickupTickId = api.Event.RegisterGameTickListener(PickupTick, 400);
-            api.Logger.Event("[TassHunting] 0.3.0 active (sticky projectiles {0}, spear grab-back {1}, flee-away-from-hunter, predator footstep ranges, projectile pickup radius {2}, harvest overhaul: time x{3}, autodrop {4}, empty-corpse removal {5}).",
-                Cfg.StickyProjectilesEnabled, Cfg.SpearTouchRetrieve, Cfg.ProjectilePickupRadius, Cfg.HarvestTimeMult, Cfg.HarvestAutoDrop, Cfg.EmptyCorpseAutoRemove);
+            api.Logger.Event("[TassHunting] {0} active (sticky projectiles {1}, spear grab-back {2}, flee-away-from-hunter, predator footstep ranges, projectile pickup radius {3}, harvest overhaul: time x{4}, autodrop {5}, empty-corpse removal {6}, blood visuals {7}, water blood {8}).",
+                Mod.Info.Version, Cfg.StickyProjectilesEnabled, Cfg.SpearTouchRetrieve, Cfg.ProjectilePickupRadius, Cfg.HarvestTimeMult, Cfg.HarvestAutoDrop, Cfg.EmptyCorpseAutoRemove, Cfg.BloodVisualsEnabled, Cfg.WaterBloodEnabled);
         }
 
         /// <summary>Extended projectile pickup: settled arrows/spears within the

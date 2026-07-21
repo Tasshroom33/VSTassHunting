@@ -1,7 +1,8 @@
-// STACKING HYBRID BLEED (2026-07-19): replaces BloodTrail's DAMAGE (keep that
-// mod installed for its blood-trail particles; we set BleedDamageEnabled=false
-// in its config - its single isBleeding bool cannot express stacks and its
-// damage is static-only).
+// STACKING HYBRID BLEED (2026-07-19): the DAMAGE half of the bleed feature.
+// As of 0.6.0 the VISUAL half lives in BloodVisuals.cs (server-synced spot
+// ledger + water diffusion) - BloodTrail is fully replaced and should be
+// removed from the mod stack (it was kept for particles only; its damage was
+// always off and its single isBleeding bool cannot express stacks).
 //
 // Model per the user's spec: each qualifying hit (piercing/slashing, past a
 // damage threshold, chance roll) adds a bleed STACK (cap configurable, default
@@ -80,6 +81,21 @@ namespace TassHunting
                     st.Expiries[shortest] = expiry; // at cap: refresh, don't grow
                 }
                 else st.Expiries.Add(expiry);
+                BloodVisuals.NotifyProc(victim, st.Expiries.Count); // hit splash spot
+            }
+        }
+
+        /// <summary>Current bleeders (entity + stack count) for the blood-visual
+        /// deposit tick. Copies under the lock; caller iterates freely.</summary>
+        public static List<(Entity ent, int stacks)> SnapshotActive()
+        {
+            lock (Active)
+            {
+                var list = new List<(Entity, int)>(Active.Count);
+                foreach (var kv in Active)
+                    if (kv.Value.Ent != null && kv.Value.Expiries.Count > 0)
+                        list.Add((kv.Value.Ent, kv.Value.Expiries.Count));
+                return list;
             }
         }
 
