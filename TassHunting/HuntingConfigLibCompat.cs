@@ -56,8 +56,17 @@ namespace TassHunting
                 return;
             }
 
-            if (!capi.IsSinglePlayer)
-                ImGui.TextWrapped("You are on a server: these edits only change YOUR side. The server's own config decides gameplay.");
+            // ENFORCEMENT (0.11.15): on a multiplayer server, the GAMEPLAY/BALANCE
+            // settings are read server-side only (BleedSystem, StickyProjectiles,
+            // ArcheryTweaks, HarvestOverhaul, the AI patches) - a client's copy is
+            // ignored. There is no config sync, so the client just should not think
+            // they control those. We GREY OUT (BeginDisabled) every server-decided
+            // section when not in single player, so it is obvious what the server
+            // owns. The VISUAL sections (blood look, colors, water tint, corpse
+            // decal) are genuinely client-side and stay fully editable.
+            bool serverDecides = !capi.IsSinglePlayer; // true on a multiplayer client
+            if (serverDecides)
+                ImGui.TextWrapped("You are on a server. Greyed-out settings are decided by the server's own config - your changes to them do nothing here. The look-and-feel settings below are yours to change.");
 
             // ---- BLOOD (0.8.0): exactly the user-spec four sections with the
             //      ONE standard particle vocabulary. Everything else json-only.
@@ -116,16 +125,21 @@ namespace TassHunting
 
             if (ImGui.CollapsingHeader("Bleed Damage over Time"))
             {
-                Checkbox("Enable bleed damage", () => cfg.BleedEnabled, v => cfg.BleedEnabled = v);
+                // "Spawn splatter on damage" is the only CLIENT-side dial here
+                // (it drives the visual spurt); the rest is server-decided damage.
                 Checkbox("Spawn splatter on damage", () => cfg.SpawnSplatterOnDamage, v => cfg.SpawnSplatterOnDamage = v);
+                BeginServer(serverDecides);
+                Checkbox("Enable bleed damage", () => cfg.BleedEnabled, v => cfg.BleedEnabled = v);
                 Help("Bleed lasts as long as an arrow is stuck; each stuck arrow is one stack. No timer or chance roll.");
                 SliderFloat("Damage per tick", () => cfg.BleedStaticPerTick, v => cfg.BleedStaticPerTick = v, 0f, 2f);
                 SliderFloat("Extra damage, % of max HP", () => cfg.BleedPctMaxHealthPerTick, v => cfg.BleedPctMaxHealthPerTick = v, 0f, 10f);
                 SliderFloat("Tick every (sec)", () => cfg.BleedTickSeconds, v => cfg.BleedTickSeconds = v, 1f, 60f);
                 Checkbox("Players can bleed (PvP)", () => cfg.BleedAffectsPlayers, v => cfg.BleedAffectsPlayers = v);
+                EndServer(serverDecides);
             }
             if (ImGui.CollapsingHeader("Archery"))
             {
+                BeginServer(serverDecides);
                 Checkbox("Arrows can break", () => cfg.ArrowBreakTuningEnabled, v => cfg.ArrowBreakTuningEnabled = v);
                 Checkbox("Drop arrowhead when an arrow breaks", () => cfg.DropArrowheadOnBreak, v => cfg.DropArrowheadOnBreak = v);
                 Help("A broken metal or stone arrow leaves its arrowhead to recover. Crude, reed and bone arrows leave nothing.");
@@ -142,29 +156,35 @@ namespace TassHunting
                         SliderFloat(k + " arrow", () => cfg.ArrowBreakChanceByMaterial[k], v => cfg.ArrowBreakChanceByMaterial[k] = v, 0f, 1f);
                     }
                 }
+                EndServer(serverDecides);
             }
 
             if (ImGui.CollapsingHeader("Animals"))
             {
+                BeginServer(serverDecides);
                 Checkbox("Animals flee away from you", () => cfg.FleeAwayFromHunterEnabled, v => cfg.FleeAwayFromHunterEnabled = v);
                 Help("Vanilla sometimes makes a shot animal run straight at the shooter.");
                 Checkbox("Tougher predators", () => cfg.PredatorOverhaulEnabled, v => cfg.PredatorOverhaulEnabled = v);
                 Help("Bears charge from further and never give up; wolves pack up. Needs world rejoin.");
                 Checkbox("Wounded animals slow down", () => cfg.WoundedSlowdownEnabled, v => cfg.WoundedSlowdownEnabled = v);
+                EndServer(serverDecides);
             }
 
             if (ImGui.CollapsingHeader("Stuck arrows and spears"))
             {
+                BeginServer(serverDecides);
                 Checkbox("Arrows stick in animals", () => cfg.StickyProjectilesEnabled, v => cfg.StickyProjectilesEnabled = v);
                 Checkbox("Arrows stay until the animal dies", () => cfg.StickUntilDeath, v => cfg.StickUntilDeath = v);
                 Help("On = arrows never fall out of a live animal; they stay and keep bleeding it until the kill, then drop. Off = they work loose after the lifetime below.");
                 SliderFloat("Stuck arrow lifetime (sec)", () => cfg.StickSeconds, v => cfg.StickSeconds = v, 30f, 900f);
                 Help("How long a stuck arrow lasts if the animal never dies. With 'stay until death' on, this only applies to an animal that fled and vanished.");
                 Checkbox("Grab stuck spears back", () => cfg.SpearTouchRetrieve, v => cfg.SpearTouchRetrieve = v);
+                EndServer(serverDecides);
             }
 
             if (ImGui.CollapsingHeader("Harvest and pickup"))
             {
+                BeginServer(serverDecides);
                 SliderFloat("Harvest time (x vanilla)", () => cfg.HarvestTimeMult, v => cfg.HarvestTimeMult = v, 0.05f, 2f);
                 Help("0.5 = knife work takes half as long.");
                 Checkbox("Loot drops on the ground", () => cfg.HarvestAutoDrop, v => cfg.HarvestAutoDrop = v);
@@ -173,6 +193,7 @@ namespace TassHunting
                 SliderFloat("Arrow pickup range (0 = off)", () => cfg.ProjectilePickupRadius, v => cfg.ProjectilePickupRadius = v, 0f, 16f);
                 Help("Walk within this range of your landed arrows and spears to collect them automatically.");
                 Checkbox("Pick up your own only", () => cfg.PickupOnlyOwnProjectiles, v => cfg.PickupOnlyOwnProjectiles = v);
+                EndServer(serverDecides);
             }
 
             if (ImGui.CollapsingHeader("Misc"))
@@ -186,6 +207,19 @@ namespace TassHunting
         }
 
         // ---- helpers ----
+
+        // On a multiplayer client, wrap a server-decided section so its widgets
+        // grey out and cannot be dragged (ImGui.BeginDisabled). In single player
+        // these are no-ops and everything stays editable. Always paired.
+        private static void BeginServer(bool serverDecides)
+        {
+            if (serverDecides) ImGui.BeginDisabled();
+        }
+
+        private static void EndServer(bool serverDecides)
+        {
+            if (serverDecides) ImGui.EndDisabled();
+        }
 
         private static void Help(string text)
         {
