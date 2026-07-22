@@ -195,7 +195,8 @@ namespace TassHunting
             SizeMin = 0.12f, SizeMax = 0.28f,
             QtyMin = 6, QtyMax = 15,         // particles per spurt pulse (damage-scaled within)
             SpreadMin = 0.4f, SpreadMax = 1.5f, // launch speed range
-            LifetimeMin = 0.8f, LifetimeMax = 1.6f
+            // lifetime = flight (~0.7s) + ground-sit time before fading away
+            LifetimeMin = 2.0f, LifetimeMax = 3.0f
         };
         // Water Effect
         public bool TintSurroundingWater = true;  // client: render the blood-in-water sediment

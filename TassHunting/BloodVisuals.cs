@@ -113,7 +113,7 @@ namespace TassHunting
                     long now = capi.World.ElapsedMilliseconds;
                     double yaw = plr.Pos.Yaw;
                     double fx = Math.Sin(yaw), fz = Math.Cos(yaw);
-                    DepositLocal(plr.Pos.X, plr.Pos.Y + 0.8, plr.Pos.Z, KindPool, 6f, 3f, null, now, 3);
+                    DepositLocal(plr.Pos.X, plr.Pos.Y + 0.8, plr.Pos.Z, KindPool, 6f, 3f, null, now, 1);
                     var fake = new Track();
                     for (int i = 1; i <= 8; i++)
                         DepositLocal(plr.Pos.X + fx * i * 1.1, plr.Pos.Y + 0.8, plr.Pos.Z + fz * i * 1.1,
@@ -190,9 +190,11 @@ namespace TassHunting
                     float dmg = ent.WatchedAttributes.GetFloat("onHurt", 0f);
                     if (cfg.SpawnSplatterOnDamage && dmg >= cfg.BloodOnHitMinDamage && trailScale > 0f)
                     {
+                        // ONE SHOT per damage event (0.9.1 field: the pulse
+                        // train read as delay - pulse 1 hid inside the mob)
                         float inten = Math.Min(4f, 1.0f + dmg * 0.3f) * trailScale;
                         DepositLocal(ent.Pos.X, WoundY(ent), ent.Pos.Z, KindHit, inten, 0.5f * trailScale, null, now,
-                            ent.Alive ? 4 : 0);
+                            ent.Alive ? 1 : 0);
                     }
                 }
 
@@ -217,7 +219,7 @@ namespace TassHunting
                     if (corpseStacks > 0f)
                     {
                         int poolId = DepositLocal(ent.Pos.X, ent.Pos.Y + 0.15, ent.Pos.Z, KindPool,
-                            1.5f + 0.8f * corpseStacks, 0.5f * corpseStacks, null, now, 3);
+                            1.5f + 0.8f * corpseStacks, 0.5f * corpseStacks, null, now, 1);
                         tr.CorpseStacks = corpseStacks;
                         tr.CorpseUntilMs = now + (long)(cfg.CorpseBleedSeconds * 1000f);
                         tr.NextCorpseMs = now + CorpseTickMs;
@@ -433,11 +435,14 @@ namespace TassHunting
                 1, 1, blood, new Vec3d(), new Vec3d(), new Vec3f(), new Vec3f(),
                 4.6f, 0f, 0.25f, 0.5f, EnumParticleModel.Cube);
 
-            // splatter: lazy 0.45-weight ballistics so the arc hangs and reads;
-            // all quantities/sizes/speeds/lives come from BloodSplatter per pulse
+            // splatter: lazy 0.45-weight ballistics so the arc hangs and reads.
+            // FADE TIMING (0.9.1 field: "fades during the top arc and never
+            // hits the ground"): quadratic opacity stays ~90%+ through the
+            // ~0.7s flight when the lifetime is 2-3s, so the visible fade and
+            // shrink happen ON THE GROUND after landing - splat, land, sink.
             burstProps = new SimpleParticleProperties(
                 4, 4, blood, new Vec3d(), new Vec3d(), new Vec3f(), new Vec3f(),
-                1.4f, 0.45f, 0.12f, 0.28f, EnumParticleModel.Cube);
+                2.5f, 0.45f, 0.12f, 0.28f, EnumParticleModel.Cube);
             burstProps.ShouldDieInLiquid = true;
             burstProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
 
@@ -542,8 +547,12 @@ namespace TassHunting
                             + Math.Abs(sp.LifetimeMax - sp.LifetimeMin) * Hash01(kv.Key * 331 + s.SpurtsLeft * 13));
                         burstProps.MinVelocity.Set(-0.45f * spdMax, 0.8f * spdMin, -0.45f * spdMax);
                         burstProps.AddVelocity.Set(0.9f * spdMax, spdMax - 0.8f * spdMin, 0.9f * spdMax);
-                        burstProps.MinPos.Set(s.X - 0.15, s.Y + s.FallHeight + 0.1, s.Z - 0.15);
-                        burstProps.AddPos.Set(0.3, 0.35, 0.3);
+                        // grounded particles shrink as they fade = sink-in read
+                        burstProps.SizeEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -0.5f * burstProps.MinSize);
+                        // WIDE spawn box: particles emerge at the body surface,
+                        // not hidden inside the mesh (the invisible-shot bug)
+                        burstProps.MinPos.Set(s.X - 0.35, s.Y + s.FallHeight - 0.05, s.Z - 0.35);
+                        burstProps.AddPos.Set(0.7, 0.4, 0.7);
                         capi.World.SpawnParticles(burstProps);
                     }
                 }
