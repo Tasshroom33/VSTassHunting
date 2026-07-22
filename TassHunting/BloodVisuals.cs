@@ -436,15 +436,15 @@ namespace TassHunting
                 4.6f, 0f, 0.25f, 0.5f, EnumParticleModel.Cube);
 
             // splatter: lazy 0.45-weight ballistics so the arc hangs and reads.
-            // FADE TIMING (0.9.1 field: "fades during the top arc and never
-            // hits the ground"): quadratic opacity stays ~90%+ through the
-            // ~0.7s flight when the lifetime is 2-3s, so the visible fade and
-            // shrink happen ON THE GROUND after landing - splat, land, sink.
+            // NO OPACITY FADE (0.9.2 field: blood must POP visually until the
+            // end of its lifecycle) - the particle stays fully saturated for
+            // flight AND ground-sit, and exits via late-accelerating SHRINK
+            // (quadratic size decay set per shot) = soak-in right at the end.
             burstProps = new SimpleParticleProperties(
                 4, 4, blood, new Vec3d(), new Vec3d(), new Vec3f(), new Vec3f(),
                 2.5f, 0.45f, 0.12f, 0.28f, EnumParticleModel.Cube);
             burstProps.ShouldDieInLiquid = true;
-            burstProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
+            burstProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, 0f);
 
             dropletProps = new SimpleParticleProperties(
                 2, 3, blood, new Vec3d(), new Vec3d(),
@@ -547,8 +547,10 @@ namespace TassHunting
                             + Math.Abs(sp.LifetimeMax - sp.LifetimeMin) * Hash01(kv.Key * 331 + s.SpurtsLeft * 13));
                         burstProps.MinVelocity.Set(-0.45f * spdMax, 0.8f * spdMin, -0.45f * spdMax);
                         burstProps.AddVelocity.Set(0.9f * spdMax, spdMax - 0.8f * spdMin, 0.9f * spdMax);
-                        // grounded particles shrink as they fade = sink-in read
-                        burstProps.SizeEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -0.5f * burstProps.MinSize);
+                        // full-color the whole life; QUADRATIC shrink back-loads
+                        // the disappearance to the lifecycle's end (soak-in)
+                        burstProps.SizeEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC,
+                            -0.85f * (burstProps.MinSize + burstProps.MaxSize) * 0.5f);
                         // WIDE spawn box: particles emerge at the body surface,
                         // not hidden inside the mesh (the invisible-shot bug)
                         burstProps.MinPos.Set(s.X - 0.35, s.Y + s.FallHeight - 0.05, s.Z - 0.35);
