@@ -25,16 +25,22 @@ namespace TassHunting
     /// their own arrowhead-{material} are covered automatically, and those that
     /// do not simply drop nothing.
     /// </summary>
-    [HarmonyPatch(typeof(EntityProjectileBase), "Die")]
+    // Die() is declared on the BASE Entity class, NOT on EntityProjectileBase -
+    // Harmony resolves a [HarmonyPatch(type, name)] against the DECLARING type,
+    // so targeting EntityProjectileBase threw "Undefined target method" and
+    // aborted the whole mod load (fixed 0.9.10). Patch Entity.Die and filter to
+    // arrow projectiles inside the postfix; the virtual call still fires here.
+    [HarmonyPatch(typeof(Entity), "Die")]
     public static class Patch_ArrowheadOnBreak
     {
-        public static void Postfix(EntityProjectileBase __instance, EnumDespawnReason reason)
+        public static void Postfix(Entity __instance, EnumDespawnReason reason)
         {
             try
             {
                 var cfg = HuntingModSystem.Cfg;
                 if (cfg == null || !cfg.DropArrowheadOnBreak) return;
                 if (reason != EnumDespawnReason.Death) return;          // Death == broke; ignore pickup/expire/unload
+                if (!(__instance is EntityProjectileBase)) return;      // only projectiles
                 if (__instance.World == null || __instance.World.Side != EnumAppSide.Server) return;
 
                 string path = __instance.Code?.Path;
