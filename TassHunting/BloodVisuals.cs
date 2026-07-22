@@ -432,6 +432,12 @@ namespace TassHunting
 
         // ================= particle props ====================================
 
+        /// <summary>Parse #RRGGBB to a particle-correct color int. THE VS
+        /// PARTICLE SYSTEM READS Color AS BGRA (engine doc + THW only ever used
+        /// white so never hit this) - ColorFromRgba packs r|g<<8|b<<16|a<<24,
+        /// i.e. RED in the LOW byte, which is what particles want. Using
+        /// ToRgba (RGBA, red high) rendered blood PINK (field 2026-07-22).
+        /// Channel accessors below must match: red = &0xFF, green = >>8, blue = >>16.</summary>
         private static int ParseBloodColor(string hex, int fallback)
         {
             try
@@ -442,10 +448,15 @@ namespace TassHunting
                 int r = Convert.ToInt32(h.Substring(0, 2), 16);
                 int g = Convert.ToInt32(h.Substring(2, 2), 16);
                 int b = Convert.ToInt32(h.Substring(4, 2), 16);
-                return ColorUtil.ToRgba(255, r, g, b);
+                return ColorUtil.ColorFromRgba(r, g, b, 255); // BGRA-packed for particles
             }
             catch { return fallback; }
         }
+
+        // Channel accessors for a BGRA-packed particle color (red low, blue high).
+        private static int CR(int c) => c & 0xFF;
+        private static int CG(int c) => (c >> 8) & 0xFF;
+        private static int CB(int c) => (c >> 16) & 0xFF;
 
         private void EnsureParticleProps(HuntingConfig cfg)
         {
@@ -456,9 +467,9 @@ namespace TassHunting
             appliedColorHex = cfg.BloodColorHex + "|" + cfg.BloodColorAgedHex;
             appliedWaterOpacity = waterOpacity;
             appliedSoftWater = soft;
-            int blood = ParseBloodColor(cfg.BloodColorHex, ColorUtil.ToRgba(255, 116, 8, 12));
+            int blood = ParseBloodColor(cfg.BloodColorHex, ColorUtil.ColorFromRgba(116, 8, 12, 255));
             bloodFresh = blood;
-            bloodAged = ParseBloodColor(cfg.BloodColorAgedHex, ColorUtil.ToRgba(255, 58, 4, 6));
+            bloodAged = ParseBloodColor(cfg.BloodColorAgedHex, ColorUtil.ColorFromRgba(58, 4, 6, 255));
 
             // Ground decals are CUBES (field 2026-07-22: Quads billboard to
             // face the camera - blood does not do that, looked jarring; cubes
@@ -478,8 +489,8 @@ namespace TassHunting
             // is born the SAME fresh color and darkens to aged over its life via
             // these per-channel evolves. Fixes "bright + regular + dark mixed"
             // (spurt/droplet used to stay bright while only trail darkened).
-            int cfr = (blood >> 16) & 0xFF, cfg2 = (blood >> 8) & 0xFF, cfb = blood & 0xFF;
-            int cagedR = (bloodAged >> 16) & 0xFF, cagedG = (bloodAged >> 8) & 0xFF, cagedB = bloodAged & 0xFF;
+            int cfr = CR(blood), cfg2 = CG(blood), cfb = CB(blood);
+            int cagedR = CR(bloodAged), cagedG = CG(bloodAged), cagedB = CB(bloodAged);
             EvolvingNatFloat RedDark() => new EvolvingNatFloat(EnumTransformFunction.LINEAR, cagedR - cfr);
             EvolvingNatFloat GreenDark() => new EvolvingNatFloat(EnumTransformFunction.LINEAR, cagedG - cfg2);
             EvolvingNatFloat BlueDark() => new EvolvingNatFloat(EnumTransformFunction.LINEAR, cagedB - cfb);
@@ -505,8 +516,7 @@ namespace TassHunting
             dropletProps.GreenEvolve = GreenDark();
             dropletProps.BlueEvolve = BlueDark();
 
-            int wr = (blood >> 16) & 0xFF, wg = (blood >> 8) & 0xFF, wb = blood & 0xFF;
-            int water = ColorUtil.ToRgba(Math.Max(6, (int)(130 * waterOpacity)), wr, wg, wb);
+            int water = ColorUtil.ColorFromRgba(CR(blood), CG(blood), CB(blood), Math.Max(6, (int)(130 * waterOpacity)));
             waterProps = new SimpleParticleProperties(
                 1, 1, water, new Vec3d(), new Vec3d(),
                 new Vec3f(-0.02f, -0.01f, -0.02f), new Vec3f(0.02f, 0.015f, 0.02f),
@@ -653,15 +663,11 @@ namespace TassHunting
                 // vanished in seconds regardless of the 30/60s lifetime. LINEAR
                 // (255 + -255*seq) fades cleanly 255->0 across the FULL life.
                 groundProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, -255f);
-                // AGE COLOR: every drop is born the SAME fresh color and darkens
-                // to aged over ITS OWN life via per-channel LINEAR evolves. Blood
-                // comes out unified and only darkens with age (user 2026-07-22).
-                // ToRgba packs (a<<24|r<<16|g<<8|b) so r=>>16, g=>>8, b=&0xff.
-                int fr = (bloodFresh >> 16) & 0xFF, fg = (bloodFresh >> 8) & 0xFF, fb = bloodFresh & 0xFF;
-                int ar2 = (bloodAged >> 16) & 0xFF, ag2 = (bloodAged >> 8) & 0xFF, ab2 = bloodAged & 0xFF;
-                groundProps.RedEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, ar2 - fr);
-                groundProps.GreenEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, ag2 - fg);
-                groundProps.BlueEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, ab2 - fb);
+                // AGE COLOR: born fresh, darkens to aged over its own life.
+                // BGRA-packed color (red = low byte) via CR/CG/CB accessors.
+                groundProps.RedEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, CR(bloodAged) - CR(bloodFresh));
+                groundProps.GreenEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, CG(bloodAged) - CG(bloodFresh));
+                groundProps.BlueEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, CB(bloodAged) - CB(bloodFresh));
 
                 if (s.Kind == KindTrail && s.HasSeg)
                 {
