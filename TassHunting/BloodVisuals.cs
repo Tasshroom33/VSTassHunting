@@ -333,8 +333,18 @@ namespace TassHunting
                     var m = ent.Pos.Motion;
                     double horiz = Math.Sqrt(m.X * m.X + m.Z * m.Z);
                     float gait = horiz >= 0.08 ? runMult : (horiz < 0.015 ? 0.85f : 1f);
+                    // water blood leads at the collision-box FRONT of a mover
+                    double fwdX = 0, fwdZ = 0;
+                    if (horiz > 0.01)
+                    {
+                        double half = 0.45;
+                        var cb = ent.CollisionBox;
+                        if (cb != null) half = Math.Max(cb.XSize, cb.ZSize) * 0.5 * 0.9;
+                        fwdX = m.X / horiz * half;
+                        fwdZ = m.Z / horiz * half;
+                    }
                     Deposit(ent.Pos.X, ent.Pos.Y, ent.Pos.Z,
-                        KindTrail, (0.8f + 0.5f * stacks) * trailScale * gait, 0.35f * stacks * trailScale * gait, ts);
+                        KindTrail, (0.8f + 0.5f * stacks) * trailScale * gait, 0.35f * stacks * trailScale * gait, ts, fwdX, fwdZ);
                 }
 
                 // trail state of entities that stopped bleeding is dropped
@@ -466,9 +476,11 @@ namespace TassHunting
         /// <summary>One blood event at world position (x,y,z). Resolves the real
         /// surface below; routes to a water tile or a ground spot. For trail
         /// deposits (ts != null) close-together drips GROW the previous spot
-        /// into a pool instead of stacking new spots. Returns the ground spot
-        /// id this blood went into, or -1 (water, or no surface).</summary>
-        private int Deposit(double x, double y, double z, byte kind, float intensity, float waterAmount, TrailState ts)
+        /// into a pool instead of stacking new spots. fwdX/fwdZ lead the WATER
+        /// deposit to the front of the moving animal's collision box (playtest:
+        /// the bow wave, not a wake behind it). Returns the ground spot id this
+        /// blood went into, or -1 (water, or no surface).</summary>
+        private int Deposit(double x, double y, double z, byte kind, float intensity, float waterAmount, TrailState ts, double fwdX = 0, double fwdZ = 0)
         {
             var cfg = HuntingModSystem.Cfg;
             if (!ResolveSurface(x, y, z, out double surfY, out bool isWater, out var waterKey)) return -1;
@@ -485,8 +497,22 @@ namespace TassHunting
                     if (now < ts.NextWaterMs) { ts.LastSpotId = -1; return -1; }
                     ts.NextWaterMs = now + 1000;
                 }
+                // lead the blood to the FRONT of the moving animal
+                if (fwdX != 0 || fwdZ != 0)
+                {
+                    int ox = (int)Math.Floor(x + fwdX), oz = (int)Math.Floor(z + fwdZ);
+                    if (ox != waterKey.Item1 || oz != waterKey.Item3)
+                    {
+                        var f = sapi.World.BlockAccessor.GetBlock(scratch.Set(ox, waterKey.Item2, oz), BlockLayersAccess.Fluid);
+                        if (f != null && f.IsLiquid()) waterKey = (ox, waterKey.Item2, oz);
+                    }
+                }
+                bool newTile = !waterTiles.ContainsKey(waterKey);
                 waterTiles.TryGetValue(waterKey, out float cur);
                 waterTiles[waterKey] = Math.Min(6f, cur + waterAmount);
+                // first blood in a column: push NOW - a fast animal is in and
+                // out of the stream before the 1 Hz water broadcast (playtest)
+                if (newTile) SendWaterToNearbyPlayers(cfg);
                 if (ts != null) { ts.LastSpotId = -1; } // trail broken by water
                 return -1;
             }
@@ -1142,10 +1168,15 @@ namespace TassHunting
                     if (clots < 1) continue; // dialed off
                     float wMin = Math.Max(0.05f, cfg.WaterClotSizeMin);
                     float wMax = Math.Max(wMin, cfg.WaterClotSizeMax);
+                    // clots start SMALL and grow as they fade (playtest: the
+                    // sediment puff blooms outward, it does not spawn full-size)
+                    float startSize = wMin * 0.6f;
+                    float endSize = wMin + (wMax - wMin) * GameMath.Clamp(amt / 4f, 0.3f, 1f);
                     waterProps.MinQuantity = clots;
                     waterProps.AddQuantity = 1;
-                    waterProps.MinSize = wMin + (wMax - wMin) * 0.25f * amt / 4f;
-                    waterProps.MaxSize = wMin + (wMax - wMin) * GameMath.Clamp(amt / 4f, 0.3f, 1f);
+                    waterProps.MinSize = startSize;
+                    waterProps.MaxSize = startSize * 1.3f;
+                    waterProps.SizeEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, endSize - startSize);
                     // hang IN the water column below the surface, not on it
                     waterProps.MinPos.Set(kv.Key.x + 0.5 - 0.42, kv.Key.y + 0.35, kv.Key.z + 0.5 - 0.42);
                     waterProps.AddPos.Set(0.84, 0.45, 0.84);
