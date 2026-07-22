@@ -386,6 +386,14 @@ namespace TassHunting
             if (!HuntingModSystem.Cfg.StickyProjectilesEnabled) return true; // vanilla fate
             if (__instance.World.Side != EnumAppSide.Server) return true;
             if (target == null) return true;
+            // NEVER stick to the SHOOTER (field 2026-07-22): VS registers an
+            // early-flight collision against the firer - the "double hit" quirk
+            // - and without this guard shooting the ground stuck the arrow to
+            // the player. Fall through to vanilla die/drop for a self-hit.
+            // FiredBy can be null server-side; the synced "firedBy" attribute is
+            // the engine's own fallback (EntityProjectileBase.FromBytes).
+            long shooterId = __instance.FiredBy?.EntityId ?? __instance.WatchedAttributes.GetLong("firedBy", 0L);
+            if (shooterId != 0L && target.EntityId == shooterId) return true;
             // Arrows AND spears stick; thrown stones keep vanilla behavior.
             if (__instance.Code == null) return true;
             string path = __instance.Code.Path;
