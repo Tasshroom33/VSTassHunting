@@ -211,7 +211,7 @@ namespace TassHunting
         // their lifetime (field 2026-07-22). Set equal to BloodColorHex to
         // disable the age darkening.
         public string BloodColorAgedHex = "#3A0406";
-        public float BloodRefreshSeconds = 4f;          // decal redraw cycle
+        public float BloodRefreshSeconds = 4f;          // DEPRECATED (0.9.12): decals no longer re-emit; kept so old configs don't error
         public float BloodOnHitMinDamage = 0.5f;
         public float BloodTrailScale = 1f;              // server: trail/hit deposit amount
         public float CorpseBloodScale = 1f;             // server: death pool amount (0 = off)

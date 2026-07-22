@@ -57,10 +57,11 @@ namespace TassHunting
             public byte Kind;
             public bool HasSeg;
             public double PrevX, PrevY, PrevZ;
-            public long NextEmitMs;
+            public bool GroundEmitted;   // ground decal particles are spawned ONCE, then live their full lifetime
             public int SpurtsLeft;
             public long NextSpurtMs;
             public bool DropletsPending;
+            public long DropletAtMs;   // droplets fall after this (fake fall-delay from wound height)
         }
 
         /// <summary>Per-entity observation state (hurt counter, trail anchor,
@@ -92,9 +93,8 @@ namespace TassHunting
         private string appliedColorHex;
         private float appliedWaterOpacity = -1f;
         private bool appliedSoftWater;
-        private int bloodFresh, bloodAged; // ground blood lerps fresh -> aged by spot age
+        private int bloodFresh, bloodAged; // ground blood dries fresh -> aged over the particle's life
         private static readonly EvolvingNatFloat FadeOut = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
-        private static readonly EvolvingNatFloat NoFade = new EvolvingNatFloat(EnumTransformFunction.LINEAR, 0f);
 
         public override void StartClientSide(ICoreClientAPI api)
         {
@@ -348,7 +348,7 @@ namespace TassHunting
             if (spot.FallHeight > 0.35f && cfg.BloodSplatter.Enabled)
             {
                 spot.DropletsPending = true;
-                spot.NextEmitMs = now + Math.Min(1200, (int)(spot.FallHeight * 150f));
+                spot.DropletAtMs = now + Math.Min(1200, (int)(spot.FallHeight * 150f));
             }
             if (tr != null && tr.LastSpotId >= 0 && kind == KindTrail)
             {
@@ -499,18 +499,6 @@ namespace TassHunting
         }
 
         /// <summary>Lerp two ARGB ints channel-wise (blood dries fresh->aged).</summary>
-        private static int LerpColor(int a, int b, float t)
-        {
-            t = GameMath.Clamp(t, 0f, 1f);
-            int aa = (a >> 24) & 0xFF, ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF;
-            int ba = (b >> 24) & 0xFF, br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
-            int r = (int)(ar + (br - ar) * t);
-            int g = (int)(ag + (bg - ag) * t);
-            int bl = (int)(ab + (bb - ab) * t);
-            int al = (int)(aa + (ba - aa) * t);
-            return (al << 24) | (r << 16) | (g << 8) | bl;
-        }
-
         private static float Hash01(int seed)
         {
             unchecked
@@ -518,32 +506,6 @@ namespace TassHunting
                 uint h = (uint)seed * 2654435761u;
                 h ^= h >> 13; h *= 2246822519u; h ^= h >> 16;
                 return (h & 0xFFFFFF) / (float)0x1000000;
-            }
-        }
-
-        private void ApplyDecalState(bool ending, long remainMs, float pLife)
-        {
-            // baseline: settled decals do NOT gravitate (a pool/ending drop
-            // sits, it does not fall). The trail-draining branch overrides to
-            // GravityEffect 1.0 per-drop AFTER this call.
-            groundProps.GravityEffect = 0f;
-            groundProps.LifeLength = ending ? Math.Min(pLife, remainMs / 1000f + 0.4f) : pLife;
-            if (ending)
-            {
-                // sink DOWN THROUGH the block and fade, instead of blinking out
-                // (WithTerrainCollision off so the sink is not arrested at the
-                // surface). Verified via decompile: it defaults true.
-                groundProps.OpacityEvolve = FadeOut;
-                groundProps.WithTerrainCollision = false;
-                groundProps.MinVelocity.Set(0f, -0.12f, 0f);
-                groundProps.AddVelocity.Set(0f, 0.02f, 0f);
-            }
-            else
-            {
-                groundProps.OpacityEvolve = NoFade;
-                groundProps.WithTerrainCollision = true;
-                groundProps.MinVelocity.Set(0f, 0f, 0f);
-                groundProps.AddVelocity.Set(0f, 0f, 0f);
             }
         }
 
@@ -616,30 +578,52 @@ namespace TassHunting
                     }
                 }
 
-                if (!cfg.BloodTrails.Enabled) continue;
-                if (now < s.NextEmitMs) continue;
-                s.NextEmitMs = now + (int)(GameMath.Clamp(cfg.BloodRefreshSeconds, 1f, 15f) * 1000f);
+                // GROUND DECAL - spawned exactly ONCE per spot (0.9.12: was
+                // re-emitted every ~4.6s, and the seams between disposable
+                // particle batches read as blinking). Each drop is now a SINGLE
+                // particle that lives the spot's full lifetime, sinking slowly
+                // through the block and fading over its whole tail - born once,
+                // dies once, no re-emit, no blink.
+                if (!cfg.BloodTrails.Enabled || s.GroundEmitted) continue;
+                s.GroundEmitted = true;
 
                 var tr = cfg.BloodTrails;
-                long spotAgeMs = now - s.BornMs;
                 float intenFrac = GameMath.Clamp(s.Intensity / MaxIntensity, 0f, 1f);
-                // AGE COLOR: ground blood dries from fresh (bright) toward aged
-                // (dark) over the spot's life (field 2026-07-22). Cubes, so the
-                // color is just set on the shared prototype before each spawn.
-                float ageFrac = GameMath.Clamp(spotAgeMs / (float)Math.Max(1, s.LifeMs), 0f, 1f);
-                groundProps.Color = LerpColor(bloodFresh, bloodAged, ageFrac);
                 int spotId = kv.Key;
                 float tsMin = Math.Max(0.05f, Math.Min(tr.SizeMin, tr.SizeMax));
                 float tsMax = Math.Max(tsMin, Math.Max(tr.SizeMin, tr.SizeMax));
-                float tLifeMin = Math.Max(1f, Math.Min(tr.LifetimeMin, tr.LifetimeMax));
-                float tLifeMax = Math.Max(tLifeMin, Math.Max(tr.LifetimeMin, tr.LifetimeMax));
                 float tSprMin = Math.Max(0f, Math.Min(tr.SpreadMin, tr.SpreadMax));
                 float tSprMax = Math.Max(tSprMin, Math.Max(tr.SpreadMin, tr.SpreadMax));
                 int tQtyMin = Math.Max(1, Math.Min(tr.QtyMin, tr.QtyMax));
                 int tQtyMax = Math.Max(tQtyMin, Math.Max(tr.QtyMin, tr.QtyMax));
+                // the whole spot lifetime, in seconds - the particle lives this
+                // long and fades+sinks across it (no per-drop ragged life now;
+                // the spot IS the drop's life)
+                float spotLifeSec = s.LifeMs / 1000f;
+
+                // one persistent decal particle: full lifetime, back-loaded
+                // opacity fade (stays solid, fades at the end), slow sink DOWN
+                // THROUGH the block (collision off) over its whole life.
+                groundProps.Color = bloodFresh;
                 groundProps.MinQuantity = 1;
                 groundProps.AddQuantity = 0;
-                float pLife = GameMath.Clamp(cfg.BloodRefreshSeconds, 1f, 15f) * 1.15f;
+                groundProps.LifeLength = spotLifeSec;
+                groundProps.GravityEffect = 0f;
+                groundProps.WithTerrainCollision = false;
+                groundProps.OpacityEvolve = FadeOut;   // quadratic -> full then fade at end
+                // AGE COLOR over the particle's own life: dry from fresh (bright)
+                // to aged (dark). Per-channel EvolvingNatFloat deltas - the one
+                // particle darkens as it lives (no re-emit needed).
+                int fr = (bloodFresh >> 16) & 0xFF, fg = (bloodFresh >> 8) & 0xFF, fb = bloodFresh & 0xFF;
+                int ar2 = (bloodAged >> 16) & 0xFF, ag2 = (bloodAged >> 8) & 0xFF, ab2 = bloodAged & 0xFF;
+                groundProps.RedEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, ar2 - fr);
+                groundProps.GreenEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, ag2 - fg);
+                groundProps.BlueEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, ab2 - fb);
+                // sink slowly under the surface across the life (a few tenths of
+                // a block total) and shrink to nothing (soak-in read)
+                float sinkPerSec = 0.35f / Math.Max(1f, spotLifeSec);
+                groundProps.MinVelocity.Set(0f, -sinkPerSec, 0f);
+                groundProps.AddVelocity.Set(0f, 0f, 0f);
 
                 if (s.Kind == KindTrail && s.HasSeg)
                 {
@@ -649,57 +633,23 @@ namespace TassHunting
                     int drops = GameMath.Clamp((int)Math.Ceiling(segLen * perBlock), 1, 24);
                     for (int k = 0; k < drops; k++)
                     {
-                        float dropLifeSec = tLifeMin + (tLifeMax - tLifeMin) * Hash01(spotId * 307 + k * 11);
-                        long dropLifeMs = Math.Min((long)(dropLifeSec * 1000f), s.LifeMs);
-                        long dropRemain = dropLifeMs - spotAgeMs;
-                        if (dropRemain <= 0) continue;
-                        long dropFadeWin = Math.Max(2500, dropLifeMs / 8);
-                        bool dEnd = dropRemain <= dropFadeWin;
-                        float dFade = dEnd ? 0.55f + 0.45f * GameMath.Clamp(dropRemain / (float)dropFadeWin, 0f, 1f) : 1f;
-                        ApplyDecalState(dEnd, dropRemain, pLife);
-
                         float t = (k + 0.25f + 0.5f * Hash01(spotId * 271 + k * 31)) / drops;
                         float jit = tSprMin + (tSprMax - tSprMin) * Hash01(spotId * 199 + k * 7);
                         double lx = s.PrevX + sx * t + (Hash01(spotId * 211 + k * 17) - 0.5) * 2.0 * jit;
                         double lz = s.PrevZ + sz * t + (Hash01(spotId * 223 + k * 19 + 5) - 0.5) * 2.0 * jit;
                         double ly = s.PrevY + (s.Y - s.PrevY) * t;
                         if (!ResolveGroundY(lx, ly + 1.0, lz, out double gy)) continue;
-                        float psize = GameMath.Lerp(tsMin, tsMax, 0.5f * Hash01(spotId * 239 + k * 23 + 11) + 0.5f * intenFrac) * dFade;
+                        float psize = GameMath.Lerp(tsMin, tsMax, 0.5f * Hash01(spotId * 239 + k * 23 + 11) + 0.5f * intenFrac);
                         groundProps.MinSize = psize;
                         groundProps.MaxSize = psize;
-                        if (!dEnd)
-                        {
-                            // BLOOD DRAINING: trail drops are born 0.5 (4/8)
-                            // blocks up and fall under VINTAGE STORY's own
-                            // gravity (GravityEffect 1.0 = the engine's semi-
-                            // realistic fall) - they accelerate from rest like
-                            // real dripping blood, then terrain collision lands
-                            // them on the surface.
-                            groundProps.GravityEffect = 1f;
-                            groundProps.MinPos.Set(lx, gy + 0.5, lz);
-                            groundProps.MinVelocity.Set(0f, 0f, 0f);
-                            groundProps.AddVelocity.Set(0f, 0f, 0f);
-                        }
-                        else
-                        {
-                            // ending drops sink into the surface (velocity from
-                            // ApplyDecalState); spawn flush so the sink starts there
-                            groundProps.GravityEffect = 0f;
-                            // nestle slightly INTO the surface (grass base) so
-                            // small cubes pool around stems instead of floating
-                            // in the blades and Z-fighting (field 2026-07-22)
-                            groundProps.MinPos.Set(lx, gy - 0.03, lz);
-                        }
+                        groundProps.SizeEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -0.85f * psize);
+                        groundProps.MinPos.Set(lx, gy + 0.02, lz);
                         groundProps.AddPos.Set(0, 0, 0);
                         capi.World.SpawnParticles(groundProps);
                     }
                 }
                 else
                 {
-                    long poolFadeWin = Math.Clamp((long)(s.LifeMs * 0.15f), 3000L, 30000L);
-                    bool ending = remainMs <= poolFadeWin;
-                    float fade = ending ? 0.55f + 0.45f * GameMath.Clamp(remainMs / (float)poolFadeWin, 0f, 1f) : 1f;
-                    ApplyDecalState(ending, remainMs, pLife);
                     int count = GameMath.Clamp((int)Math.Round((double)tQtyMin + (tQtyMax - tQtyMin) * intenFrac), 1, 16);
                     float radius = (tSprMin + (tSprMax - tSprMin) * 0.5f) + 0.05f * s.Intensity;
                     for (int k = 0; k < count; k++)
@@ -707,10 +657,11 @@ namespace TassHunting
                         float ang = Hash01(spotId * 97 + k * 13) * GameMath.TWOPI;
                         float rad = radius * (float)Math.Sqrt(Hash01(spotId * 131 + k * 29 + 7));
                         float variation = 0.85f + 0.3f * Hash01(spotId * 173 + k * 41 + 3);
-                        float psize = GameMath.Lerp(tsMin, tsMax, intenFrac) * variation * fade;
+                        float psize = GameMath.Lerp(tsMin, tsMax, intenFrac) * variation;
                         groundProps.MinSize = psize;
                         groundProps.MaxSize = psize;
-                        groundProps.MinPos.Set(s.X + Math.Sin(ang) * rad, s.Y - 0.03, s.Z + Math.Cos(ang) * rad);
+                        groundProps.SizeEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -0.85f * psize);
+                        groundProps.MinPos.Set(s.X + Math.Sin(ang) * rad, s.Y + 0.02, s.Z + Math.Cos(ang) * rad);
                         groundProps.AddPos.Set(0, 0, 0);
                         capi.World.SpawnParticles(groundProps);
                     }
