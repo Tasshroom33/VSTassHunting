@@ -345,21 +345,46 @@ namespace TassHunting
 
                 var found = sapi.World.GetEntitiesAround(e.Pos.XYZ, radius, radius, ent =>
                 {
+                    // Landed arrows/spears (projectiles) ...
                     var p = ent as Vintagestory.GameContent.EntityProjectileBase;
-                    if (p == null || !p.CanCollect(e)) return false;
-                    if (ent.WatchedAttributes.GetLong("sa_target", 0L) != 0L) return false; // riding a target
-                    if (Cfg.PickupOnlyOwnProjectiles
-                        && ent.WatchedAttributes.GetLong("firedBy", 0L) != meId) return false;
-                    return true;
+                    if (p != null)
+                    {
+                        if (!p.CanCollect(e)) return false;
+                        if (ent.WatchedAttributes.GetLong("sa_target", 0L) != 0L) return false; // riding a target
+                        if (Cfg.PickupOnlyOwnProjectiles
+                            && ent.WatchedAttributes.GetLong("firedBy", 0L) != meId) return false;
+                        return true;
+                    }
+                    // ... AND dropped arrowheads from broken arrows, at the SAME
+                    // radius (user 2026-07-22). A head is a ground ItemEntity, not
+                    // a projectile - it carries no firedBy, so PickupOnlyOwn cannot
+                    // gate it; arrowhead debris is rare and always yours to grab.
+                    // CanCollect honors the 1s post-spawn pickup delay (EntityItem)
+                    // so it does not vacuum the head the instant it drops.
+                    if (ent is EntityItem ei && ei.CanCollect(e)
+                        && ei.Itemstack?.Collectible?.Code?.Path is string ip
+                        && ip.StartsWith("arrowhead", StringComparison.OrdinalIgnoreCase))
+                        return true;
+                    return false;
                 });
 
                 foreach (var ent in found)
                 {
-                    var stack = (ent as Vintagestory.GameContent.EntityProjectileBase)?.OnCollected(e);
-                    if (stack == null) continue;
-                    if (!e.TryGiveItemStack(stack)) continue; // inventory full: leave it
-                    sapi.World.PlaySoundAt(new AssetLocation("sounds/player/collect"), ent, null, true, 16f);
-                    ent.Die(EnumDespawnReason.PickedUp);
+                    if (ent is Vintagestory.GameContent.EntityProjectileBase proj)
+                    {
+                        var stack = proj.OnCollected(e);
+                        if (stack == null) continue;
+                        if (!e.TryGiveItemStack(stack)) continue; // inventory full: leave it
+                        sapi.World.PlaySoundAt(new AssetLocation("sounds/player/collect"), ent, null, true, 16f);
+                        ent.Die(EnumDespawnReason.PickedUp);
+                    }
+                    else if (ent is EntityItem head && head.Itemstack != null)
+                    {
+                        var stack = head.Itemstack;
+                        if (!e.TryGiveItemStack(stack)) continue; // inventory full: leave it
+                        sapi.World.PlaySoundAt(new AssetLocation("sounds/player/collect"), ent, null, true, 16f);
+                        ent.Die(EnumDespawnReason.PickedUp);
+                    }
                 }
             }
         }
