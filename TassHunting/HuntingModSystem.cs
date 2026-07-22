@@ -188,6 +188,14 @@ namespace TassHunting
         public float BloodParticleSizeMin = 0.3f;  // client (BT default min 0.3)
         public float BloodParticleSizeMax = 0.8f;  // client (BT running max 0.8; our max = big pools)
 
+        // ---- 0.7.0: the BloodTrail feature-gap batch (user: build 1-5;
+        //      falling droplets was the "ours felt wrong" culprit) ----
+        public bool BloodRainEnabled = true;            // server: rain shortens NEW blood's life
+        public float BloodRainLifetimeSeconds = 300f;   // server: lifetime for blood deposited in rain (BT halved: 10 to 5)
+        public float RunningBloodMult = 1.5f;           // server: sprinting animals bleed harder (1 = off; BT 3-7 particles running)
+        public bool FallingDropletsEnabled = true;      // client: droplets visibly fall from elevated wounds; splat lands with them
+        public float BloodScatter = 0.05f;              // client: droplet/splash scatter velocity (BT BloodSpread 0.05)
+
         // ---- WOUNDED SLOWDOWN (2026-07-19, see WoundedSlowdown.cs; replaces
         //      FleeExhaustion - all AI states, tiered, per the user's table) ----
         public bool WoundedSlowdownEnabled = true;

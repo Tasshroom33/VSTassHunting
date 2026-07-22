@@ -54,6 +54,7 @@ namespace TassHunting
         [ProtoMember(6)] public int RemainMs; // client computes its own expiry
         [ProtoMember(7)] public byte Kind;    // 0 trail, 1 hit, 2 pool
         [ProtoMember(8)] public int AgeMs;    // fresh spots splash on arrival; old ones (login/walk-up) don't
+        [ProtoMember(9)] public float FallHeight; // wound height above the surface: drives falling droplets
     }
 
     [ProtoContract]
@@ -111,6 +112,8 @@ namespace TassHunting
             public double X, Y, Z;
             public float Intensity;
             public long BornMs;
+            public long LifeMs;      // per-spot: rain-deposited blood lives shorter
+            public float FallHeight; // wound height above surface at deposit time
             public byte Kind;
         }
 
@@ -279,6 +282,7 @@ namespace TassHunting
                 // 1. live bleeders drip a trail
                 HashSet<long> aliveBleeders = bleeders.Count > 0 ? new HashSet<long>() : null;
                 float trailScale = Math.Max(0f, cfg.BloodTrailScale);
+                float runMult = Math.Max(0.1f, cfg.RunningBloodMult);
                 foreach (var (ent, stacks) in bleeders)
                 {
                     if (ent == null || !ent.Alive) continue;
@@ -286,8 +290,13 @@ namespace TassHunting
                     if (trailScale <= 0f) continue; // trails dialed off
                     if (!trails.TryGetValue(ent.EntityId, out var ts))
                         trails[ent.EntityId] = ts = new TrailState();
+                    // GAIT (BloodTrail thresholds on per-tick motion length):
+                    // sprinting tears the wound open, standing seeps
+                    var m = ent.Pos.Motion;
+                    double horiz = Math.Sqrt(m.X * m.X + m.Z * m.Z);
+                    float gait = horiz >= 0.08 ? runMult : (horiz < 0.015 ? 0.85f : 1f);
                     Deposit(ent.Pos.X, ent.Pos.Y, ent.Pos.Z,
-                        KindTrail, (0.8f + 0.5f * stacks) * trailScale, 0.35f * stacks * trailScale, ts);
+                        KindTrail, (0.8f + 0.5f * stacks) * trailScale * gait, 0.35f * stacks * trailScale * gait, ts);
                 }
 
                 // trail state of entities that stopped bleeding is dropped
@@ -319,10 +328,9 @@ namespace TassHunting
                 // 3. expiry + cap prune (server side; clients expire on their own clock)
                 if (spots.Count > 0)
                 {
-                    long lifeMs = (long)(cfg.BloodSpotLifetimeSeconds * 1000f);
                     List<int> dead = null;
                     foreach (var kv in spots)
-                        if (now - kv.Value.BornMs > lifeMs)
+                        if (now - kv.Value.BornMs > kv.Value.LifeMs)
                             (dead = dead ?? new List<int>()).Add(kv.Key);
                     if (dead != null) foreach (int id in dead) RemoveSpot(id);
                     // cap prune: oldest first, and TELL the clients that have
@@ -377,7 +385,6 @@ namespace TassHunting
 
             float syncRange = cfg.BloodRenderDistanceBlocks + SyncMarginBlocks;
             float syncRange2 = syncRange * syncRange;
-            long lifeMs = (long)(cfg.BloodSpotLifetimeSeconds * 1000f);
             List<BloodSpotDto> batch = null;
 
             foreach (var iplr in players)
@@ -397,10 +404,10 @@ namespace TassHunting
                     if (!needs) continue;
                     double dx = s.X - px, dz = s.Z - pz;
                     if (dx * dx + dz * dz > syncRange2) continue;
-                    int remain = (int)Math.Max(0, lifeMs - (now - s.BornMs));
+                    int remain = (int)Math.Max(0, s.LifeMs - (now - s.BornMs));
                     if (remain <= 0) continue;
                     (batch = batch ?? new List<BloodSpotDto>()).Add(new BloodSpotDto
-                    { Id = s.Id, X = s.X, Y = s.Y, Z = s.Z, Intensity = s.Intensity, RemainMs = remain, Kind = s.Kind, AgeMs = (int)(now - s.BornMs) });
+                    { Id = s.Id, X = s.X, Y = s.Y, Z = s.Z, Intensity = s.Intensity, RemainMs = remain, Kind = s.Kind, AgeMs = (int)(now - s.BornMs), FallHeight = s.FallHeight });
                     sent.Add(s.Id);
                     if (batch.Count >= SendChunkSize)
                     {
@@ -460,12 +467,31 @@ namespace TassHunting
                 }
             }
 
+            // RAIN (BloodTrail rule: only NEWLY deposited blood gets the rain
+            // lifetime, no retroactive washing): sky-exposed + raining + warm
+            // enough that it is rain, not snow. Rainmap is approximation-grade
+            // here (lifetime only, never block targeting).
+            long life = (long)(cfg.BloodSpotLifetimeSeconds * 1000f);
+            if (cfg.BloodRainEnabled)
+            {
+                var clim = sapi.World.BlockAccessor.GetClimateAt(
+                    scratch.Set((int)Math.Floor(x), (int)Math.Floor(surfY) + 1, (int)Math.Floor(z)),
+                    EnumGetClimateMode.NowValues);
+                if (clim != null && clim.Rainfall > 0.1f && clim.Temperature > 1f
+                    && sapi.World.BlockAccessor.GetRainMapHeightAt((int)Math.Floor(x), (int)Math.Floor(z)) <= surfY + 1.01)
+                {
+                    life = Math.Min(life, (long)(cfg.BloodRainLifetimeSeconds * 1000f));
+                }
+            }
+
             var spot = new Spot
             {
                 Id = nextSpotId++,
                 X = x, Y = surfY, Z = z,
                 Intensity = Math.Min(MaxIntensity, intensity),
                 BornMs = now,
+                LifeMs = Math.Max(1000, life),
+                FallHeight = (float)GameMath.Clamp(y - surfY, 0.0, 8.0),
                 Kind = kind
             };
             spots[spot.Id] = spot;
@@ -690,9 +716,12 @@ namespace TassHunting
             public double X, Y, Z;
             public float Intensity;
             public long ExpireMs;
+            public long TotalLifeMs;    // per-spot (rain blood is short-lived): drives the fade window
+            public float FallHeight;    // wound height above the splat
             public byte Kind;
             public long NextEmitMs;
             public bool BurstDone;
+            public bool DropletsPending; // fresh elevated spot: droplets fall before the splat lands
         }
 
         private class CTile
@@ -706,9 +735,10 @@ namespace TassHunting
         private long clientTickId;
         private readonly Dictionary<int, CSpot> cspots = new Dictionary<int, CSpot>();
         private readonly Dictionary<(int x, int y, int z), CTile> ctiles = new Dictionary<(int, int, int), CTile>();
-        private SimpleParticleProperties groundProps, burstProps, waterProps;
+        private SimpleParticleProperties groundProps, burstProps, waterProps, dropletProps;
         private string appliedColorHex;   // rebuild props when the config color changes (live tuning)
         private float appliedWaterOpacity = -1f;
+        private float appliedScatter = -1f;
         private const int WaterEmitPeriodMs = 2400; // sediment quads live ~3.5s: cycles overlap
 
         private const int EmitPeriodMs = 4000;      // particle life 4.6s: slight overlap
@@ -736,10 +766,14 @@ namespace TassHunting
         private void EnsureParticleProps(HuntingConfig cfg)
         {
             float waterOpacity = GameMath.Clamp(cfg.WaterBloodMaxOpacity, 0.05f, 1f);
-            if (groundProps != null && appliedColorHex == cfg.BloodColorHex && appliedWaterOpacity == waterOpacity) return;
+            float scatter = GameMath.Clamp(cfg.BloodScatter, 0f, 0.5f);
+            if (groundProps != null && appliedColorHex == cfg.BloodColorHex
+                && appliedWaterOpacity == waterOpacity && appliedScatter == scatter) return;
             appliedColorHex = cfg.BloodColorHex;
             appliedWaterOpacity = waterOpacity;
+            appliedScatter = scatter;
             int blood = ParseBloodColor(cfg.BloodColorHex, ColorUtil.ToRgba(255, 116, 8, 12));
+            float sc = 4f * scatter; // BT's BloodSpread scale: 0.05 default = gentle scatter
 
             groundProps = new SimpleParticleProperties(
                 1, 1, blood,
@@ -751,10 +785,20 @@ namespace TassHunting
             burstProps = new SimpleParticleProperties(
                 4, 4, blood,
                 new Vec3d(), new Vec3d(),
-                new Vec3f(-0.4f, 0.1f, -0.4f), new Vec3f(0.4f, 0.5f, 0.4f),
+                new Vec3f(-2f * sc, 0.1f, -2f * sc), new Vec3f(2f * sc, 0.4f + sc, 2f * sc),
                 0.9f, 0.8f, 0.1f, 0.22f,
                 EnumParticleModel.Cube);
             burstProps.ShouldDieInLiquid = true;
+
+            // Falling droplets (the "ours felt wrong" fix): blood visibly
+            // LEAVES the wound and falls; the ground splat lands with it.
+            dropletProps = new SimpleParticleProperties(
+                2, 3, blood,
+                new Vec3d(), new Vec3d(),
+                new Vec3f(-sc, -0.15f, -sc), new Vec3f(sc, -0.02f, sc),
+                1.1f, 0.9f, 0.1f, 0.2f,
+                EnumParticleModel.Cube);
+            dropletProps.ShouldDieInLiquid = true;
 
             // Blood in water = the VANILLA lakebed-sediment look, tinted red
             // (user 2026-07-21: like stepping on the bottom of a lake - soft
@@ -806,19 +850,30 @@ namespace TassHunting
             {
                 if (packet?.Spots == null || capi == null) return;
                 long now = capi.World.ElapsedMilliseconds;
+                var cfg = HuntingModSystem.Cfg;
                 foreach (var d in packet.Spots)
                 {
                     if (!cspots.TryGetValue(d.Id, out var s))
                     {
                         cspots[d.Id] = s = new CSpot();
-                        // splash juice only for blood that JUST happened - old
-                        // blood arriving via login/walk-up appears silently
-                        s.BurstDone = d.AgeMs >= 3000;
+                        // splash/droplet juice only for blood that JUST
+                        // happened - login/walk-up blood appears silently
+                        bool fresh = d.AgeMs < 3000;
+                        s.BurstDone = !fresh;
+                        if (fresh && d.FallHeight > 0.6f && cfg != null && cfg.FallingDropletsEnabled)
+                        {
+                            // droplets fall first; the splat materializes when
+                            // they land (BT: ~150ms per block of drop height)
+                            s.DropletsPending = true;
+                            s.NextEmitMs = now + Math.Min(1200, (int)(d.FallHeight * 150f));
+                        }
                     }
                     s.X = d.X; s.Y = d.Y; s.Z = d.Z;
                     s.Intensity = d.Intensity;
                     s.Kind = d.Kind;
+                    s.FallHeight = d.FallHeight;
                     s.ExpireMs = now + d.RemainMs;
+                    s.TotalLifeMs = Math.Max(1000, d.RemainMs + d.AgeMs);
                 }
             }
             catch (Exception ex) { WarnRateLimited("spots packet", ex); }
@@ -877,6 +932,24 @@ namespace TassHunting
                     double dx = s.X - px, dz = s.Z - pz;
                     if (dx * dx + dz * dz > maxDist2) continue;
                     rendered++;
+
+                    // falling droplets fire IMMEDIATELY (the splat itself is
+                    // delay-gated by NextEmitMs) - blood visibly LEAVES the
+                    // wound, falls, and the splat lands with it
+                    if (s.DropletsPending)
+                    {
+                        s.DropletsPending = false;
+                        if (cfg.FallingDropletsEnabled && dropletProps != null)
+                        {
+                            dropletProps.MinQuantity = 2 + (int)(s.Intensity / 2f);
+                            dropletProps.AddQuantity = 2;
+                            dropletProps.LifeLength = GameMath.Clamp(s.FallHeight * 0.2f, 0.4f, 1.4f);
+                            dropletProps.MinPos.Set(s.X - 0.12, s.Y + s.FallHeight - 0.1, s.Z - 0.12);
+                            dropletProps.AddPos.Set(0.24, 0.15, 0.24);
+                            capi.World.SpawnParticles(dropletProps);
+                        }
+                    }
+
                     if (now < s.NextEmitMs) continue;
                     int emitMs = (int)(GameMath.Clamp(cfg.BloodRefreshSeconds, 1f, 15f) * 1000f);
                     s.NextEmitMs = now + emitMs;
@@ -886,9 +959,10 @@ namespace TassHunting
                         s.BurstDone = true;
                         if (s.Kind != KindTrail)
                         {
+                            // splash at the WOUND height, not at the ground
                             burstProps.MinQuantity = 3 + s.Intensity;
                             burstProps.AddQuantity = 3;
-                            burstProps.MinPos.Set(s.X - 0.1, s.Y + 0.3, s.Z - 0.1);
+                            burstProps.MinPos.Set(s.X - 0.1, s.Y + s.FallHeight + 0.2, s.Z - 0.1);
                             burstProps.AddPos.Set(0.2, 0.3, 0.2);
                             capi.World.SpawnParticles(burstProps);
                         }
@@ -900,7 +974,7 @@ namespace TassHunting
                     // every 4 seconds. Fade: last 25% of life shrinks it.
                     // size: single drips sit near the MIN size, big pools near
                     // the MAX (user tuning model: size min/max + rate + duration)
-                    float lifeFrac = GameMath.Clamp((s.ExpireMs - now) / (0.25f * Math.Max(1f, cfg.BloodSpotLifetimeSeconds * 1000f)), 0f, 1f);
+                    float lifeFrac = GameMath.Clamp((s.ExpireMs - now) / (0.25f * Math.Max(1f, s.TotalLifeMs)), 0f, 1f);
                     float fade = 0.55f + 0.45f * lifeFrac;
                     float sMin = Math.Max(0.05f, cfg.BloodParticleSizeMin);
                     float sMax = Math.Max(sMin, cfg.BloodParticleSizeMax);

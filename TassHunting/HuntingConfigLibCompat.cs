@@ -90,6 +90,10 @@ namespace TassHunting
                     0.25f, 4f);
                 Help("Higher = more blood on the ground. A standing animal merges its drips into one growing pool.");
                 SliderFloat("Blood lasts (sec)", () => cfg.BloodSpotLifetimeSeconds, v => cfg.BloodSpotLifetimeSeconds = v, 30f, 3600f);
+                SliderFloat("Running blood boost", () => cfg.RunningBloodMult, v => cfg.RunningBloodMult = v, 1f, 3f);
+                Help("Sprinting animals bleed this much harder. 1 = same as walking.");
+                Checkbox("Rain washes blood away faster", () => cfg.BloodRainEnabled, v => cfg.BloodRainEnabled = v);
+                SliderFloat("Blood lasts in rain (sec)", () => cfg.BloodRainLifetimeSeconds, v => cfg.BloodRainLifetimeSeconds = v, 10f, 600f);
                 SliderFloat("Particle size, min", () => cfg.BloodParticleSizeMin, v => cfg.BloodParticleSizeMin = v, 0.05f, 2f);
                 SliderFloat("Particle size, max", () => cfg.BloodParticleSizeMax, v => cfg.BloodParticleSizeMax = v, 0.05f, 2.5f);
                 Help("Single drips sit near the min size, big pools near the max.");
@@ -108,6 +112,7 @@ namespace TassHunting
             if (ImGui.CollapsingHeader("Blood in water"))
             {
                 Checkbox("Enable water blood", () => cfg.WaterBloodEnabled, v => cfg.WaterBloodEnabled = v);
+                Help("Off = water swallows blood without a trace (the old BloodTrail behavior).");
                 SliderFloat("Fade speed", () => cfg.WaterBloodDecayPerSecond, v => cfg.WaterBloodDecayPerSecond = v, 0.02f, 0.5f);
                 SliderFloat("Spread speed", () => cfg.WaterBloodSpreadPerSecond, v => cfg.WaterBloodSpreadPerSecond = v, 0f, 0.1f);
                 Help("Blood in water spreads to neighboring water and fades out. Higher fade = shorter-lived stains.");
@@ -116,6 +121,9 @@ namespace TassHunting
             if (ImGui.CollapsingHeader("Blood look (your screen only)"))
             {
                 ColorHex("Blood color", () => cfg.BloodColorHex, v => cfg.BloodColorHex = v);
+                Checkbox("Falling droplets", () => cfg.FallingDropletsEnabled, v => cfg.FallingDropletsEnabled = v);
+                Help("Blood visibly falls from the wound before the splat lands.");
+                SliderFloat("Droplet scatter", () => cfg.BloodScatter, v => cfg.BloodScatter = v, 0f, 0.5f);
                 SliderFloat("Redraw every (sec)", () => cfg.BloodRefreshSeconds, v => cfg.BloodRefreshSeconds = v, 1f, 15f);
                 Help("Blood is drawn with particles that refresh on this cycle. Lower = steadier look, slightly more particle load.");
                 SliderFloat("Water stain opacity", () => cfg.WaterBloodMaxOpacity, v => cfg.WaterBloodMaxOpacity = v, 0.05f, 1f);
