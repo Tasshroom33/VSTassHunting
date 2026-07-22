@@ -95,7 +95,6 @@ namespace TassHunting
         private float appliedWaterOpacity = -1f;
         private bool appliedSoftWater;
         private int bloodFresh, bloodAged; // ground blood dries fresh -> aged over the particle's life
-        private static readonly EvolvingNatFloat FadeOut = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
 
         public override void StartClientSide(ICoreClientAPI api)
         {
@@ -475,11 +474,24 @@ namespace TassHunting
             // (Splatter spread) is set high, not because gravity is dialed weak.
             // NO OPACITY FADE (0.9.2: blood POPS to end of lifecycle) - exits
             // via late-accelerating SHRINK (quadratic size decay set per shot).
+            // UNIFIED COLOR (2026-07-22): all blood - spurt, droplet, ground -
+            // is born the SAME fresh color and darkens to aged over its life via
+            // these per-channel evolves. Fixes "bright + regular + dark mixed"
+            // (spurt/droplet used to stay bright while only trail darkened).
+            int cfr = (blood >> 16) & 0xFF, cfg2 = (blood >> 8) & 0xFF, cfb = blood & 0xFF;
+            int cagedR = (bloodAged >> 16) & 0xFF, cagedG = (bloodAged >> 8) & 0xFF, cagedB = bloodAged & 0xFF;
+            EvolvingNatFloat RedDark() => new EvolvingNatFloat(EnumTransformFunction.LINEAR, cagedR - cfr);
+            EvolvingNatFloat GreenDark() => new EvolvingNatFloat(EnumTransformFunction.LINEAR, cagedG - cfg2);
+            EvolvingNatFloat BlueDark() => new EvolvingNatFloat(EnumTransformFunction.LINEAR, cagedB - cfb);
+
             burstProps = new SimpleParticleProperties(
                 4, 4, blood, new Vec3d(), new Vec3d(), new Vec3f(), new Vec3f(),
                 2.5f, 1f, 0.12f, 0.28f, EnumParticleModel.Cube);
             burstProps.ShouldDieInLiquid = true;
-            burstProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, 0f);
+            burstProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, -255f); // fade over life (was 0 = never fade)
+            burstProps.RedEvolve = RedDark();
+            burstProps.GreenEvolve = GreenDark();
+            burstProps.BlueEvolve = BlueDark();
 
             // falling droplets: real blood -> VS gravity 1.0 (they only fall,
             // no launch, so this is a clean natural drip from the wound).
@@ -488,7 +500,10 @@ namespace TassHunting
                 new Vec3f(-0.05f, -0.05f, -0.05f), new Vec3f(0.05f, 0f, 0.05f),
                 1.1f, 1f, 0.1f, 0.2f, EnumParticleModel.Cube);
             dropletProps.ShouldDieInLiquid = true;
-            dropletProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
+            dropletProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, -255f); // LINEAR fade (was QUADRATIC = vanished instantly)
+            dropletProps.RedEvolve = RedDark();
+            dropletProps.GreenEvolve = GreenDark();
+            dropletProps.BlueEvolve = BlueDark();
 
             int wr = (blood >> 16) & 0xFF, wg = (blood >> 8) & 0xFF, wb = blood & 0xFF;
             int water = ColorUtil.ToRgba(Math.Max(6, (int)(130 * waterOpacity)), wr, wg, wb);
@@ -497,7 +512,7 @@ namespace TassHunting
                 new Vec3f(-0.02f, -0.01f, -0.02f), new Vec3f(0.02f, 0.015f, 0.02f),
                 3.5f, 0f, 0.7f, 1.3f,
                 soft ? EnumParticleModel.Quad : EnumParticleModel.Cube);
-            waterProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
+            waterProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, -255f); // LINEAR fade (quadratic vanished instantly)
         }
 
         /// <summary>Blood SIZE multiplier by number of stuck arrows (user table
@@ -584,9 +599,10 @@ namespace TassHunting
                         burstProps.LifeLength = splatLife;
                         burstProps.MinVelocity.Set(-0.45f * spdMax, 0.8f * spdMin, -0.45f * spdMax);
                         burstProps.AddVelocity.Set(0.9f * spdMax, spdMax - 0.8f * spdMin, 0.9f * spdMax);
-                        // opacity holds then fades at the end (over its own life),
-                        // and it EXPANDS like the settled ground blood does.
-                        burstProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
+                        // opacity fades LINEARLY over its life (quadratic -255
+                        // cratered it to 0 at ~6% of life - the vanish bug); it
+                        // EXPANDS like the settled ground blood does.
+                        burstProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, -255f);
                         burstProps.SizeEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR,
                             (burstProps.MinSize + burstProps.MaxSize) * 0.5f);
                         // WIDE spawn box: particles emerge at the body surface,
@@ -631,11 +647,16 @@ namespace TassHunting
                 groundProps.AddQuantity = 0;
                 groundProps.GravityEffect = 0f;
                 groundProps.WithTerrainCollision = false;
-                // fade: holds high, fades near the end (quadratic is applied over
-                // the particle's OWN LifeLength, seq 0..1 - so it is inherently
-                // lifetime-relative, whatever life we set per drop below).
-                groundProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
-                // AGE COLOR over the particle's own life: fresh -> aged.
+                // FADE (fixed 2026-07-22): LINEAR, not QUADRATIC. Quadratic with
+                // factor -255 is firstval + sign*(factor*seq)^2, which craters
+                // opacity to 0 at seq~=0.06 (6% of life) - THAT is why blood
+                // vanished in seconds regardless of the 30/60s lifetime. LINEAR
+                // (255 + -255*seq) fades cleanly 255->0 across the FULL life.
+                groundProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, -255f);
+                // AGE COLOR: every drop is born the SAME fresh color and darkens
+                // to aged over ITS OWN life via per-channel LINEAR evolves. Blood
+                // comes out unified and only darkens with age (user 2026-07-22).
+                // ToRgba packs (a<<24|r<<16|g<<8|b) so r=>>16, g=>>8, b=&0xff.
                 int fr = (bloodFresh >> 16) & 0xFF, fg = (bloodFresh >> 8) & 0xFF, fb = bloodFresh & 0xFF;
                 int ar2 = (bloodAged >> 16) & 0xFF, ag2 = (bloodAged >> 8) & 0xFF, ab2 = bloodAged & 0xFF;
                 groundProps.RedEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, ar2 - fr);
