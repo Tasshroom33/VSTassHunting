@@ -115,17 +115,30 @@ namespace TassHunting
         /// process from HuntingModSystem's guarded patch block.</summary>
         internal static void PatchInterpolationHook(ICoreAPI api, Harmony harmony)
         {
-            var t = AccessTools.TypeByName("EntityBehaviorInterpolatePosition")
-                 ?? AccessTools.TypeByName("Vintagestory.GameContent.EntityBehaviorInterpolatePosition");
-            var mi = t?.GetMethod("OnRenderFrame");
-            if (mi == null)
+            // FULLY try/catch'd (compat sweep 2026-07-22): a Harmony REJECTION of
+            // the patch (not just a missing method - e.g. another mod already
+            // transpiled OnRenderFrame, or a signature/instance mismatch) throws
+            // a HarmonyException; unguarded, it propagated out of mod load. Matches
+            // the TryPatchTrueAim pattern: a failure disables the feature (riding
+            // arrows fall back to raw packet positions) and logs, never crashes.
+            try
             {
-                api.Logger.Warning("[TassHunting] EntityBehaviorInterpolatePosition.OnRenderFrame not found - riding projectiles will use raw packet positions.");
-                return;
+                var t = AccessTools.TypeByName("EntityBehaviorInterpolatePosition")
+                     ?? AccessTools.TypeByName("Vintagestory.GameContent.EntityBehaviorInterpolatePosition");
+                var mi = t?.GetMethod("OnRenderFrame");
+                if (mi == null)
+                {
+                    api.Logger.Warning("[TassHunting] EntityBehaviorInterpolatePosition.OnRenderFrame not found - riding projectiles will use raw packet positions.");
+                    return;
+                }
+                harmony.Patch(mi,
+                    prefix: new HarmonyMethod(typeof(StickyProjectiles), nameof(RideRenderPrefix)),
+                    postfix: new HarmonyMethod(typeof(StickyProjectiles), nameof(RideRenderPostfix)));
             }
-            harmony.Patch(mi,
-                prefix: new HarmonyMethod(typeof(StickyProjectiles), nameof(RideRenderPrefix)),
-                postfix: new HarmonyMethod(typeof(StickyProjectiles), nameof(RideRenderPostfix)));
+            catch (Exception ex)
+            {
+                api.Logger.Warning("[TassHunting] riding-projectile interpolation patch failed ({0}) - riding arrows use raw packet positions.", ex.Message);
+            }
         }
 
         // CLIENT-side rider registry: target entity id -> projectile ids riding

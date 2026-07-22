@@ -278,6 +278,11 @@ namespace TassHunting
             // TasshroomHunting.json so existing dials survive the rename.
             try
             {
+                // Start from FRESH DEFAULTS every load (compat sweep 2026-07-22):
+                // Cfg is a static, so without this a corrupt second-world config
+                // (load throws below) would keep the PREVIOUS world's tuned values
+                // instead of falling back to defaults. Reset first, then load.
+                Cfg = new HuntingConfig();
                 var loaded = api.LoadModConfig<HuntingConfig>("TassHunting.json")
                           ?? api.LoadModConfig<HuntingConfig>("TasshroomHunting.json");
                 if (loaded != null) Cfg = loaded;
@@ -286,15 +291,32 @@ namespace TassHunting
             }
             catch (Exception ex) { api.Logger.Warning("[TassHunting] config load failed: {0}", ex.Message); }
 
+            // The whole Harmony block is try/catch'd: PatchAll or any manual hook
+            // throwing (a bad attribute target, or another mod having transpiled a
+            // shared method) must NOT abort mod load - the mod degrades to
+            // whatever patched successfully. Each manual hook also guards itself.
             lock (harmonyGate)
             {
                 harmonyRefs++;
                 if (harmony == null)
                 {
-                    harmony = new Harmony("tasshunting");
-                    harmony.PatchAll(); // flee-away + harvest overhaul + sticky projectile attribute patches
-                    TryPatchTrueAim(api);
-                    StickyProjectiles.PatchInterpolationHook(api, harmony);
+                    try
+                    {
+                        harmony = new Harmony("tasshunting");
+                        harmony.PatchAll(); // flee-away + harvest overhaul + sticky projectile attribute patches
+                        TryPatchTrueAim(api);
+                        StickyProjectiles.PatchInterpolationHook(api, harmony);
+                        // Startup probes: a reflection/signature-matched patch that
+                        // matches NOTHING (a future VS rename) must SURFACE in the
+                        // log, not silently disable a feature (diagnostics law).
+                        if (Patch_WoundedSlowdown.MatchedCount == 0)
+                            api.Logger.Warning("[TassHunting] wounded-slowdown matched 0 speed methods - feature inactive (VS traverser signatures may have changed).");
+                        ProbeAiFields(api);
+                    }
+                    catch (Exception ex)
+                    {
+                        api.Logger.Error("[TassHunting] Harmony patching failed: {0} - some features may be inactive.", ex.Message);
+                    }
                 }
             }
         }
@@ -389,6 +411,29 @@ namespace TassHunting
             }
         }
 
+        /// <summary>Startup probe (compat sweep 2026-07-22, diagnostics law): the
+        /// AI patches read vanilla private fields BY NAME at runtime via Traverse
+        /// (targetEntity/targetPos/targetYaw/entity). A VS rename makes those reads
+        /// return null and the patches guard to a SILENT no-op - flee-redirect and
+        /// hit-and-run just stop working with no signal. Check the field names
+        /// exist on their declaring types once at load and WARN on any miss, so a
+        /// VS update surfaces in the log instead of silently disabling a feature.</summary>
+        private static void ProbeAiFields(ICoreAPI api)
+        {
+            try
+            {
+                (System.Type t, string f)[] probes = new[]
+                {
+                    (typeof(Vintagestory.GameContent.AiTaskBaseTargetable), "targetEntity"),
+                    (typeof(Vintagestory.API.Common.AiTaskBase), "entity"),
+                };
+                foreach (var (t, f) in probes)
+                    if (t != null && AccessTools.Field(t, f) == null)
+                        api.Logger.Warning("[TassHunting] AI field '{0}.{1}' not found - flee-redirect / hit-and-run may be inactive (VS AI internals may have changed).", t.Name, f);
+            }
+            catch (Exception ex) { api.Logger.Warning("[TassHunting] AI field probe failed: {0}", ex.Message); }
+        }
+
         /// <summary>PreInitialize is the surgical moment: FiredBy/Pos/Motion are
         /// set, the entity is not yet spawned. Explicit interface implementation,
         /// so the method is found by reflection rather than name-attribute.
@@ -397,13 +442,25 @@ namespace TassHunting
         {
             try
             {
-                var mi = System.Linq.Enumerable.FirstOrDefault(
-                    typeof(Vintagestory.GameContent.EntityProjectile).GetMethods(
-                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic),
-                    m => m.Name == "PreInitialize" || m.Name.EndsWith(".PreInitialize"));
+                // MUST prefer the EXPLICIT interface impl (compat sweep 2026-07-22).
+                // typeof(EntityProjectile).GetMethods returns BOTH:
+                //  - the inherited EntityProjectileBase.PreInitialize virtual, which
+                //    is EMPTY and is NOT what the engine calls at spawn, and
+                //  - the explicit IProjectile.PreInitialize impl (name ENDS WITH
+                //    ".PreInitialize") which does the real init and IS what both
+                //    engine call sites dispatch to (via the interface).
+                // A bare FirstOrDefault with an OR predicate could bind the empty
+                // base virtual (nondeterministic enumeration order) - then the
+                // postfix attaches to a method never invoked at spawn and true-aim
+                // silently never fires. Take the explicit impl first, base only as
+                // a last-resort fallback.
+                var methods = typeof(Vintagestory.GameContent.EntityProjectile).GetMethods(
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                var mi = System.Linq.Enumerable.FirstOrDefault(methods, m => m.Name.EndsWith(".PreInitialize"))
+                      ?? System.Linq.Enumerable.FirstOrDefault(methods, m => m.Name == "PreInitialize");
                 if (mi == null) { api.Logger.Warning("[TassHunting] PreInitialize not found; true-aim inactive."); return; }
                 harmony.Patch(mi, postfix: new HarmonyMethod(typeof(HuntingModSystem), nameof(TrueAimPostfix)));
-                api.Logger.Event("[TassHunting] true-aim spawn correction active.");
+                api.Logger.Event("[TassHunting] true-aim spawn correction active (patched {0}).", mi.Name);
             }
             catch (Exception ex) { api.Logger.Warning("[TassHunting] true-aim patch failed: {0}", ex.Message); }
         }
@@ -428,7 +485,12 @@ namespace TassHunting
         {
             if (api.ModLoader.IsModEnabled("itempickuphighlighter"))
             {
-                PickupHighlighterCompat.TryPatch(api, harmony);
+                // Call-site try/catch too (compat sweep 2026-07-22), mirroring the
+                // ConfigLib guard below - both soft-dep entry points are now
+                // defended at the call site regardless of future edits inside the
+                // compat class.
+                try { PickupHighlighterCompat.TryPatch(api, harmony); }
+                catch (Exception ex) { api.Logger.Warning("[TassHunting] pickup highlighter compat failed: {0}", ex.Message); }
             }
 
             // In-game config GUI - SOFT dependency: only touch ConfigLib types

@@ -31,15 +31,29 @@ namespace TassHunting
     {
         private static readonly FieldInfo EntityField = AccessTools.Field(typeof(PathTraverserBase), "entity");
 
+        // Count of speed methods actually matched, logged once after PatchAll so a
+        // future VS rename that yields ZERO targets surfaces in the log instead of
+        // silently disabling wounded-slowdown (diagnostics-every-iteration law).
+        internal static int MatchedCount;
+
         private static IEnumerable<MethodBase> TargetMethods()
         {
+            MatchedCount = 0;
+            // NOT DeclaredOnly (compat sweep 2026-07-22): StraightLineTraverser
+            // INHERITS its speed methods from PathTraverserBase, so DeclaredOnly
+            // missed that traverser entirely. Match by POSITION not param NAME:
+            // ps[1] is the float speed slot across every matched overload - the
+            // name "movingSpeed" is metadata that a name-stripped build would drop.
             foreach (var t in new[] { typeof(WaypointsTraverser), typeof(StraightLineTraverser) })
-                foreach (var m in t.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+                foreach (var m in t.GetMethods(BindingFlags.Public | BindingFlags.Instance))
                 {
                     if (m.Name != "NavigateTo" && m.Name != "NavigateTo_Async" && m.Name != "WalkTowards") continue;
                     var ps = m.GetParameters();
-                    if (ps.Length >= 2 && ps[1].ParameterType == typeof(float) && ps[1].Name == "movingSpeed")
+                    if (ps.Length >= 2 && ps[1].ParameterType == typeof(float))
+                    {
+                        MatchedCount++;
                         yield return m;
+                    }
                 }
         }
 
