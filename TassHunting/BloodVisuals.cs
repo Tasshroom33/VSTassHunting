@@ -898,8 +898,13 @@ namespace TassHunting
                     // from the spot id, so every re-emit re-covers the exact
                     // same pattern - the pool sits still instead of reshuffling
                     // every 4 seconds. Fade: last 25% of life shrinks it.
+                    // size: single drips sit near the MIN size, big pools near
+                    // the MAX (user tuning model: size min/max + rate + duration)
                     float lifeFrac = GameMath.Clamp((s.ExpireMs - now) / (0.25f * Math.Max(1f, cfg.BloodSpotLifetimeSeconds * 1000f)), 0f, 1f);
-                    float sizeScale = (0.55f + 0.45f * lifeFrac) * Math.Max(0.05f, cfg.BloodSizeScale);
+                    float fade = 0.55f + 0.45f * lifeFrac;
+                    float sMin = Math.Max(0.05f, cfg.BloodParticleSizeMin);
+                    float sMax = Math.Max(sMin, cfg.BloodParticleSizeMax);
+                    float intenFrac = GameMath.Clamp(s.Intensity / MaxIntensity, 0f, 1f);
                     float jitter = 0.05f + 0.055f * s.Intensity;
                     int pMin = Math.Max(1, cfg.BloodParticlesMin);
                     int pMax = Math.Max(pMin, cfg.BloodParticlesMax);
@@ -913,7 +918,8 @@ namespace TassHunting
                     {
                         float ang = Hash01(spotId * 97 + k * 13) * GameMath.TWOPI;
                         float rad = jitter * (float)Math.Sqrt(Hash01(spotId * 131 + k * 29 + 7));
-                        float psize = (0.24f + 0.08f * s.Intensity) * (0.8f + 0.4f * Hash01(spotId * 173 + k * 41 + 3)) * sizeScale;
+                        float variation = 0.85f + 0.3f * Hash01(spotId * 173 + k * 41 + 3);
+                        float psize = GameMath.Lerp(sMin, sMax, intenFrac) * variation * fade;
                         groundProps.MinSize = psize;
                         groundProps.MaxSize = psize;
                         groundProps.MinPos.Set(s.X + Math.Sin(ang) * rad, s.Y + 0.02, s.Z + Math.Cos(ang) * rad);
@@ -938,8 +944,8 @@ namespace TassHunting
                     float amt = Math.Min(4f, t.Amount);
                     waterProps.MinQuantity = 1 + (int)amt;
                     waterProps.AddQuantity = 1;
-                    waterProps.MinSize = (0.6f + 0.2f * amt) * Math.Max(0.05f, cfg.BloodSizeScale);
-                    waterProps.MaxSize = (0.9f + 0.25f * amt) * Math.Max(0.05f, cfg.BloodSizeScale);
+                    waterProps.MinSize = 0.6f + 0.2f * amt;
+                    waterProps.MaxSize = 0.9f + 0.25f * amt;
                     // hang IN the water column below the surface, not on it
                     waterProps.MinPos.Set(kv.Key.x + 0.5 - 0.42, kv.Key.y + 0.35, kv.Key.z + 0.5 - 0.42);
                     waterProps.AddPos.Set(0.84, 0.45, 0.84);

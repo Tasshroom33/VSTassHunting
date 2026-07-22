@@ -82,10 +82,13 @@ namespace TassHunting
                 Checkbox("Blood on hit", () => cfg.BloodOnHitEnabled, v => cfg.BloodOnHitEnabled = v);
                 SliderFloat("Min damage for hit blood", () => cfg.BloodOnHitMinDamage, v => cfg.BloodOnHitMinDamage = v, 0f, 5f);
                 SliderFloat("Drip every (sec)", () => cfg.BloodDepositIntervalSeconds, v => cfg.BloodDepositIntervalSeconds = v, 0.25f, 2f);
-                Help("How often a bleeding animal drops blood while moving. Lower = denser trail.");
-                SliderFloat("Drop spacing (blocks)", () => cfg.BloodSpotMinSpacingBlocks, v => cfg.BloodSpotMinSpacingBlocks = v, 0.2f, 4f);
-                Help("Drops landing closer together than this merge into one growing pool - a standing animal pools instead of spamming.");
+                Help("Lower = denser trail. A standing animal merges its drips into one growing pool.");
                 SliderFloat("Blood lasts (sec)", () => cfg.BloodSpotLifetimeSeconds, v => cfg.BloodSpotLifetimeSeconds = v, 30f, 3600f);
+                SliderFloat("Particle size, min", () => cfg.BloodParticleSizeMin, v => cfg.BloodParticleSizeMin = v, 0.05f, 2f);
+                SliderFloat("Particle size, max", () => cfg.BloodParticleSizeMax, v => cfg.BloodParticleSizeMax = v, 0.05f, 2.5f);
+                Help("Single drips sit near the min size, big pools near the max.");
+                SliderInt("Particles per spot, min", () => cfg.BloodParticlesMin, v => cfg.BloodParticlesMin = v, 1, 8);
+                SliderInt("Particles per spot, max", () => cfg.BloodParticlesMax, v => cfg.BloodParticlesMax = v, 1, 12);
                 SliderInt("Max blood spots in world", () => cfg.BloodMaxSpots, v => cfg.BloodMaxSpots = v, 256, 16384);
             }
 
@@ -106,10 +109,7 @@ namespace TassHunting
 
             if (ImGui.CollapsingHeader("Blood look (your screen only)"))
             {
-                SliderFloat("Blood size", () => cfg.BloodSizeScale, v => cfg.BloodSizeScale = v, 0.25f, 3f);
                 ColorHex("Blood color", () => cfg.BloodColorHex, v => cfg.BloodColorHex = v);
-                SliderInt("Particles per spot, min", () => cfg.BloodParticlesMin, v => cfg.BloodParticlesMin = v, 1, 8);
-                SliderInt("Particles per spot, max", () => cfg.BloodParticlesMax, v => cfg.BloodParticlesMax = v, 1, 12);
                 SliderFloat("Redraw every (sec)", () => cfg.BloodRefreshSeconds, v => cfg.BloodRefreshSeconds = v, 1f, 15f);
                 Help("Blood is drawn with particles that refresh on this cycle. Lower = steadier look, slightly more particle load.");
                 SliderFloat("Water stain opacity", () => cfg.WaterBloodMaxOpacity, v => cfg.WaterBloodMaxOpacity = v, 0.05f, 1f);

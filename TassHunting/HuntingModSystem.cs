@@ -149,8 +149,10 @@ namespace TassHunting
         // Server deposit cadence while something bleeds. 0.35s at animal flee
         // speed lays a spot roughly every 1.5-2.5 blocks.
         public float BloodDepositIntervalSeconds = 0.35f;
-        // Drips closer together than this GROW the previous spot into a pool
-        // (stationary/dying animals pool instead of spamming spots).
+        // Merge threshold, NOT a density dial (density = drip interval): drips
+        // closer together than this GROW the previous spot into a pool, so
+        // stationary/dying animals pool instead of spamming spots. Demoted to
+        // json-only 0.6.7 (user: reads as redundant next to drip rate).
         public float BloodSpotMinSpacingBlocks = 0.8f;
         public int BloodMaxSpots = 4096;          // server ledger cap, oldest pruned
         public float BloodRenderDistanceBlocks = 64f;
@@ -159,7 +161,6 @@ namespace TassHunting
         public bool WaterBloodEnabled = true;     // blood in water diffuses as tiles
 
         // 0.6.3 look/feel dials (in-game panel via ConfigLib when installed)
-        public float BloodSizeScale = 1f;               // client: multiplies all splat sizes
         public string BloodColorHex = "#74080C";        // client: ground blood color
         public float WaterBloodDecayPerSecond = 0.12f;  // server: fraction of a water tile's blood lost per second
         public float WaterBloodSpreadPerSecond = 0.02f; // server: fraction leaked to each liquid neighbor per second
@@ -176,6 +177,12 @@ namespace TassHunting
         public int BloodParticlesMax = 4;          // client: particles for the biggest pool
         public float BloodRefreshSeconds = 4f;     // client: how often each spot redraws its particles
         public float BloodTrailScale = 1f;         // server: scales trail drips + hit splashes (0 = off)
+
+        // 0.6.7 (user's tuning model: size min/max + drop rate + duration).
+        // Replaces BloodSizeScale (redundant once real size bounds exist).
+        // Bigger pools bias toward max, single drips toward min.
+        public float BloodParticleSizeMin = 0.25f; // client
+        public float BloodParticleSizeMax = 0.9f;  // client
 
         // ---- WOUNDED SLOWDOWN (2026-07-19, see WoundedSlowdown.cs; replaces
         //      FleeExhaustion - all AI states, tiered, per the user's table) ----
