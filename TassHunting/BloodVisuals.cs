@@ -432,12 +432,13 @@ namespace TassHunting
 
         // ================= particle props ====================================
 
-        /// <summary>Parse #RRGGBB to a particle-correct color int. THE VS
-        /// PARTICLE SYSTEM READS Color AS BGRA (engine doc + THW only ever used
-        /// white so never hit this) - ColorFromRgba packs r|g<<8|b<<16|a<<24,
-        /// i.e. RED in the LOW byte, which is what particles want. Using
-        /// ToRgba (RGBA, red high) rendered blood PINK (field 2026-07-22).
-        /// Channel accessors below must match: red = &0xFF, green = >>8, blue = >>16.</summary>
+        /// <summary>Parse #RRGGBB to a particle color int. ToRgba(a,r,g,b) =
+        /// (a<<24)|(r<<16)|(g<<8)|b IS the correct packing - DECOMPILE-VERIFIED:
+        /// the renderer unpacks R=>>16, G=>>8, B=&0xFF (EntityParticleGrasshopper),
+        /// and every vanilla colored particle (forge/fire/bees) uses ToRgba.
+        /// ColorFromRgba SWAPS r/b (rendered blood BLUE, 0.10.4 mistake). The
+        /// evolve deltas below operate on true R/G/B and match ToRgba directly.
+        /// (2026-07-22: do NOT flip this again - it is verified, see memory.)</summary>
         private static int ParseBloodColor(string hex, int fallback)
         {
             try
@@ -448,15 +449,15 @@ namespace TassHunting
                 int r = Convert.ToInt32(h.Substring(0, 2), 16);
                 int g = Convert.ToInt32(h.Substring(2, 2), 16);
                 int b = Convert.ToInt32(h.Substring(4, 2), 16);
-                return ColorUtil.ColorFromRgba(r, g, b, 255); // BGRA-packed for particles
+                return ColorUtil.ToRgba(255, r, g, b);
             }
             catch { return fallback; }
         }
 
-        // Channel accessors for a BGRA-packed particle color (red low, blue high).
-        private static int CR(int c) => c & 0xFF;
+        // Channel accessors for an ARGB-packed particle color (red = >>16).
+        private static int CR(int c) => (c >> 16) & 0xFF;
         private static int CG(int c) => (c >> 8) & 0xFF;
-        private static int CB(int c) => (c >> 16) & 0xFF;
+        private static int CB(int c) => c & 0xFF;
 
         private void EnsureParticleProps(HuntingConfig cfg)
         {
@@ -467,9 +468,9 @@ namespace TassHunting
             appliedColorHex = cfg.BloodColorHex + "|" + cfg.BloodColorAgedHex;
             appliedWaterOpacity = waterOpacity;
             appliedSoftWater = soft;
-            int blood = ParseBloodColor(cfg.BloodColorHex, ColorUtil.ColorFromRgba(116, 8, 12, 255));
+            int blood = ParseBloodColor(cfg.BloodColorHex, ColorUtil.ToRgba(255, 116, 8, 12));
             bloodFresh = blood;
-            bloodAged = ParseBloodColor(cfg.BloodColorAgedHex, ColorUtil.ColorFromRgba(58, 4, 6, 255));
+            bloodAged = ParseBloodColor(cfg.BloodColorAgedHex, ColorUtil.ToRgba(255, 58, 4, 6));
 
             // Ground decals are CUBES (field 2026-07-22: Quads billboard to
             // face the camera - blood does not do that, looked jarring; cubes
@@ -516,7 +517,7 @@ namespace TassHunting
             dropletProps.GreenEvolve = GreenDark();
             dropletProps.BlueEvolve = BlueDark();
 
-            int water = ColorUtil.ColorFromRgba(CR(blood), CG(blood), CB(blood), Math.Max(6, (int)(130 * waterOpacity)));
+            int water = ColorUtil.ToRgba(Math.Max(6, (int)(130 * waterOpacity)), CR(blood), CG(blood), CB(blood));
             waterProps = new SimpleParticleProperties(
                 1, 1, water, new Vec3d(), new Vec3d(),
                 new Vec3f(-0.02f, -0.01f, -0.02f), new Vec3f(0.02f, 0.015f, 0.02f),
