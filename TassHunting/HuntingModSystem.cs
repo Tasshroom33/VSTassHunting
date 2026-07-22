@@ -154,10 +154,9 @@ namespace TassHunting
         //      a spot ledger + water diffusion; the current build renders it
         //      client-locally (the sync layer is parked, see BloodVisuals). ----
         public bool BloodVisualsEnabled = true;
-        // How long a ground blood spot stays followable (REAL seconds - the
-        // law-7 combat-pacing carve-out). Long-lived by design: a followable
-        // trail that persists is the whole point of the tracking system.
-        public float BloodSpotLifetimeSeconds = 600f;
+        // How long a ground blood spot lasts, in seconds (field 2026-07-22:
+        // 600 was crazy for a decal - now a 1-60s dial, default 30).
+        public float BloodSpotLifetimeSeconds = 30f;
         // Server deposit cadence while something bleeds. 0.25s = 4 drips/sec.
         // Our drops persist and re-render, so spatial density (spacing along
         // the path) is what reads, not raw emission rate.
@@ -185,7 +184,7 @@ namespace TassHunting
             SizeMin = 0.3f, SizeMax = 0.8f,
             QtyMin = 2, QtyMax = 5,          // drops per block of trail / particles per pool
             SpreadMin = 0.05f, SpreadMax = 0.2f,
-            LifetimeMin = 240f, LifetimeMax = 600f  // per-drop, seconds; ragged decay
+            LifetimeMin = 20f, LifetimeMax = 30f    // per-drop, seconds; ragged decay (field: 1-60 range, ~30 default)
         };
         public BloodParticleLook BloodSplatter = new BloodParticleLook
         {
@@ -207,7 +206,11 @@ namespace TassHunting
         public bool SpawnSplatterOnDamage = true; // splatter on qualifying hits + DoT ticks
 
         // json-only dials (deliberately NOT in the panel per the 0.8.0 spec)
-        public string BloodColorHex = "#74080C";
+        public string BloodColorHex = "#74080C";        // FRESH blood (bright)
+        // AGED blood (dark, dried): ground spots lerp from fresh -> aged over
+        // their lifetime (field 2026-07-22). Set equal to BloodColorHex to
+        // disable the age darkening.
+        public string BloodColorAgedHex = "#3A0406";
         public float BloodRefreshSeconds = 4f;          // decal redraw cycle
         public float BloodOnHitMinDamage = 0.5f;
         public float BloodTrailScale = 1f;              // server: trail/hit deposit amount

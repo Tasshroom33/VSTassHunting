@@ -92,6 +92,7 @@ namespace TassHunting
         private string appliedColorHex;
         private float appliedWaterOpacity = -1f;
         private bool appliedSoftWater;
+        private int bloodFresh, bloodAged; // ground blood lerps fresh -> aged by spot age
         private static readonly EvolvingNatFloat FadeOut = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
         private static readonly EvolvingNatFloat NoFade = new EvolvingNatFloat(EnumTransformFunction.LINEAR, 0f);
 
@@ -449,20 +450,22 @@ namespace TassHunting
         {
             float waterOpacity = GameMath.Clamp(cfg.WaterBloodMaxOpacity, 0.05f, 1f);
             bool soft = cfg.SoftWaterParticles;
-            if (groundProps != null && appliedColorHex == cfg.BloodColorHex
+            if (groundProps != null && appliedColorHex == cfg.BloodColorHex + "|" + cfg.BloodColorAgedHex
                 && appliedWaterOpacity == waterOpacity && appliedSoftWater == soft) return;
-            appliedColorHex = cfg.BloodColorHex;
+            appliedColorHex = cfg.BloodColorHex + "|" + cfg.BloodColorAgedHex;
             appliedWaterOpacity = waterOpacity;
             appliedSoftWater = soft;
             int blood = ParseBloodColor(cfg.BloodColorHex, ColorUtil.ToRgba(255, 116, 8, 12));
+            bloodFresh = blood;
+            bloodAged = ParseBloodColor(cfg.BloodColorAgedHex, ColorUtil.ToRgba(255, 58, 4, 6));
 
-            // Ground decals are flat QUADS (a landed drop splats flat - a cube
-            // sitting on the ground reads as a block). Per-spawn a landing
-            // SizeEvolve grows them ~1.5x over the first second, reading as the
-            // splat spreading on impact. Airborne blood stays Cube (3D drops).
+            // Ground decals are CUBES (field 2026-07-22: Quads billboard to
+            // face the camera - blood does not do that, looked jarring; cubes
+            // sit still and read far better than both Quads and the other
+            // hunting mods). Cubes for everything, air and ground.
             groundProps = new SimpleParticleProperties(
                 1, 1, blood, new Vec3d(), new Vec3d(), new Vec3f(), new Vec3f(),
-                4.6f, 0f, 0.25f, 0.5f, EnumParticleModel.Quad);
+                4.6f, 0f, 0.25f, 0.5f, EnumParticleModel.Cube);
 
             // splatter: real blood, so VINTAGE STORY's own gravity (GravityEffect
             // 1.0 = the engine's semi-realistic fall, ~9 m/s equivalent) rather
@@ -493,6 +496,19 @@ namespace TassHunting
                 3.5f, 0f, 0.7f, 1.3f,
                 soft ? EnumParticleModel.Quad : EnumParticleModel.Cube);
             waterProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
+        }
+
+        /// <summary>Lerp two ARGB ints channel-wise (blood dries fresh->aged).</summary>
+        private static int LerpColor(int a, int b, float t)
+        {
+            t = GameMath.Clamp(t, 0f, 1f);
+            int aa = (a >> 24) & 0xFF, ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF;
+            int ba = (b >> 24) & 0xFF, br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
+            int r = (int)(ar + (br - ar) * t);
+            int g = (int)(ag + (bg - ag) * t);
+            int bl = (int)(ab + (bb - ab) * t);
+            int al = (int)(aa + (ba - aa) * t);
+            return (al << 24) | (r << 16) | (g << 8) | bl;
         }
 
         private static float Hash01(int seed)
@@ -607,15 +623,15 @@ namespace TassHunting
                 var tr = cfg.BloodTrails;
                 long spotAgeMs = now - s.BornMs;
                 float intenFrac = GameMath.Clamp(s.Intensity / MaxIntensity, 0f, 1f);
-                // LANDING SPREAD: a landed drop splats flat and spreads wider
-                // over the first second (blood hits, then pools out). Pure
-                // arithmetic on spot age - no extra particles, no per-particle
-                // evolve. Starts at 65% width, lerps to 100% over 1000ms.
-                float landSpread = 0.65f + 0.35f * GameMath.Clamp(spotAgeMs / 1000f, 0f, 1f);
+                // AGE COLOR: ground blood dries from fresh (bright) toward aged
+                // (dark) over the spot's life (field 2026-07-22). Cubes, so the
+                // color is just set on the shared prototype before each spawn.
+                float ageFrac = GameMath.Clamp(spotAgeMs / (float)Math.Max(1, s.LifeMs), 0f, 1f);
+                groundProps.Color = LerpColor(bloodFresh, bloodAged, ageFrac);
                 int spotId = kv.Key;
                 float tsMin = Math.Max(0.05f, Math.Min(tr.SizeMin, tr.SizeMax));
                 float tsMax = Math.Max(tsMin, Math.Max(tr.SizeMin, tr.SizeMax));
-                float tLifeMin = Math.Max(5f, Math.Min(tr.LifetimeMin, tr.LifetimeMax));
+                float tLifeMin = Math.Max(1f, Math.Min(tr.LifetimeMin, tr.LifetimeMax));
                 float tLifeMax = Math.Max(tLifeMin, Math.Max(tr.LifetimeMin, tr.LifetimeMax));
                 float tSprMin = Math.Max(0f, Math.Min(tr.SpreadMin, tr.SpreadMax));
                 float tSprMax = Math.Max(tSprMin, Math.Max(tr.SpreadMin, tr.SpreadMax));
@@ -648,7 +664,7 @@ namespace TassHunting
                         double lz = s.PrevZ + sz * t + (Hash01(spotId * 223 + k * 19 + 5) - 0.5) * 2.0 * jit;
                         double ly = s.PrevY + (s.Y - s.PrevY) * t;
                         if (!ResolveGroundY(lx, ly + 1.0, lz, out double gy)) continue;
-                        float psize = GameMath.Lerp(tsMin, tsMax, 0.5f * Hash01(spotId * 239 + k * 23 + 11) + 0.5f * intenFrac) * dFade * landSpread;
+                        float psize = GameMath.Lerp(tsMin, tsMax, 0.5f * Hash01(spotId * 239 + k * 23 + 11) + 0.5f * intenFrac) * dFade;
                         groundProps.MinSize = psize;
                         groundProps.MaxSize = psize;
                         if (!dEnd)
@@ -669,7 +685,10 @@ namespace TassHunting
                             // ending drops sink into the surface (velocity from
                             // ApplyDecalState); spawn flush so the sink starts there
                             groundProps.GravityEffect = 0f;
-                            groundProps.MinPos.Set(lx, gy + 0.02, lz);
+                            // nestle slightly INTO the surface (grass base) so
+                            // small cubes pool around stems instead of floating
+                            // in the blades and Z-fighting (field 2026-07-22)
+                            groundProps.MinPos.Set(lx, gy - 0.03, lz);
                         }
                         groundProps.AddPos.Set(0, 0, 0);
                         capi.World.SpawnParticles(groundProps);
@@ -688,10 +707,10 @@ namespace TassHunting
                         float ang = Hash01(spotId * 97 + k * 13) * GameMath.TWOPI;
                         float rad = radius * (float)Math.Sqrt(Hash01(spotId * 131 + k * 29 + 7));
                         float variation = 0.85f + 0.3f * Hash01(spotId * 173 + k * 41 + 3);
-                        float psize = GameMath.Lerp(tsMin, tsMax, intenFrac) * variation * fade * landSpread;
+                        float psize = GameMath.Lerp(tsMin, tsMax, intenFrac) * variation * fade;
                         groundProps.MinSize = psize;
                         groundProps.MaxSize = psize;
-                        groundProps.MinPos.Set(s.X + Math.Sin(ang) * rad, s.Y + 0.02, s.Z + Math.Cos(ang) * rad);
+                        groundProps.MinPos.Set(s.X + Math.Sin(ang) * rad, s.Y - 0.03, s.Z + Math.Cos(ang) * rad);
                         groundProps.AddPos.Set(0, 0, 0);
                         capi.World.SpawnParticles(groundProps);
                     }

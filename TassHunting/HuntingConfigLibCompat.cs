@@ -72,8 +72,8 @@ namespace TassHunting
                 Help("Qty = drops per block of trail, and particles per pool. Heavier bleeding pushes toward max.");
                 SliderFloat("Particle spread, min##trails", () => cfg.BloodTrails.SpreadMin, v => cfg.BloodTrails.SpreadMin = v, 0f, 1f);
                 SliderFloat("Particle spread, max##trails", () => cfg.BloodTrails.SpreadMax, v => cfg.BloodTrails.SpreadMax = v, 0f, 1f);
-                SliderFloat("Particle lifetime, min (sec)##trails", () => cfg.BloodTrails.LifetimeMin, v => cfg.BloodTrails.LifetimeMin = v, 10f, 3600f);
-                SliderFloat("Particle lifetime, max (sec)##trails", () => cfg.BloodTrails.LifetimeMax, v => cfg.BloodTrails.LifetimeMax = v, 10f, 3600f);
+                SliderFloat("Particle lifetime, min (sec)##trails", () => cfg.BloodTrails.LifetimeMin, v => cfg.BloodTrails.LifetimeMin = v, 1f, 60f);
+                SliderFloat("Particle lifetime, max (sec)##trails", () => cfg.BloodTrails.LifetimeMax, v => cfg.BloodTrails.LifetimeMax = v, 1f, 60f);
                 Help("Each drop lives a random time in this range, so trails dry up drop by drop, oldest parts first.");
             }
 
