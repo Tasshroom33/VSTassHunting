@@ -116,6 +116,8 @@ namespace TassHunting
             if (ImGui.CollapsingHeader("Archery"))
             {
                 Checkbox("Arrows can break", () => cfg.ArrowBreakTuningEnabled, v => cfg.ArrowBreakTuningEnabled = v);
+                Checkbox("Drop arrowhead when an arrow breaks", () => cfg.DropArrowheadOnBreak, v => cfg.DropArrowheadOnBreak = v);
+                Help("A broken metal or stone arrow leaves its arrowhead to recover. Crude, reed and bone arrows leave nothing.");
                 Checkbox("Arrows fly from your crosshair", () => cfg.TrueAimSpawnEnabled, v => cfg.TrueAimSpawnEnabled = v);
                 Help("Fixes close shots landing high (vanilla spawns the arrow behind your head).");
                 if (cfg.ArrowBreakChanceByMaterial != null && cfg.ArrowBreakChanceByMaterial.Count > 0)

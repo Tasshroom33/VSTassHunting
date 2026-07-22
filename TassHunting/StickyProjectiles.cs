@@ -300,7 +300,7 @@ namespace TassHunting
 
                 if (s.SecondsLeft <= 0f)
                 {
-                    arrow.Die();
+                    arrow.Die(EnumDespawnReason.Expire); // timed-out ride, NOT a break (arrowhead-drop ignores Expire)
                     toRemove.Add(kv.Key);
                     continue;
                 }

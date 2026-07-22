@@ -111,6 +111,13 @@ namespace TassHunting
         // listed here (modded arrows) are left completely untouched - they
         // keep whatever their own mod ships. Values clamp 0..1.
         public bool ArrowBreakTuningEnabled = true;
+        // 0.9.4 (user request, GATED default off): when an arrow breaks on
+        // impact, drop the matching arrowhead item so you can recover the head.
+        // Only materials with an arrowhead-<material> item drop one; crude,
+        // erel (reed) and bone have no head and drop nothing (matches reality:
+        // a knapped/metal head survives a snapped shaft, a reed/bone arrow
+        // does not leave a reusable tip).
+        public bool DropArrowheadOnBreak = false;
         public Dictionary<string, float> ArrowBreakChanceByMaterial = new Dictionary<string, float>
         {
             // neolithic
