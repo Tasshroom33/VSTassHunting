@@ -170,6 +170,13 @@ namespace TassHunting
         public float CorpseBloodScale = 1f;        // scales death pools + corpse bleed-out (0 = off)
         public float WaterBloodMaxOpacity = 0.6f;  // client: water stain tint ceiling
 
+        // 0.6.5 (user: min/max particle + timing knobs were hardcoded; trail
+        // amount needed the same lever corpse blood already had)
+        public int BloodParticlesMin = 1;          // client: particles for the smallest blood spot
+        public int BloodParticlesMax = 4;          // client: particles for the biggest pool
+        public float BloodRefreshSeconds = 4f;     // client: how often each spot redraws its particles
+        public float BloodTrailScale = 1f;         // server: scales trail drips + hit splashes (0 = off)
+
         // ---- WOUNDED SLOWDOWN (2026-07-19, see WoundedSlowdown.cs; replaces
         //      FleeExhaustion - all AI states, tiered, per the user's table) ----
         public bool WoundedSlowdownEnabled = true;

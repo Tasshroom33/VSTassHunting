@@ -6,15 +6,17 @@
 // this class and Init is NoInlining, so those assemblies are only loaded on
 // that call path. Without configlib the mod runs exactly as before.
 //
-// Knob selection per the user (2026-07-21): bleed DURATION, flat damage per
-// tick, and the percent-of-max-health half of the hybrid are panel knobs;
-// MAX STACKS stays hardcoded-feeling (json-file only, not in the panel).
+// LABELING RULES (user pass 2026-07-21: "hard to read/understand as a human"):
+// short player-language labels (the panel is narrow and clips long ones), no
+// spec jargon, explanations on their own wrapped help lines, SERVER gameplay
+// sections separated from CLIENT look sections, blood trails separated from
+// corpse blood. Max bleed stacks stays json-only by user decision.
 //
 // Live-ness: sliders edit the LIVE static HuntingModSystem.Cfg, which every
-// system reads per call - in single player (client+server share the process
-// statics) most dials apply immediately. Load-time features (arrow break
-// tuning, predator AI, deposit tick interval) apply on world rejoin - noted
-// inline. On a remote server the panel edits only the client side.
+// system reads per call - in single player nearly every dial applies
+// immediately (the drip-rate tick self-paces from config since 0.6.5). The
+// few load-time features say "needs world rejoin" in their help line. On a
+// remote server the panel edits only the client side.
 
 using System;
 using System.Collections.Generic;
@@ -55,87 +57,121 @@ namespace TassHunting
             }
 
             if (!capi.IsSinglePlayer)
-                ImGui.TextWrapped("Note: on a remote server these edits only affect your client side.");
+                ImGui.TextWrapped("You are on a server: these edits only change YOUR side. The server's own config decides gameplay.");
 
-            if (ImGui.CollapsingHeader("Bleed damage over time"))
+            if (ImGui.CollapsingHeader("Bleeding"))
             {
-                Checkbox("Bleeding enabled", () => cfg.BleedEnabled, v => cfg.BleedEnabled = v);
-                SliderFloat("Bleed duration (seconds per stack)", () => cfg.BleedDurationSeconds, v => cfg.BleedDurationSeconds = v, 5f, 300f);
-                SliderFloat("Flat damage per tick per stack", () => cfg.BleedStaticPerTick, v => cfg.BleedStaticPerTick = v, 0f, 2f);
-                SliderFloat("Percent of max health per tick per stack", () => cfg.BleedPctMaxHealthPerTick, v => cfg.BleedPctMaxHealthPerTick = v, 0f, 10f);
-                SliderFloat("Seconds between bleed ticks", () => cfg.BleedTickSeconds, v => cfg.BleedTickSeconds = v, 1f, 60f);
-                SliderInt("Bleed chance percent per qualifying hit", () => cfg.BleedChancePct, v => cfg.BleedChancePct = v, 0, 100);
-                SliderFloat("Minimum hit damage to proc", () => cfg.BleedDamageThreshold, v => cfg.BleedDamageThreshold = v, 0f, 10f);
-                Checkbox("Player-caused hits only", () => cfg.BleedPlayerCausedOnly, v => cfg.BleedPlayerCausedOnly = v);
-                Checkbox("Players bleed too (PvP)", () => cfg.BleedAffectsPlayers, v => cfg.BleedAffectsPlayers = v);
-                ImGui.TextWrapped("Max concurrent stacks is intentionally not a panel knob (json file only).");
+                Checkbox("Enable bleeding", () => cfg.BleedEnabled, v => cfg.BleedEnabled = v);
+                SliderFloat("Bleed time (sec)", () => cfg.BleedDurationSeconds, v => cfg.BleedDurationSeconds = v, 5f, 300f);
+                SliderFloat("Damage per tick", () => cfg.BleedStaticPerTick, v => cfg.BleedStaticPerTick = v, 0f, 2f);
+                SliderFloat("Extra damage, % of max HP", () => cfg.BleedPctMaxHealthPerTick, v => cfg.BleedPctMaxHealthPerTick = v, 0f, 10f);
+                Help("Each tick deals the flat damage PLUS this percent of the animal's max health - small and big animals both feel it.");
+                SliderFloat("Tick every (sec)", () => cfg.BleedTickSeconds, v => cfg.BleedTickSeconds = v, 1f, 60f);
+                SliderInt("Bleed chance (%)", () => cfg.BleedChancePct, v => cfg.BleedChancePct = v, 0, 100);
+                SliderFloat("Min damage to start", () => cfg.BleedDamageThreshold, v => cfg.BleedDamageThreshold = v, 0f, 10f);
+                Checkbox("Player attacks only", () => cfg.BleedPlayerCausedOnly, v => cfg.BleedPlayerCausedOnly = v);
+                Checkbox("Players can bleed (PvP)", () => cfg.BleedAffectsPlayers, v => cfg.BleedAffectsPlayers = v);
+                Help("Repeat hits can stack bleeds. The stack cap lives in TassHunting.json only.");
             }
 
-            if (ImGui.CollapsingHeader("Blood visuals"))
+            if (ImGui.CollapsingHeader("Blood trails"))
             {
-                Checkbox("Blood visuals enabled", () => cfg.BloodVisualsEnabled, v => cfg.BloodVisualsEnabled = v);
-                Checkbox("Blood on every qualifying hit (no bleed proc needed)", () => cfg.BloodOnHitEnabled, v => cfg.BloodOnHitEnabled = v);
-                SliderFloat("Min hit damage for contact blood", () => cfg.BloodOnHitMinDamage, v => cfg.BloodOnHitMinDamage = v, 0f, 5f);
-                SliderFloat("Blood spot lifetime (seconds)", () => cfg.BloodSpotLifetimeSeconds, v => cfg.BloodSpotLifetimeSeconds = v, 30f, 3600f);
-                SliderFloat("Spot spacing (blocks; closer drips grow a pool)", () => cfg.BloodSpotMinSpacingBlocks, v => cfg.BloodSpotMinSpacingBlocks = v, 0.2f, 4f);
-                SliderFloat("Corpse bleed-out seconds", () => cfg.CorpseBleedSeconds, v => cfg.CorpseBleedSeconds = v, 0f, 60f);
-                SliderFloat("Corpse blood amount scale (0 = off)", () => cfg.CorpseBloodScale, v => cfg.CorpseBloodScale = v, 0f, 3f);
-                SliderFloat("Blood size scale", () => cfg.BloodSizeScale, v => cfg.BloodSizeScale = v, 0.25f, 3f);
-                ColorHex("Blood color", () => cfg.BloodColorHex, v => cfg.BloodColorHex = v);
-                SliderFloat("Render distance (blocks)", () => cfg.BloodRenderDistanceBlocks, v => cfg.BloodRenderDistanceBlocks = v, 16f, 128f);
-                SliderInt("Max rendered spots (client budget)", () => cfg.BloodMaxRenderedSpots, v => cfg.BloodMaxRenderedSpots = v, 100, 4000);
-                SliderInt("Max ledger spots (server cap)", () => cfg.BloodMaxSpots, v => cfg.BloodMaxSpots = v, 256, 16384);
-                SliderFloat("Deposit interval seconds (rejoin to apply)", () => cfg.BloodDepositIntervalSeconds, v => cfg.BloodDepositIntervalSeconds = v, 0.1f, 2f);
+                Checkbox("Enable blood", () => cfg.BloodVisualsEnabled, v => cfg.BloodVisualsEnabled = v);
+                SliderFloat("Trail blood amount", () => cfg.BloodTrailScale, v => cfg.BloodTrailScale = v, 0f, 3f);
+                Help("How much blood a wounded animal leaves behind. 0 = no trail.");
+                Checkbox("Blood on hit", () => cfg.BloodOnHitEnabled, v => cfg.BloodOnHitEnabled = v);
+                SliderFloat("Min damage for hit blood", () => cfg.BloodOnHitMinDamage, v => cfg.BloodOnHitMinDamage = v, 0f, 5f);
+                SliderFloat("Drip every (sec)", () => cfg.BloodDepositIntervalSeconds, v => cfg.BloodDepositIntervalSeconds = v, 0.25f, 2f);
+                Help("How often a bleeding animal drops blood while moving. Lower = denser trail.");
+                SliderFloat("Drop spacing (blocks)", () => cfg.BloodSpotMinSpacingBlocks, v => cfg.BloodSpotMinSpacingBlocks = v, 0.2f, 4f);
+                Help("Drops landing closer together than this merge into one growing pool - a standing animal pools instead of spamming.");
+                SliderFloat("Blood lasts (sec)", () => cfg.BloodSpotLifetimeSeconds, v => cfg.BloodSpotLifetimeSeconds = v, 30f, 3600f);
+                SliderInt("Max blood spots in world", () => cfg.BloodMaxSpots, v => cfg.BloodMaxSpots = v, 256, 16384);
+            }
+
+            if (ImGui.CollapsingHeader("Corpse blood"))
+            {
+                SliderFloat("Corpse blood amount", () => cfg.CorpseBloodScale, v => cfg.CorpseBloodScale = v, 0f, 3f);
+                Help("How much a kill bleeds out where it died. 0 = no death pool.");
+                SliderFloat("Bleed-out time (sec)", () => cfg.CorpseBleedSeconds, v => cfg.CorpseBleedSeconds = v, 0f, 60f);
             }
 
             if (ImGui.CollapsingHeader("Blood in water"))
             {
-                Checkbox("Water blood enabled", () => cfg.WaterBloodEnabled, v => cfg.WaterBloodEnabled = v);
-                SliderFloat("Decay per second (fraction of a tile's blood)", () => cfg.WaterBloodDecayPerSecond, v => cfg.WaterBloodDecayPerSecond = v, 0.02f, 0.5f);
-                SliderFloat("Spread per second (to each liquid neighbor)", () => cfg.WaterBloodSpreadPerSecond, v => cfg.WaterBloodSpreadPerSecond = v, 0f, 0.1f);
-                SliderFloat("Stain max opacity", () => cfg.WaterBloodMaxOpacity, v => cfg.WaterBloodMaxOpacity = v, 0.05f, 1f);
+                Checkbox("Enable water blood", () => cfg.WaterBloodEnabled, v => cfg.WaterBloodEnabled = v);
+                SliderFloat("Fade speed", () => cfg.WaterBloodDecayPerSecond, v => cfg.WaterBloodDecayPerSecond = v, 0.02f, 0.5f);
+                SliderFloat("Spread speed", () => cfg.WaterBloodSpreadPerSecond, v => cfg.WaterBloodSpreadPerSecond = v, 0f, 0.1f);
+                Help("Blood in water spreads to neighboring water and fades out. Higher fade = shorter-lived stains.");
+            }
+
+            if (ImGui.CollapsingHeader("Blood look (your screen only)"))
+            {
+                SliderFloat("Blood size", () => cfg.BloodSizeScale, v => cfg.BloodSizeScale = v, 0.25f, 3f);
+                ColorHex("Blood color", () => cfg.BloodColorHex, v => cfg.BloodColorHex = v);
+                SliderInt("Particles per spot, min", () => cfg.BloodParticlesMin, v => cfg.BloodParticlesMin = v, 1, 8);
+                SliderInt("Particles per spot, max", () => cfg.BloodParticlesMax, v => cfg.BloodParticlesMax = v, 1, 12);
+                SliderFloat("Redraw every (sec)", () => cfg.BloodRefreshSeconds, v => cfg.BloodRefreshSeconds = v, 1f, 15f);
+                Help("Blood is drawn with particles that refresh on this cycle. Lower = steadier look, slightly more particle load.");
+                SliderFloat("Water stain opacity", () => cfg.WaterBloodMaxOpacity, v => cfg.WaterBloodMaxOpacity = v, 0.05f, 1f);
+                SliderFloat("View distance (blocks)", () => cfg.BloodRenderDistanceBlocks, v => cfg.BloodRenderDistanceBlocks = v, 16f, 128f);
+                SliderInt("Max spots drawn", () => cfg.BloodMaxRenderedSpots, v => cfg.BloodMaxRenderedSpots = v, 100, 4000);
             }
 
             if (ImGui.CollapsingHeader("Archery"))
             {
-                Checkbox("Arrow break tuning enabled (rejoin to apply)", () => cfg.ArrowBreakTuningEnabled, v => cfg.ArrowBreakTuningEnabled = v);
-                Checkbox("True-aim spawn correction", () => cfg.TrueAimSpawnEnabled, v => cfg.TrueAimSpawnEnabled = v);
+                Checkbox("Arrows can break", () => cfg.ArrowBreakTuningEnabled, v => cfg.ArrowBreakTuningEnabled = v);
+                Checkbox("Arrows fly from your crosshair", () => cfg.TrueAimSpawnEnabled, v => cfg.TrueAimSpawnEnabled = v);
+                Help("Fixes close shots landing high (vanilla spawns the arrow behind your head).");
                 if (cfg.ArrowBreakChanceByMaterial != null && cfg.ArrowBreakChanceByMaterial.Count > 0)
                 {
-                    ImGui.TextWrapped("Break chance per arrow material, 0 = never breaks (rejoin to apply):");
+                    ImGui.TextWrapped("Break chance on impact per arrow type. 0 = never breaks, 0.25 = breaks 1 in 4. Needs world rejoin.");
                     var keys = new List<string>(cfg.ArrowBreakChanceByMaterial.Keys);
                     keys.Sort(StringComparer.Ordinal);
                     foreach (string key in keys)
                     {
                         string k = key;
-                        SliderFloat("  " + k, () => cfg.ArrowBreakChanceByMaterial[k], v => cfg.ArrowBreakChanceByMaterial[k] = v, 0f, 1f);
+                        SliderFloat(k + " arrow", () => cfg.ArrowBreakChanceByMaterial[k], v => cfg.ArrowBreakChanceByMaterial[k] = v, 0f, 1f);
                     }
                 }
             }
 
-            if (ImGui.CollapsingHeader("Predators and AI"))
+            if (ImGui.CollapsingHeader("Animals"))
             {
-                Checkbox("Animals flee AWAY from the hunter", () => cfg.FleeAwayFromHunterEnabled, v => cfg.FleeAwayFromHunterEnabled = v);
-                Checkbox("Predator overhaul (rejoin to apply)", () => cfg.PredatorOverhaulEnabled, v => cfg.PredatorOverhaulEnabled = v);
-                Checkbox("Wounded slowdown", () => cfg.WoundedSlowdownEnabled, v => cfg.WoundedSlowdownEnabled = v);
+                Checkbox("Animals flee away from you", () => cfg.FleeAwayFromHunterEnabled, v => cfg.FleeAwayFromHunterEnabled = v);
+                Help("Vanilla sometimes makes a shot animal run straight at the shooter.");
+                Checkbox("Tougher predators", () => cfg.PredatorOverhaulEnabled, v => cfg.PredatorOverhaulEnabled = v);
+                Help("Bears charge from further and never give up; wolves pack up. Needs world rejoin.");
+                Checkbox("Wounded animals slow down", () => cfg.WoundedSlowdownEnabled, v => cfg.WoundedSlowdownEnabled = v);
             }
 
-            if (ImGui.CollapsingHeader("Sticky projectiles"))
+            if (ImGui.CollapsingHeader("Stuck arrows and spears"))
             {
-                Checkbox("Arrows/spears ride the animal they hit", () => cfg.StickyProjectilesEnabled, v => cfg.StickyProjectilesEnabled = v);
-                SliderFloat("Riding projectile lifetime (seconds)", () => cfg.StickSeconds, v => cfg.StickSeconds = v, 30f, 900f);
-                Checkbox("Spears grabbable back at touch range", () => cfg.SpearTouchRetrieve, v => cfg.SpearTouchRetrieve = v);
+                Checkbox("Arrows stick in animals", () => cfg.StickyProjectilesEnabled, v => cfg.StickyProjectilesEnabled = v);
+                SliderFloat("Stuck arrow lifetime (sec)", () => cfg.StickSeconds, v => cfg.StickSeconds = v, 30f, 900f);
+                Help("A stuck arrow disappears after this long if the animal never dies.");
+                Checkbox("Grab stuck spears back", () => cfg.SpearTouchRetrieve, v => cfg.SpearTouchRetrieve = v);
             }
 
             if (ImGui.CollapsingHeader("Harvest and pickup"))
             {
-                SliderFloat("Knife harvest time multiplier", () => cfg.HarvestTimeMult, v => cfg.HarvestTimeMult = v, 0.05f, 2f);
-                Checkbox("Harvest drops loot on the ground", () => cfg.HarvestAutoDrop, v => cfg.HarvestAutoDrop = v);
-                Checkbox("Empty corpses self-remove", () => cfg.EmptyCorpseAutoRemove, v => cfg.EmptyCorpseAutoRemove = v);
-                SliderFloat("Empty corpse removal delay (seconds)", () => cfg.EmptyCorpseRemoveSeconds, v => cfg.EmptyCorpseRemoveSeconds = v, 1f, 120f);
-                SliderFloat("Projectile pickup radius (0 = vanilla only)", () => cfg.ProjectilePickupRadius, v => cfg.ProjectilePickupRadius = v, 0f, 16f);
-                Checkbox("Only vacuum your own projectiles", () => cfg.PickupOnlyOwnProjectiles, v => cfg.PickupOnlyOwnProjectiles = v);
+                SliderFloat("Harvest time (x vanilla)", () => cfg.HarvestTimeMult, v => cfg.HarvestTimeMult = v, 0.05f, 2f);
+                Help("0.5 = knife work takes half as long.");
+                Checkbox("Loot drops on the ground", () => cfg.HarvestAutoDrop, v => cfg.HarvestAutoDrop = v);
+                Checkbox("Remove empty corpses", () => cfg.EmptyCorpseAutoRemove, v => cfg.EmptyCorpseAutoRemove = v);
+                SliderFloat("Remove after (sec)", () => cfg.EmptyCorpseRemoveSeconds, v => cfg.EmptyCorpseRemoveSeconds = v, 1f, 120f);
+                SliderFloat("Arrow pickup range (0 = off)", () => cfg.ProjectilePickupRadius, v => cfg.ProjectilePickupRadius = v, 0f, 16f);
+                Help("Walk within this range of your landed arrows and spears to collect them automatically.");
+                Checkbox("Pick up your own only", () => cfg.PickupOnlyOwnProjectiles, v => cfg.PickupOnlyOwnProjectiles = v);
             }
+        }
+
+        // ---- helpers ----
+
+        private static void Help(string text)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, new System.Numerics.Vector4(0.62f, 0.62f, 0.62f, 1f));
+            ImGui.TextWrapped(text);
+            ImGui.PopStyleColor();
         }
 
         // ImGui needs ref locals; bridge with getter/setter pairs that only

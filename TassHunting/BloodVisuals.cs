@@ -144,6 +144,7 @@ namespace TassHunting
         private readonly Dictionary<string, HashSet<int>> sentIds = new Dictionary<string, HashSet<int>>();
         private readonly HashSet<int> dirtySpots = new HashSet<int>(); // grown/updated: resend even if sent
         private int nextSpotId = 1;
+        private long nextPassMs;
         private long packetsSent, spotsDeposited;
         private long lastWarnMs = -WarnIntervalMs;
         private readonly BlockPos scratch = new BlockPos(0); // dimension 0: blood is an overworld feature
@@ -165,8 +166,9 @@ namespace TassHunting
             var cfg = HuntingModSystem.Cfg;
             if (cfg != null && cfg.BloodVisualsEnabled)
             {
-                int interval = Math.Max(100, (int)(cfg.BloodDepositIntervalSeconds * 1000f));
-                depositTickId = api.Event.RegisterGameTickListener(DepositTick, interval);
+                // fixed fast clock; the tick paces itself from config so the
+                // drip-rate dial applies LIVE (no world rejoin)
+                depositTickId = api.Event.RegisterGameTickListener(DepositTick, 250);
                 waterTickId = api.Event.RegisterGameTickListener(WaterTick, 1000);
                 api.Event.OnEntityDeath += OnEntityDeath;
                 api.Event.PlayerDisconnect += OnPlayerDisconnect;
@@ -203,8 +205,10 @@ namespace TassHunting
             if (!cfg.BleedAffectsPlayers && victim is EntityPlayer) return;
             try
             {
-                float inten = Math.Min(4f, 1.0f + damage * 0.3f);
-                self.Deposit(victim.Pos.X, victim.Pos.Y, victim.Pos.Z, KindHit, inten, 0.5f, null);
+                float trailScale = Math.Max(0f, cfg.BloodTrailScale);
+                float inten = Math.Min(4f, 1.0f + damage * 0.3f) * trailScale;
+                if (inten > 0f)
+                    self.Deposit(victim.Pos.X, victim.Pos.Y, victim.Pos.Z, KindHit, inten, 0.5f * trailScale, null);
                 if (!victim.Alive && BleedSystem.StacksOn(victim.EntityId) == 0)
                 {
                     float stacksEquiv = GameMath.Clamp(1f + damage * 0.35f, 1f, 4f) * Math.Max(0f, cfg.CorpseBloodScale);
@@ -268,17 +272,22 @@ namespace TassHunting
                 if (!anyLedger && bleeders.Count == 0) return;
 
                 long now = sapi.World.ElapsedMilliseconds;
+                // self-paced from config (live dial; the listener runs at 250ms)
+                if (now < nextPassMs) return;
+                nextPassMs = now + Math.Max(250, (int)(cfg.BloodDepositIntervalSeconds * 1000f));
 
                 // 1. live bleeders drip a trail
                 HashSet<long> aliveBleeders = bleeders.Count > 0 ? new HashSet<long>() : null;
+                float trailScale = Math.Max(0f, cfg.BloodTrailScale);
                 foreach (var (ent, stacks) in bleeders)
                 {
                     if (ent == null || !ent.Alive) continue;
                     aliveBleeders?.Add(ent.EntityId);
+                    if (trailScale <= 0f) continue; // trails dialed off
                     if (!trails.TryGetValue(ent.EntityId, out var ts))
                         trails[ent.EntityId] = ts = new TrailState();
                     Deposit(ent.Pos.X, ent.Pos.Y, ent.Pos.Z,
-                        KindTrail, 0.8f + 0.5f * stacks, 0.35f * stacks, ts);
+                        KindTrail, (0.8f + 0.5f * stacks) * trailScale, 0.35f * stacks * trailScale, ts);
                 }
 
                 // trail state of entities that stopped bleeding is dropped
@@ -860,7 +869,8 @@ namespace TassHunting
                     if (dx * dx + dz * dz > maxDist2) continue;
                     rendered++;
                     if (now < s.NextEmitMs) continue;
-                    s.NextEmitMs = now + EmitPeriodMs;
+                    int emitMs = (int)(GameMath.Clamp(cfg.BloodRefreshSeconds, 1f, 15f) * 1000f);
+                    s.NextEmitMs = now + emitMs;
 
                     if (!s.BurstDone)
                     {
@@ -882,11 +892,14 @@ namespace TassHunting
                     float lifeFrac = GameMath.Clamp((s.ExpireMs - now) / (0.25f * Math.Max(1f, cfg.BloodSpotLifetimeSeconds * 1000f)), 0f, 1f);
                     float sizeScale = (0.55f + 0.45f * lifeFrac) * Math.Max(0.05f, cfg.BloodSizeScale);
                     float jitter = 0.05f + 0.055f * s.Intensity;
-                    int count = 1 + (int)(s.Intensity / 2.5f);
+                    int pMin = Math.Max(1, cfg.BloodParticlesMin);
+                    int pMax = Math.Max(pMin, cfg.BloodParticlesMax);
+                    int count = GameMath.Clamp(pMin + (int)(s.Intensity / 2f), pMin, pMax);
                     int spotId = kv.Key;
                     groundProps.MinQuantity = 1;
                     groundProps.AddQuantity = 0;
-                    groundProps.LifeLength = 4.6f;
+                    // particles live a touch past the refresh so cycles overlap seamlessly
+                    groundProps.LifeLength = GameMath.Clamp(cfg.BloodRefreshSeconds, 1f, 15f) * 1.15f;
                     for (int k = 0; k < count; k++)
                     {
                         float ang = Hash01(spotId * 97 + k * 13) * GameMath.TWOPI;
