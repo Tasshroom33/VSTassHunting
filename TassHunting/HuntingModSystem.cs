@@ -144,11 +144,15 @@ namespace TassHunting
         //      walking up to old blood see the same trail as everyone else. ----
         public bool BloodVisualsEnabled = true;
         // How long a ground blood spot stays followable (REAL seconds - same
-        // law-7 combat-pacing carve-out as the bleed itself).
+        // law-7 combat-pacing carve-out as the bleed itself). DELIBERATELY not
+        // matched to BloodTrail's 10s default: minutes-long trails are the
+        // whole point of the synced ledger (late joiner follows the trail).
         public float BloodSpotLifetimeSeconds = 600f;
-        // Server deposit cadence while something bleeds. 0.35s at animal flee
-        // speed lays a spot roughly every 1.5-2.5 blocks.
-        public float BloodDepositIntervalSeconds = 0.35f;
+        // Server deposit cadence while something bleeds. 0.25s = 4 drips/sec
+        // (0.6.9, nearest we go to BloodTrail's 12.5/s default: their drops
+        // evaporated in 10s so they had to spray; ours persist and re-render,
+        // so spatial density is what matters, and every drip is a synced spot).
+        public float BloodDepositIntervalSeconds = 0.25f;
         // Merge threshold, NOT a density dial (density = drip interval): drips
         // closer together than this GROW the previous spot into a pool, so
         // stationary/dying animals pool instead of spamming spots. Demoted to
@@ -157,7 +161,7 @@ namespace TassHunting
         public int BloodMaxSpots = 4096;          // server ledger cap, oldest pruned
         public float BloodRenderDistanceBlocks = 64f;
         public int BloodMaxRenderedSpots = 1200;  // client per-tick render budget
-        public float CorpseBleedSeconds = 8f;     // death pool keeps growing this long
+        public float CorpseBleedSeconds = 4f;     // death pool keeps growing this long (BT-default-adjacent, 0.6.9)
         public bool WaterBloodEnabled = true;     // blood in water diffuses as tiles
 
         // 0.6.3 look/feel dials (in-game panel via ConfigLib when installed)
@@ -173,16 +177,16 @@ namespace TassHunting
 
         // 0.6.5 (user: min/max particle + timing knobs were hardcoded; trail
         // amount needed the same lever corpse blood already had)
-        public int BloodParticlesMin = 1;          // client: particles for the smallest blood spot
-        public int BloodParticlesMax = 4;          // client: particles for the biggest pool
+        public int BloodParticlesMin = 1;          // client: particles for the smallest blood spot (BT: 1)
+        public int BloodParticlesMax = 6;          // client: particles for the biggest pool (BT running: 3-7)
         public float BloodRefreshSeconds = 4f;     // client: how often each spot redraws its particles
         public float BloodTrailScale = 1f;         // server: scales trail drips + hit splashes (0 = off)
 
         // 0.6.7 (user's tuning model: size min/max + drop rate + duration).
         // Replaces BloodSizeScale (redundant once real size bounds exist).
         // Bigger pools bias toward max, single drips toward min.
-        public float BloodParticleSizeMin = 0.25f; // client
-        public float BloodParticleSizeMax = 0.9f;  // client
+        public float BloodParticleSizeMin = 0.3f;  // client (BT default min 0.3)
+        public float BloodParticleSizeMax = 0.8f;  // client (BT running max 0.8; our max = big pools)
 
         // ---- WOUNDED SLOWDOWN (2026-07-19, see WoundedSlowdown.cs; replaces
         //      FleeExhaustion - all AI states, tiered, per the user's table) ----
