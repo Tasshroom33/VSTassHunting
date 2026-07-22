@@ -695,22 +695,21 @@ namespace TassHunting
             public bool BurstDone;
         }
 
-        internal class CTile
+        private class CTile
         {
             public float Amount;
             public long LastSeenMs;
-            public float Display; // renderer-lerped visible amount (smooth bloom/fade)
+            public long NextEmitMs;
         }
 
         private ICoreClientAPI capi;
         private long clientTickId;
-        private BloodWaterRenderer waterRenderer;
         private readonly Dictionary<int, CSpot> cspots = new Dictionary<int, CSpot>();
         private readonly Dictionary<(int x, int y, int z), CTile> ctiles = new Dictionary<(int, int, int), CTile>();
-        /// <summary>Water tile mirror for the tint renderer (client thread only).</summary>
-        internal Dictionary<(int x, int y, int z), CTile> ClientWaterTiles => ctiles;
-        private SimpleParticleProperties groundProps, burstProps;
-        private string appliedColorHex; // rebuild props when the config color changes (live tuning)
+        private SimpleParticleProperties groundProps, burstProps, waterProps;
+        private string appliedColorHex;   // rebuild props when the config color changes (live tuning)
+        private float appliedWaterOpacity = -1f;
+        private const int WaterEmitPeriodMs = 2400; // sediment quads live ~3.5s: cycles overlap
 
         private const int EmitPeriodMs = 4000;      // particle life 4.6s: slight overlap
 
@@ -736,8 +735,10 @@ namespace TassHunting
         /// color. Called at start and whenever BloodColorHex changes.</summary>
         private void EnsureParticleProps(HuntingConfig cfg)
         {
-            if (groundProps != null && appliedColorHex == cfg.BloodColorHex) return;
+            float waterOpacity = GameMath.Clamp(cfg.WaterBloodMaxOpacity, 0.05f, 1f);
+            if (groundProps != null && appliedColorHex == cfg.BloodColorHex && appliedWaterOpacity == waterOpacity) return;
             appliedColorHex = cfg.BloodColorHex;
+            appliedWaterOpacity = waterOpacity;
             int blood = ParseBloodColor(cfg.BloodColorHex, ColorUtil.ToRgba(255, 116, 8, 12));
 
             groundProps = new SimpleParticleProperties(
@@ -754,9 +755,20 @@ namespace TassHunting
                 0.9f, 0.8f, 0.1f, 0.22f,
                 EnumParticleModel.Cube);
             burstProps.ShouldDieInLiquid = true;
-            // Water blood is NOT particles anymore - BloodWaterRenderer draws
-            // the cloudy tint quads (field 2026-07-21: cubes floating on water
-            // read as voxel litter, not blood).
+
+            // Blood in water = the VANILLA lakebed-sediment look, tinted red
+            // (user 2026-07-21: like stepping on the bottom of a lake - soft
+            // translucent quads hanging IN the water column, not a gradient
+            // circle film and not floating cubes). Translucent quad billboards,
+            // near-still drift, alpha from the water opacity dial.
+            int wr = (blood >> 16) & 0xFF, wg = (blood >> 8) & 0xFF, wb = blood & 0xFF;
+            int water = ColorUtil.ToRgba((int)(160 * waterOpacity), wr, wg, wb);
+            waterProps = new SimpleParticleProperties(
+                1, 1, water,
+                new Vec3d(), new Vec3d(),
+                new Vec3f(-0.02f, -0.01f, -0.02f), new Vec3f(0.02f, 0.015f, 0.02f),
+                3.5f, 0f, 0.7f, 1.3f,
+                EnumParticleModel.Quad);
         }
 
         /// <summary>Deterministic 0..1 from a seed - splat layouts must be
@@ -781,9 +793,6 @@ namespace TassHunting
                 .SetMessageHandler<BloodClearPacket>(OnClearPacket);
 
             clientTickId = api.Event.RegisterGameTickListener(ClientRenderTick, 400);
-
-            waterRenderer = new BloodWaterRenderer(api, this);
-            api.Event.RegisterRenderer(waterRenderer, EnumRenderStage.AfterOIT, "tassbloodwater");
 
             api.ChatCommands.Create("tassbloodc")
                 .WithDescription("TassHunting blood client mirror status")
@@ -914,12 +923,28 @@ namespace TassHunting
                 }
                 if (dead != null) foreach (int id in dead) cspots.Remove(id);
 
-                // water tiles: rendering is BloodWaterRenderer's job now; this
-                // tick only prunes tiles the server stopped refreshing
+                // water tiles: red sediment clouds, vanilla lakebed language
                 List<(int, int, int)> staleTiles = null;
                 foreach (var kv in ctiles)
-                    if (now - kv.Value.LastSeenMs > WaterStaleMs)
-                        (staleTiles = staleTiles ?? new List<(int, int, int)>()).Add(kv.Key);
+                {
+                    var t = kv.Value;
+                    if (now - t.LastSeenMs > WaterStaleMs)
+                    { (staleTiles = staleTiles ?? new List<(int, int, int)>()).Add(kv.Key); continue; }
+                    double dx = kv.Key.x + 0.5 - px, dz = kv.Key.z + 0.5 - pz;
+                    if (dx * dx + dz * dz > maxDist2) continue;
+                    if (t.Amount < 0.05f || now < t.NextEmitMs) continue;
+                    t.NextEmitMs = now + WaterEmitPeriodMs;
+
+                    float amt = Math.Min(4f, t.Amount);
+                    waterProps.MinQuantity = 1 + (int)amt;
+                    waterProps.AddQuantity = 1;
+                    waterProps.MinSize = (0.6f + 0.2f * amt) * Math.Max(0.05f, cfg.BloodSizeScale);
+                    waterProps.MaxSize = (0.9f + 0.25f * amt) * Math.Max(0.05f, cfg.BloodSizeScale);
+                    // hang IN the water column below the surface, not on it
+                    waterProps.MinPos.Set(kv.Key.x + 0.5 - 0.42, kv.Key.y + 0.35, kv.Key.z + 0.5 - 0.42);
+                    waterProps.AddPos.Set(0.84, 0.45, 0.84);
+                    capi.World.SpawnParticles(waterProps);
+                }
                 if (staleTiles != null) foreach (var k in staleTiles) ctiles.Remove(k);
             }
             catch (Exception ex) { WarnRateLimited("client render tick", ex); }
@@ -939,14 +964,8 @@ namespace TassHunting
                     sapi.Event.PlayerDisconnect -= OnPlayerDisconnect;
                 }
                 if (capi != null && clientTickId != 0) capi.Event.UnregisterGameTickListener(clientTickId);
-                if (capi != null && waterRenderer != null)
-                {
-                    capi.Event.UnregisterRenderer(waterRenderer, EnumRenderStage.AfterOIT);
-                    waterRenderer.Dispose();
-                }
             }
             catch { }
-            waterRenderer = null;
             if (instance == this) instance = null;
             spots.Clear(); trails.Clear(); corpses.Clear(); waterTiles.Clear(); sentIds.Clear(); dirtySpots.Clear();
             cspots.Clear(); ctiles.Clear();
