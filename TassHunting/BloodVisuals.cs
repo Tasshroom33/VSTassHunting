@@ -562,14 +562,19 @@ namespace TassHunting
                         burstProps.AddQuantity = 2f;
                         burstProps.MinSize = Math.Max(0.02f, Math.Min(sp.SizeMin, sp.SizeMax));
                         burstProps.MaxSize = Math.Max(burstProps.MinSize, Math.Max(sp.SizeMin, sp.SizeMax));
-                        burstProps.LifeLength = Math.Max(0.2f, Math.Min(sp.LifetimeMin, sp.LifetimeMax)
+                        // It is all BLOOD: splatter lives as long as a trail drop
+                        // (user 2026-07-22) - it just LAUNCHES explosively, arcs,
+                        // lands, and settles into the same long-lasting stain.
+                        float splatLife = Math.Max(0.2f, Math.Min(sp.LifetimeMin, sp.LifetimeMax)
                             + Math.Abs(sp.LifetimeMax - sp.LifetimeMin) * Hash01(kv.Key * 331 + s.SpurtsLeft * 13));
+                        burstProps.LifeLength = splatLife;
                         burstProps.MinVelocity.Set(-0.45f * spdMax, 0.8f * spdMin, -0.45f * spdMax);
                         burstProps.AddVelocity.Set(0.9f * spdMax, spdMax - 0.8f * spdMin, 0.9f * spdMax);
-                        // full-color the whole life; QUADRATIC shrink back-loads
-                        // the disappearance to the lifecycle's end (soak-in)
-                        burstProps.SizeEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC,
-                            -0.85f * (burstProps.MinSize + burstProps.MaxSize) * 0.5f);
+                        // opacity holds then fades at the end (over its own life),
+                        // and it EXPANDS like the settled ground blood does.
+                        burstProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
+                        burstProps.SizeEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR,
+                            (burstProps.MinSize + burstProps.MaxSize) * 0.5f);
                         // WIDE spawn box: particles emerge at the body surface,
                         // not hidden inside the mesh (the invisible-shot bug)
                         burstProps.MinPos.Set(s.X - 0.35, s.Y + s.FallHeight - 0.05, s.Z - 0.35);
@@ -596,43 +601,30 @@ namespace TassHunting
                 float tSprMax = Math.Max(tSprMin, Math.Max(tr.SpreadMin, tr.SpreadMax));
                 int tQtyMin = Math.Max(1, Math.Min(tr.QtyMin, tr.QtyMax));
                 int tQtyMax = Math.Max(tQtyMin, Math.Max(tr.QtyMin, tr.QtyMax));
-                // the whole spot lifetime, in seconds - the particle lives this
-                // long and fades+sinks across it (no per-drop ragged life now;
-                // the spot IS the drop's life)
-                float spotLifeSec = s.LifeMs / 1000f;
+                float tLifeMin = Math.Max(1f, Math.Min(tr.LifetimeMin, tr.LifetimeMax));
+                float tLifeMax = Math.Max(tLifeMin, Math.Max(tr.LifetimeMin, tr.LifetimeMax));
 
-                // One persistent decal particle per drop (0.9.13 spec, user):
-                // blood STAYS on the ground - it EXPANDS to 2x size and sinks
-                // HALFWAY (50%) into the surface over its life, holds full
-                // opacity for most of the life, then fades to 0 only at the end.
-                // Not "sink all the way through + fade the whole time" (0.9.12
-                // read as a slow pop-out).
+                // One persistent decal particle per drop. Blood STAYS on the
+                // ground: EXPANDS to 2x, sinks HALFWAY (50%) into the surface,
+                // holds opacity then fades near the end. Everything below is
+                // driven by the drop's own LIFETIME (the BloodTrails lifetime
+                // config, ragged per-drop) - NO static made-up durations (user
+                // 2026-07-22). Per-drop life is set inside the loops.
                 groundProps.Color = bloodFresh;
                 groundProps.MinQuantity = 1;
                 groundProps.AddQuantity = 0;
-                groundProps.LifeLength = spotLifeSec;
                 groundProps.GravityEffect = 0f;
                 groundProps.WithTerrainCollision = false;
-                // DELAYED FADE: opacity holds high then drops at the end.
-                // QUADRATIC (firstval + sign*(factor*seq)^2) with a factor sized
-                // so the square term stays small until seq nears 1 - the closest
-                // a native evolve gets to a 90/10 hold-then-cliff (a true sharp
-                // cliff is not an available curve; this holds ~solid ~70% then
-                // fades through the tail).
+                // fade: holds high, fades near the end (quadratic is applied over
+                // the particle's OWN LifeLength, seq 0..1 - so it is inherently
+                // lifetime-relative, whatever life we set per drop below).
                 groundProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
-                // AGE COLOR over the particle's own life: fresh (bright) -> aged
-                // (dark), per-channel evolve; darkens as it dries.
+                // AGE COLOR over the particle's own life: fresh -> aged.
                 int fr = (bloodFresh >> 16) & 0xFF, fg = (bloodFresh >> 8) & 0xFF, fb = bloodFresh & 0xFF;
                 int ar2 = (bloodAged >> 16) & 0xFF, ag2 = (bloodAged >> 8) & 0xFF, ab2 = bloodAged & 0xFF;
                 groundProps.RedEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, ar2 - fr);
                 groundProps.GreenEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, ag2 - fg);
                 groundProps.BlueEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, ab2 - fb);
-                // SINK 50% INTO THE GROUND over the life (settles into the
-                // surface, does NOT pass through). A trail cube ~0.3 tall sinks
-                // ~half its height total, no more.
-                float sink50 = 0.15f / Math.Max(1f, spotLifeSec);
-                groundProps.MinVelocity.Set(0f, -sink50, 0f);
-                groundProps.AddVelocity.Set(0f, 0f, 0f);
 
                 if (s.Kind == KindTrail && s.HasSeg)
                 {
@@ -649,10 +641,17 @@ namespace TassHunting
                         double ly = s.PrevY + (s.Y - s.PrevY) * t;
                         if (!ResolveGroundY(lx, ly + 1.0, lz, out double gy)) continue;
                         float psize = GameMath.Lerp(tsMin, tsMax, 0.5f * Hash01(spotId * 239 + k * 23 + 11) + 0.5f * intenFrac);
+                        float dropLife = tLifeMin + (tLifeMax - tLifeMin) * Hash01(spotId * 307 + k * 11);
+                        groundProps.LifeLength = dropLife;
                         groundProps.MinSize = psize;
                         groundProps.MaxSize = psize;
                         // EXPAND to 2x over the life (blood spreads/soaks outward)
                         groundProps.SizeEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, psize);
+                        // SINK 50% of its own height, spread over ITS lifetime
+                        // (velocity = half-height / life -> total sink = half a
+                        // cube, whatever the life; no static number)
+                        groundProps.MinVelocity.Set(0f, -(0.5f * psize) / dropLife, 0f);
+                        groundProps.AddVelocity.Set(0f, 0f, 0f);
                         groundProps.MinPos.Set(lx, gy + 0.02, lz);
                         groundProps.AddPos.Set(0, 0, 0);
                         capi.World.SpawnParticles(groundProps);
@@ -668,10 +667,15 @@ namespace TassHunting
                         float rad = radius * (float)Math.Sqrt(Hash01(spotId * 131 + k * 29 + 7));
                         float variation = 0.85f + 0.3f * Hash01(spotId * 173 + k * 41 + 3);
                         float psize = GameMath.Lerp(tsMin, tsMax, intenFrac) * variation;
+                        float dropLife = tLifeMin + (tLifeMax - tLifeMin) * Hash01(spotId * 349 + k * 17);
+                        groundProps.LifeLength = dropLife;
                         groundProps.MinSize = psize;
                         groundProps.MaxSize = psize;
                         // EXPAND to 2x over the life (blood spreads/soaks outward)
                         groundProps.SizeEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, psize);
+                        // SINK 50% of its own height, spread over ITS lifetime
+                        groundProps.MinVelocity.Set(0f, -(0.5f * psize) / dropLife, 0f);
+                        groundProps.AddVelocity.Set(0f, 0f, 0f);
                         groundProps.MinPos.Set(s.X + Math.Sin(ang) * rad, s.Y + 0.02, s.Z + Math.Cos(ang) * rad);
                         groundProps.AddPos.Set(0, 0, 0);
                         capi.World.SpawnParticles(groundProps);

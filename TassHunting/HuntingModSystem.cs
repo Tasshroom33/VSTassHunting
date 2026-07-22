@@ -154,9 +154,11 @@ namespace TassHunting
         //      a spot ledger + water diffusion; the current build renders it
         //      client-locally (the sync layer is parked, see BloodVisuals). ----
         public bool BloodVisualsEnabled = true;
-        // How long a ground blood spot lasts, in seconds (field 2026-07-22:
-        // 600 was crazy for a decal - now a 1-60s dial, default 30).
-        public float BloodSpotLifetimeSeconds = 30f;
+        // How long the spot RECORD is kept, seconds. The visible blood lifetime
+        // is BloodTrails.Lifetime (per-drop) - this just needs to outlast it so
+        // the record isn't culled before its particles finish. Match the max
+        // trail lifetime.
+        public float BloodSpotLifetimeSeconds = 60f;
         // Server deposit cadence while something bleeds. 0.25s = 4 drips/sec.
         // Our drops persist and re-render, so spatial density (spacing along
         // the path) is what reads, not raw emission rate.
@@ -178,22 +180,25 @@ namespace TassHunting
         // The two visual systems (user-identified): TRAILS = ground decals
         // (line drops, pools, hit marks). SPLATTER = airborne juice (spurt
         // pulses on the shot / DoT beat, plus falling droplets).
+        // Defaults are the user's own field-tuned 2026-07-22 values.
         public BloodParticleLook BloodTrails = new BloodParticleLook
         {
             Enabled = true,
-            SizeMin = 0.3f, SizeMax = 0.8f,
-            QtyMin = 2, QtyMax = 5,          // drops per block of trail / particles per pool
+            SizeMin = 0.598f, SizeMax = 1.048f,
+            QtyMin = 2, QtyMax = 5,
             SpreadMin = 0.05f, SpreadMax = 0.2f,
-            LifetimeMin = 20f, LifetimeMax = 30f    // per-drop, seconds; ragged decay (field: 1-60 range, ~30 default)
+            LifetimeMin = 45f, LifetimeMax = 60f
         };
+        // Splatter is the SAME blood as trails - same lifetime; it just starts
+        // higher and more explosive (bigger spread/launch, more particles).
+        // Lifetime matched to BloodTrails per the user (all blood lasts alike).
         public BloodParticleLook BloodSplatter = new BloodParticleLook
         {
             Enabled = true,
-            SizeMin = 0.12f, SizeMax = 0.28f,
+            SizeMin = 0.503f, SizeMax = 1.0f,
             QtyMin = 6, QtyMax = 15,         // particles per spurt pulse (damage-scaled within)
             SpreadMin = 0.4f, SpreadMax = 1.5f, // launch speed range
-            // lifetime = flight (~0.7s) + ground-sit time before fading away
-            LifetimeMin = 2.0f, LifetimeMax = 3.0f
+            LifetimeMin = 45f, LifetimeMax = 60f  // == trails; all blood lasts alike
         };
         // Water Effect
         public bool TintSurroundingWater = true;  // client: render the blood-in-water sediment
