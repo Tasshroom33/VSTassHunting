@@ -61,8 +61,6 @@ namespace TassHunting
             public bool GroundEmitted;   // ground decal particles are spawned ONCE, then live their full lifetime
             public int SpurtsLeft;
             public long NextSpurtMs;
-            public bool DropletsPending;
-            public long DropletAtMs;   // droplets fall after this (fake fall-delay from wound height)
         }
 
         /// <summary>Per-entity observation state (hurt counter, trail anchor,
@@ -90,7 +88,7 @@ namespace TassHunting
         private readonly BlockPos scratch = new BlockPos(0);
         private long lastWarnMs = -10000;
 
-        private SimpleParticleProperties groundProps, burstProps, waterProps, dropletProps;
+        private SimpleParticleProperties groundProps, burstProps, waterProps;
         private string appliedColorHex;
         private float appliedWaterOpacity = -1f;
         private bool appliedSoftWater;
@@ -346,11 +344,6 @@ namespace TassHunting
                 Kind = kind,
                 SpurtsLeft = spurts
             };
-            if (spot.FallHeight > 0.35f && cfg.BloodSplatter.Enabled)
-            {
-                spot.DropletsPending = true;
-                spot.DropletAtMs = now + Math.Min(1200, (int)(spot.FallHeight * 150f));
-            }
             if (tr != null && tr.LastSpotId >= 0 && kind == KindTrail)
             {
                 double sx = x - tr.LastX, sz = z - tr.LastZ;
@@ -486,10 +479,9 @@ namespace TassHunting
             // (Splatter spread) is set high, not because gravity is dialed weak.
             // NO OPACITY FADE (0.9.2: blood POPS to end of lifecycle) - exits
             // via late-accelerating SHRINK (quadratic size decay set per shot).
-            // UNIFIED COLOR (2026-07-22): all blood - spurt, droplet, ground -
-            // is born the SAME fresh color and darkens to aged over its life via
-            // these per-channel evolves. Fixes "bright + regular + dark mixed"
-            // (spurt/droplet used to stay bright while only trail darkened).
+            // UNIFIED COLOR (2026-07-22): all blood - spurt and ground - is born
+            // the SAME fresh color and darkens to aged over its life via these
+            // per-channel evolves.
             int cfr = CR(blood), cfg2 = CG(blood), cfb = CB(blood);
             int cagedR = CR(bloodAged), cagedG = CG(bloodAged), cagedB = CB(bloodAged);
             EvolvingNatFloat RedDark() => new EvolvingNatFloat(EnumTransformFunction.LINEAR, cagedR - cfr);
@@ -505,17 +497,6 @@ namespace TassHunting
             burstProps.GreenEvolve = GreenDark();
             burstProps.BlueEvolve = BlueDark();
 
-            // falling droplets: real blood -> VS gravity 1.0 (they only fall,
-            // no launch, so this is a clean natural drip from the wound).
-            dropletProps = new SimpleParticleProperties(
-                2, 3, blood, new Vec3d(), new Vec3d(),
-                new Vec3f(-0.05f, -0.05f, -0.05f), new Vec3f(0.05f, 0f, 0.05f),
-                1.1f, 1f, 0.1f, 0.2f, EnumParticleModel.Cube);
-            dropletProps.ShouldDieInLiquid = true;
-            dropletProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, -255f); // LINEAR fade (was QUADRATIC = vanished instantly)
-            dropletProps.RedEvolve = RedDark();
-            dropletProps.GreenEvolve = GreenDark();
-            dropletProps.BlueEvolve = BlueDark();
 
             int water = ColorUtil.ToRgba(Math.Max(6, (int)(130 * waterOpacity)), CR(blood), CG(blood), CB(blood));
             waterProps = new SimpleParticleProperties(
@@ -570,23 +551,6 @@ namespace TassHunting
                 if (ddx * ddx + ddz * ddz > maxDist2) continue;
                 rendered++;
 
-                // falling droplets: fire once, before the splat materializes
-                if (s.DropletsPending)
-                {
-                    s.DropletsPending = false;
-                    if (cfg.BloodSplatter.Enabled && dropletProps != null)
-                    {
-                        var spd = cfg.BloodSplatter;
-                        dropletProps.MinQuantity = Math.Max(1, spd.QtyMin / 3) + (int)(s.Intensity / 2f);
-                        dropletProps.AddQuantity = 2;
-                        dropletProps.MinSize = Math.Max(0.02f, Math.Min(spd.SizeMin, spd.SizeMax) * 0.7f);
-                        dropletProps.MaxSize = Math.Max(dropletProps.MinSize, Math.Max(spd.SizeMin, spd.SizeMax) * 0.7f);
-                        dropletProps.LifeLength = GameMath.Clamp(s.FallHeight * 0.2f, 0.4f, 1.4f);
-                        dropletProps.MinPos.Set(s.X - 0.12, s.Y + s.FallHeight - 0.1, s.Z - 0.12);
-                        dropletProps.AddPos.Set(0.24, 0.15, 0.24);
-                        capi.World.SpawnParticles(dropletProps);
-                    }
-                }
 
                 // spurt pulses: everything from the BloodSplatter block
                 if (s.SpurtsLeft > 0 && now >= s.NextSpurtMs)
