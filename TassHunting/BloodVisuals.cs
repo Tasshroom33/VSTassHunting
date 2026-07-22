@@ -87,7 +87,6 @@ namespace TassHunting
         private SimpleParticleProperties groundProps, burstProps, waterProps;
         private string appliedColorHex;
         private float appliedWaterOpacity = -1f;
-        private bool appliedSoftWater;
         private int bloodFresh, bloodAged; // ground blood dries fresh -> aged over the particle's life
         // last corpse-pool emit, captured for the chat-facing /tassbloodc readout
         // (point-and-ask: after a kill, ask what the pool actually did)
@@ -501,13 +500,11 @@ namespace TassHunting
 
         private void EnsureParticleProps(HuntingConfig cfg)
         {
-            float waterOpacity = GameMath.Clamp(cfg.WaterBloodMaxOpacity, 0.05f, 1f);
-            bool soft = cfg.SoftWaterParticles;
+            float waterOpacity = GameMath.Clamp(cfg.WaterBloodMaxOpacity, 0.02f, 1f);
             if (groundProps != null && appliedColorHex == cfg.BloodColorHex + "|" + cfg.BloodColorAgedHex
-                && appliedWaterOpacity == waterOpacity && appliedSoftWater == soft) return;
+                && appliedWaterOpacity == waterOpacity) return;
             appliedColorHex = cfg.BloodColorHex + "|" + cfg.BloodColorAgedHex;
             appliedWaterOpacity = waterOpacity;
-            appliedSoftWater = soft;
             int blood = ParseBloodColor(cfg.BloodColorHex, ColorUtil.ToRgba(255, 116, 8, 12));
             bloodFresh = blood;
             bloodAged = ParseBloodColor(cfg.BloodColorAgedHex, ColorUtil.ToRgba(255, 58, 4, 6));
@@ -549,13 +546,32 @@ namespace TassHunting
             // per-emit) and vanishes by shrinking. Nothing shifts its hue.
 
 
-            int water = ColorUtil.ToRgba(Math.Max(6, (int)(130 * waterOpacity)), CR(blood), CG(blood), CB(blood));
+            // WATER BLOOD = a RE-SKIN of vanilla FloatingSedimentParticles - the
+            // MUDDY stir-up effect (user 2026-07-22: "100% copy the muddy emitter
+            // and just change the color; it already has that watery expand from
+            // small to big floaty feel"). All values copied from the engine's
+            // FloatingSedimentParticles (API.Common), only the color is ours:
+            //   Quad model, lives IN water (DieInLiquid=false) and dies at the
+            //   surface/air (DieInAir=true), zero gravity, ~9s life, starts tiny
+            //   (0.25) and EXPANDS via LINEAR SizeEvolve +3 (-> ~3.25 = the "small
+            //   to big" bloom), QUADRATIC -50 opacity (holds then fades late, NOT
+            //   the -255 that cratered), VertexFlags 512 (soft water compositing),
+            //   and a tiny +-1/16 random drift = the floaty jitter.
+            // Alpha is a DIRECT percentage of WaterBloodMaxOpacity.
+            int waterAlpha = GameMath.Clamp((int)Math.Round(waterOpacity * 255f), 3, 255);
+            int water = ColorUtil.ToRgba(waterAlpha, CR(blood), CG(blood), CB(blood));
             waterProps = new SimpleParticleProperties(
                 1, 1, water, new Vec3d(), new Vec3d(),
-                new Vec3f(-0.02f, -0.01f, -0.02f), new Vec3f(0.02f, 0.015f, 0.02f),
-                3.5f, 0f, 0.7f, 1.3f,
-                soft ? EnumParticleModel.Quad : EnumParticleModel.Cube);
-            waterProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, -255f); // LINEAR fade (quadratic vanished instantly)
+                new Vec3f(-1f / 16f, -1f / 16f, -1f / 16f), new Vec3f(1f / 16f, 1f / 16f, 1f / 16f),
+                9f,      // LifeLength (sediment: 9s)
+                0f,      // GravityEffect (floats)
+                0.25f, 0.25f, // MinSize/MaxSize (sediment starts at 0.25)
+                EnumParticleModel.Quad);
+            waterProps.ShouldDieInLiquid = false;  // lives IN the water
+            waterProps.ShouldDieInAir = true;      // dies when it reaches the surface/air
+            waterProps.VertexFlags = 512;          // soft water compositing (sediment uses 512)
+            waterProps.SizeEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, 3f);    // EXPAND small->big (sediment)
+            waterProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -50f); // hold then fade (sediment)
         }
 
         /// <summary>The pink-free VANISH: hold size, then shrink to nothing at
@@ -936,21 +952,20 @@ namespace TassHunting
                 if (now < nextEmit) continue;
                 waterNextEmit[kv.Key] = now + 2400;
 
+                // Amount only drives HOW MANY sediment-style puffs bloom this beat
+                // (more blood = denser murk); the look (size 0.25 -> ~3.25 expand,
+                // 9s life, float, soft) is the fixed sediment recipe set in
+                // EnsureParticleProps - do NOT override size/evolve here.
                 float amt = Math.Min(4f, kv.Value);
                 float clotAmt = Math.Max(0f, cfg.WaterClotAmount);
                 int clots = (int)((1f + amt) * clotAmt);
                 if (clots < 1) continue;
-                float wMin = Math.Max(0.05f, cfg.WaterClotSizeMin);
-                float wMax = Math.Max(wMin, cfg.WaterClotSizeMax);
-                float startSize = wMin * 0.6f;
-                float endSize = wMin + (wMax - wMin) * GameMath.Clamp(amt / 4f, 0.3f, 1f);
                 waterProps.MinQuantity = clots;
                 waterProps.AddQuantity = 1;
-                waterProps.MinSize = startSize;
-                waterProps.MaxSize = startSize * 1.3f;
-                waterProps.SizeEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, endSize - startSize);
-                waterProps.MinPos.Set(kv.Key.x + 0.5 - 0.42, kv.Key.y + 0.35, kv.Key.z + 0.5 - 0.42);
-                waterProps.AddPos.Set(0.84, 0.45, 0.84);
+                // spawn across the tile and through its lower/mid depth so the
+                // murk fills the water volume (reads from the side, not just top)
+                waterProps.MinPos.Set(kv.Key.x + 0.5 - 0.42, kv.Key.y + 0.25, kv.Key.z + 0.5 - 0.42);
+                waterProps.AddPos.Set(0.84, 0.5, 0.84);
                 capi.World.SpawnParticles(waterProps);
             }
         }

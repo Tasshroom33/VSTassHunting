@@ -108,8 +108,8 @@ namespace TassHunting
             if (ImGui.CollapsingHeader("Water Effect"))
             {
                 Checkbox("Tint surrounding water", () => cfg.TintSurroundingWater, v => cfg.TintSurroundingWater = v);
-                Checkbox("Softer water particles", () => cfg.SoftWaterParticles, v => cfg.SoftWaterParticles = v);
-                Help("On = soft sediment puffs. Off = cubes.");
+                SliderFloat("Blood opacity in water", () => cfg.WaterBloodMaxOpacity, v => cfg.WaterBloodMaxOpacity = v, 0.02f, 1f);
+                Help("How see-through the blood in water is. 0.10 = 10% (faint tint), 1.0 = solid. Applies live.");
                 SliderFloat("Rain clear speed", () => cfg.RainClearSpeed, v => cfg.RainClearSpeed = v, 0f, 2f);
                 Help("How fast rain clears fresh blood. 0 = rain never clears it, 1 = half lifetime, 2 = a third.");
             }
