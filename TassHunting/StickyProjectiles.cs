@@ -310,7 +310,14 @@ namespace TassHunting
 
                 if (s.SecondsLeft <= 0f)
                 {
-                    arrow.Die(EnumDespawnReason.Expire); // timed-out ride, NOT a break (arrowhead-drop ignores Expire)
+                    // WORKS LOOSE (field 2026-07-22: timed-out arrows vanished
+                    // instead of dropping). Same RELEASE as the death path -
+                    // detach, resume gravity, fall to the ground RECOVERABLE.
+                    // (The old Die(Expire) despawned it, giving nothing to pick
+                    // up - only animal death dropped arrows.)
+                    arrow.WatchedAttributes.SetBool("stuck", false);
+                    arrow.WatchedAttributes.RemoveAttribute("sa_target");
+                    arrow.Pos.Motion.Set(0.0, -0.02, 0.0);
                     toRemove.Add(kv.Key);
                     affectedTargets.Add(s.TargetId);
                     continue;
