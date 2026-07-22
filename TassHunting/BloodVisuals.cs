@@ -791,8 +791,15 @@ namespace TassHunting
                         groundProps.MaxSize = psize;
                         // HOLD size, then SHRINK to nothing at the end (pink-free).
                         groundProps.SizeEvolve = ShrinkAway(psize);
-                        // SINK 50% of its own height, spread over ITS lifetime
-                        groundProps.MinVelocity.Set(0f, -(0.5f * psize) / dropLife, 0f);
+                        // A POOL STAYS PUT (user 2026-07-22: "make it last the
+                        // configured time ABOVE ground"). The old downward sink
+                        // (-0.5*psize/life) started at the surface and drove the
+                        // pool UNDERGROUND within the first third of its life - it
+                        // was alive but buried = the "sinks too fast". Pool: NO
+                        // sink, sits flat on the ground its whole life. Trail
+                        // drops keep the gentle soak-in sink (small, reads right).
+                        float sinkY = isCorpsePool ? 0f : -(0.5f * psize) / dropLife;
+                        groundProps.MinVelocity.Set(0f, sinkY, 0f);
                         groundProps.AddVelocity.Set(0f, 0f, 0f);
                         groundProps.MinPos.Set(s.X + Math.Sin(ang) * rad, s.Y + 0.02, s.Z + Math.Cos(ang) * rad);
                         groundProps.AddPos.Set(0, 0, 0);
