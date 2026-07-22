@@ -77,17 +77,24 @@ namespace TassHunting
         [ProtoMember(1)] public List<WaterBloodTileDto> Tiles = new List<WaterBloodTileDto>();
     }
 
+    /// <summary>Server-initiated removal (admin clear / ledger cap prune) -
+    /// without this, clients render ghost blood until natural expiry.</summary>
+    [ProtoContract]
+    public class BloodClearPacket
+    {
+        [ProtoMember(1)] public List<int> Ids = new List<int>();
+        [ProtoMember(2)] public bool All;
+    }
+
     public class BloodVisuals : ModSystem
     {
         public const string ChannelName = "tasshuntingblood";
         private const byte KindTrail = 0, KindHit = 1, KindPool = 2;
 
-        // Internal pacing/diffusion constants (documented, deliberately not
-        // config: they define the LOOK; the config dials define the COST).
+        // Internal pacing constants (the LOOK constants that stayed config-free;
+        // water decay/spread graduated to config dials in 0.6.3).
         private const float MaxIntensity = 8f;
         private const int CorpseTickMs = 1200;
-        private const float WaterKeep = 0.90f;       // per second
-        private const float WaterLeak = 0.02f;       // per cardinal neighbor per second
         private const float WaterCull = 0.008f;
         private const int WaterTileCap = 2048;
         private const int WaterBroadcastCap = 512;
@@ -144,7 +151,8 @@ namespace TassHunting
         {
             api.Network.RegisterChannel(ChannelName)
                 .RegisterMessageType<BloodSpotsPacket>()
-                .RegisterMessageType<WaterBloodPacket>();
+                .RegisterMessageType<WaterBloodPacket>()
+                .RegisterMessageType<BloodClearPacket>();
         }
 
         public override void StartServerSide(ICoreServerAPI api)
@@ -284,13 +292,29 @@ namespace TassHunting
                         if (now - kv.Value.BornMs > lifeMs)
                             (dead = dead ?? new List<int>()).Add(kv.Key);
                     if (dead != null) foreach (int id in dead) RemoveSpot(id);
-                    while (spots.Count > Math.Max(64, cfg.BloodMaxSpots))
+                    // cap prune: oldest first, and TELL the clients that have
+                    // them (expiry needs no packet - clients expire on RemainMs)
+                    int cap = Math.Max(64, cfg.BloodMaxSpots);
+                    if (spots.Count > cap)
                     {
-                        int oldest = -1; long oldestBorn = long.MaxValue;
-                        foreach (var kv in spots)
-                            if (kv.Value.BornMs < oldestBorn) { oldestBorn = kv.Value.BornMs; oldest = kv.Key; }
-                        if (oldest < 0) break;
-                        RemoveSpot(oldest);
+                        var byAge = new List<Spot>(spots.Values);
+                        byAge.Sort((a, b) => a.BornMs.CompareTo(b.BornMs));
+                        int excess = spots.Count - cap;
+                        var removedIds = new List<int>(excess);
+                        for (int i = 0; i < excess; i++) removedIds.Add(byAge[i].Id);
+                        foreach (var kv in sentIds)
+                        {
+                            List<int> mine = null;
+                            foreach (int id in removedIds)
+                                if (kv.Value.Contains(id)) (mine = mine ?? new List<int>()).Add(id);
+                            if (mine != null && sapi.World.PlayerByUid(kv.Key) is IServerPlayer p
+                                && p.ConnectionState == EnumClientState.Playing)
+                            {
+                                serverChannel.SendPacket(new BloodClearPacket { Ids = mine }, p);
+                                packetsSent++;
+                            }
+                        }
+                        foreach (int id in removedIds) RemoveSpot(id);
                     }
                 }
 
@@ -487,13 +511,17 @@ namespace TassHunting
                 if (waterTiles.Count == 0) return; // EARLY OUT: no blood in any water
 
                 var ba = sapi.World.BlockAccessor;
+                // config dials; spread clamped so keep + 4*leak <= 1 (mass can
+                // never grow, whatever the user dials in)
+                float keep = 1f - GameMath.Clamp(cfg.WaterBloodDecayPerSecond, 0.01f, 0.9f);
+                float leakFrac = GameMath.Clamp(cfg.WaterBloodSpreadPerSecond, 0f, (1f - keep) / 4f);
                 var next = new Dictionary<(int, int, int), float>(waterTiles.Count * 2);
                 foreach (var kv in waterTiles)
                 {
                     var (x, y, z) = kv.Key;
                     float amt = kv.Value;
-                    Add(next, kv.Key, amt * WaterKeep);
-                    float leak = amt * WaterLeak;
+                    Add(next, kv.Key, amt * keep);
+                    float leak = amt * leakFrac;
                     if (leak <= 0f) continue;
                     foreach (var (dx, dz) in Cardinals)
                     {
@@ -590,7 +618,9 @@ namespace TassHunting
                                 int n = spots.Count, w = waterTiles.Count;
                                 foreach (var kv in sentIds) kv.Value.Clear();
                                 spots.Clear(); waterTiles.Clear(); corpses.Clear(); trails.Clear(); dirtySpots.Clear();
-                                return TextCommandResult.Success($"[tassblood] cleared {n} spots, {w} water tiles (clients fade out on their own timers).");
+                                serverChannel.BroadcastPacket(new BloodClearPacket { All = true });
+                                packetsSent++;
+                                return TextCommandResult.Success($"[tassblood] cleared {n} spots, {w} water tiles (clients wiped instantly).");
                             case "test":
                                 var ent = args.Caller?.Entity;
                                 if (ent == null) return TextCommandResult.Success("[tassblood] no caller entity.");
@@ -637,30 +667,49 @@ namespace TassHunting
         private readonly Dictionary<int, CSpot> cspots = new Dictionary<int, CSpot>();
         private readonly Dictionary<(int x, int y, int z), CTile> ctiles = new Dictionary<(int, int, int), CTile>();
         private SimpleParticleProperties groundProps, burstProps, waterProps;
+        private string appliedColorHex; // rebuild props when the config color changes (live tuning)
 
         private const int EmitPeriodMs = 4000;      // particle life 4.6s: slight overlap
         private const int WaterEmitPeriodMs = 2200; // life 2.6s
-        // ToRgba(a,r,g,b) packs ARGB = the BGRA byte order the particle system
-        // reads (API-doc-verified) - same call THW's proven white flurries use.
-        private static readonly int BloodColor = ColorUtil.ToRgba(255, 116, 8, 12);
-        private static readonly int WaterBloodColor = ColorUtil.ToRgba(255, 96, 4, 10);
 
-        public override void StartClientSide(ICoreClientAPI api)
+        /// <summary>#RRGGBB -> particle color int. ToRgba(a,r,g,b) packs ARGB =
+        /// the BGRA byte order the particle system reads (API-doc-verified) -
+        /// same call THW's proven white flurries use.</summary>
+        private static int ParseBloodColor(string hex, int fallback)
         {
-            capi = api;
-            api.Network.GetChannel(ChannelName)
-                .SetMessageHandler<BloodSpotsPacket>(OnSpotsPacket)
-                .SetMessageHandler<WaterBloodPacket>(OnWaterPacket);
+            try
+            {
+                if (string.IsNullOrEmpty(hex)) return fallback;
+                string h = hex.TrimStart('#');
+                if (h.Length != 6) return fallback;
+                int r = Convert.ToInt32(h.Substring(0, 2), 16);
+                int g = Convert.ToInt32(h.Substring(2, 2), 16);
+                int b = Convert.ToInt32(h.Substring(4, 2), 16);
+                return ColorUtil.ToRgba(255, r, g, b);
+            }
+            catch { return fallback; }
+        }
+
+        /// <summary>(Re)build the particle prototypes for the current config
+        /// color. Called at start and whenever BloodColorHex changes.</summary>
+        private void EnsureParticleProps(HuntingConfig cfg)
+        {
+            if (groundProps != null && appliedColorHex == cfg.BloodColorHex) return;
+            appliedColorHex = cfg.BloodColorHex;
+            int blood = ParseBloodColor(cfg.BloodColorHex, ColorUtil.ToRgba(255, 116, 8, 12));
+            // water clots slightly darker than ground blood
+            int wr = (int)(((blood >> 16) & 0xFF) * 0.85), wg = (int)(((blood >> 8) & 0xFF) * 0.85), wb = (int)((blood & 0xFF) * 0.85);
+            int water = ColorUtil.ToRgba(255, wr, wg, wb);
 
             groundProps = new SimpleParticleProperties(
-                1, 1, BloodColor,
+                1, 1, blood,
                 new Vec3d(), new Vec3d(),
                 new Vec3f(), new Vec3f(),
                 4.6f, 0f, 0.25f, 0.5f,
                 EnumParticleModel.Cube);
 
             burstProps = new SimpleParticleProperties(
-                4, 4, BloodColor,
+                4, 4, blood,
                 new Vec3d(), new Vec3d(),
                 new Vec3f(-0.4f, 0.1f, -0.4f), new Vec3f(0.4f, 0.5f, 0.4f),
                 0.9f, 0.8f, 0.1f, 0.22f,
@@ -670,11 +719,33 @@ namespace TassHunting
             // No SwimOnLiquid (getter-only in 1.22): the tile key IS the top
             // liquid block, so clots are placed at the waterline directly.
             waterProps = new SimpleParticleProperties(
-                1, 1, WaterBloodColor,
+                1, 1, water,
                 new Vec3d(), new Vec3d(),
                 new Vec3f(), new Vec3f(),
                 2.6f, 0f, 0.3f, 0.6f,
                 EnumParticleModel.Cube);
+        }
+
+        /// <summary>Deterministic 0..1 from a seed - splat layouts must be
+        /// IDENTICAL across re-emits (a re-rolled layout reads as blood
+        /// flickering/moving; user field report 2026-07-21).</summary>
+        private static float Hash01(int seed)
+        {
+            unchecked
+            {
+                uint h = (uint)seed * 2654435761u;
+                h ^= h >> 13; h *= 2246822519u; h ^= h >> 16;
+                return (h & 0xFFFFFF) / (float)0x1000000;
+            }
+        }
+
+        public override void StartClientSide(ICoreClientAPI api)
+        {
+            capi = api;
+            api.Network.GetChannel(ChannelName)
+                .SetMessageHandler<BloodSpotsPacket>(OnSpotsPacket)
+                .SetMessageHandler<WaterBloodPacket>(OnWaterPacket)
+                .SetMessageHandler<BloodClearPacket>(OnClearPacket);
 
             clientTickId = api.Event.RegisterGameTickListener(ClientRenderTick, 400);
 
@@ -708,6 +779,17 @@ namespace TassHunting
             catch (Exception ex) { WarnRateLimited("spots packet", ex); }
         }
 
+        private void OnClearPacket(BloodClearPacket packet)
+        {
+            try
+            {
+                if (packet == null || capi == null) return;
+                if (packet.All) { cspots.Clear(); ctiles.Clear(); return; }
+                if (packet.Ids != null) foreach (int id in packet.Ids) cspots.Remove(id);
+            }
+            catch (Exception ex) { WarnRateLimited("clear packet", ex); }
+        }
+
         private void OnWaterPacket(WaterBloodPacket packet)
         {
             try
@@ -734,6 +816,7 @@ namespace TassHunting
                 if (cspots.Count == 0 && ctiles.Count == 0) return; // EARLY OUT
                 var plr = capi.World.Player?.Entity;
                 if (plr == null) return;
+                EnsureParticleProps(cfg);
                 long now = capi.World.ElapsedMilliseconds;
                 double px = plr.Pos.X, pz = plr.Pos.Z;
                 float maxDist2 = cfg.BloodRenderDistanceBlocks * cfg.BloodRenderDistanceBlocks;
@@ -765,18 +848,29 @@ namespace TassHunting
                         }
                     }
 
-                    // fade: last 25% of life shrinks the splat
+                    // DETERMINISTIC splat layout: positions/sizes are hashed
+                    // from the spot id, so every re-emit re-covers the exact
+                    // same pattern - the pool sits still instead of reshuffling
+                    // every 4 seconds. Fade: last 25% of life shrinks it.
                     float lifeFrac = GameMath.Clamp((s.ExpireMs - now) / (0.25f * Math.Max(1f, cfg.BloodSpotLifetimeSeconds * 1000f)), 0f, 1f);
-                    float sizeScale = 0.55f + 0.45f * lifeFrac;
+                    float sizeScale = (0.55f + 0.45f * lifeFrac) * Math.Max(0.05f, cfg.BloodSizeScale);
                     float jitter = 0.05f + 0.055f * s.Intensity;
-                    groundProps.MinQuantity = 1 + (int)(s.Intensity / 2.5f);
-                    groundProps.AddQuantity = 1;
-                    groundProps.MinSize = (0.2f + 0.07f * s.Intensity) * sizeScale;
-                    groundProps.MaxSize = (0.28f + 0.11f * s.Intensity) * sizeScale;
-                    groundProps.MinPos.Set(s.X - jitter, s.Y + 0.02, s.Z - jitter);
-                    groundProps.AddPos.Set(jitter * 2, 0, jitter * 2);
+                    int count = 1 + (int)(s.Intensity / 2.5f);
+                    int spotId = kv.Key;
+                    groundProps.MinQuantity = 1;
+                    groundProps.AddQuantity = 0;
                     groundProps.LifeLength = 4.6f;
-                    capi.World.SpawnParticles(groundProps);
+                    for (int k = 0; k < count; k++)
+                    {
+                        float ang = Hash01(spotId * 97 + k * 13) * GameMath.TWOPI;
+                        float rad = jitter * (float)Math.Sqrt(Hash01(spotId * 131 + k * 29 + 7));
+                        float psize = (0.24f + 0.08f * s.Intensity) * (0.8f + 0.4f * Hash01(spotId * 173 + k * 41 + 3)) * sizeScale;
+                        groundProps.MinSize = psize;
+                        groundProps.MaxSize = psize;
+                        groundProps.MinPos.Set(s.X + Math.Sin(ang) * rad, s.Y + 0.02, s.Z + Math.Cos(ang) * rad);
+                        groundProps.AddPos.Set(0, 0, 0);
+                        capi.World.SpawnParticles(groundProps);
+                    }
                 }
                 if (dead != null) foreach (int id in dead) cspots.Remove(id);
 
@@ -794,10 +888,11 @@ namespace TassHunting
 
                     // more, smaller clots (not one big cube half out of the water)
                     float amt = Math.Min(4f, t.Amount);
+                    float wScale = Math.Max(0.05f, cfg.BloodSizeScale);
                     waterProps.MinQuantity = 1 + (int)(amt * 1.5f);
                     waterProps.AddQuantity = 2;
-                    waterProps.MinSize = 0.18f + 0.1f * amt;
-                    waterProps.MaxSize = 0.28f + 0.14f * amt;
+                    waterProps.MinSize = (0.18f + 0.1f * amt) * wScale;
+                    waterProps.MaxSize = (0.28f + 0.14f * amt) * wScale;
                     waterProps.MinPos.Set(kv.Key.x + 0.5 - 0.38, kv.Key.y + 0.86, kv.Key.z + 0.5 - 0.38);
                     waterProps.AddPos.Set(0.76, 0.02, 0.76);
                     capi.World.SpawnParticles(waterProps);

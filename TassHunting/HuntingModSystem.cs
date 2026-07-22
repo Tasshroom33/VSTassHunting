@@ -158,6 +158,12 @@ namespace TassHunting
         public float CorpseBleedSeconds = 8f;     // death pool keeps growing this long
         public bool WaterBloodEnabled = true;     // blood in water diffuses as tiles
 
+        // 0.6.3 look/feel dials (in-game panel via ConfigLib when installed)
+        public float BloodSizeScale = 1f;               // client: multiplies all splat sizes
+        public string BloodColorHex = "#74080C";        // client: ground blood color
+        public float WaterBloodDecayPerSecond = 0.10f;  // server: fraction of a water tile's blood lost per second
+        public float WaterBloodSpreadPerSecond = 0.02f; // server: fraction leaked to each liquid neighbor per second
+
         // ---- WOUNDED SLOWDOWN (2026-07-19, see WoundedSlowdown.cs; replaces
         //      FleeExhaustion - all AI states, tiered, per the user's table) ----
         public bool WoundedSlowdownEnabled = true;
@@ -319,6 +325,14 @@ namespace TassHunting
             if (api.ModLoader.IsModEnabled("itempickuphighlighter"))
             {
                 PickupHighlighterCompat.TryPatch(api, harmony);
+            }
+
+            // In-game config GUI - SOFT dependency: only touch ConfigLib types
+            // when the mod is present (the compat class is NoInlining-guarded).
+            if (api.ModLoader.IsModEnabled("configlib"))
+            {
+                try { HuntingConfigLibCompat.Init(api); }
+                catch (Exception ex) { api.Logger.Warning("[TassHunting] ConfigLib integration failed: {0}", ex.Message); }
             }
         }
 

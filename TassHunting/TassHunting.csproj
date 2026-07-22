@@ -49,6 +49,19 @@
       <HintPath>$(VINTAGE_STORY)/Lib/Microsoft.Data.Sqlite.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <!-- SOFT dependency for the in-game config panel (same pattern as
+         TasshroomHardcoreWinter/TassBodyFat): compile-time refs only,
+         Private=false so nothing ships; the types are isolated in
+         HuntingConfigLibCompat (NoInlining) and only touched when the
+         configlib mod is enabled. -->
+    <Reference Include="configlib">
+      <HintPath>..\lib\configlib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="ImGui.NET">
+      <HintPath>..\lib\ImGui.NET.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
 <ItemGroup>
