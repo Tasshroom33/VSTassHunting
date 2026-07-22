@@ -64,31 +64,31 @@ namespace TassHunting
 
             if (ImGui.CollapsingHeader("Blood Trails"))
             {
-                Checkbox("Enable blood trails", () => cfg.BloodTrails.Enabled, v => cfg.BloodTrails.Enabled = v);
-                SliderFloat("Particle size, min", () => cfg.BloodTrails.SizeMin, v => cfg.BloodTrails.SizeMin = v, 0.05f, 2f);
-                SliderFloat("Particle size, max", () => cfg.BloodTrails.SizeMax, v => cfg.BloodTrails.SizeMax = v, 0.05f, 2f);
-                SliderInt("Particle qty, min", () => cfg.BloodTrails.QtyMin, v => cfg.BloodTrails.QtyMin = v, 1, 12);
-                SliderInt("Particle qty, max", () => cfg.BloodTrails.QtyMax, v => cfg.BloodTrails.QtyMax = v, 1, 12);
+                Checkbox("Enable blood trails##trails", () => cfg.BloodTrails.Enabled, v => cfg.BloodTrails.Enabled = v);
+                SliderFloat("Particle size, min##trails", () => cfg.BloodTrails.SizeMin, v => cfg.BloodTrails.SizeMin = v, 0.05f, 2f);
+                SliderFloat("Particle size, max##trails", () => cfg.BloodTrails.SizeMax, v => cfg.BloodTrails.SizeMax = v, 0.05f, 2f);
+                SliderInt("Particle qty, min##trails", () => cfg.BloodTrails.QtyMin, v => cfg.BloodTrails.QtyMin = v, 1, 12);
+                SliderInt("Particle qty, max##trails", () => cfg.BloodTrails.QtyMax, v => cfg.BloodTrails.QtyMax = v, 1, 12);
                 Help("Qty = drops per block of trail, and particles per pool. Heavier bleeding pushes toward max.");
-                SliderFloat("Particle spread, min", () => cfg.BloodTrails.SpreadMin, v => cfg.BloodTrails.SpreadMin = v, 0f, 1f);
-                SliderFloat("Particle spread, max", () => cfg.BloodTrails.SpreadMax, v => cfg.BloodTrails.SpreadMax = v, 0f, 1f);
-                SliderFloat("Particle lifetime, min (sec)", () => cfg.BloodTrails.LifetimeMin, v => cfg.BloodTrails.LifetimeMin = v, 10f, 3600f);
-                SliderFloat("Particle lifetime, max (sec)", () => cfg.BloodTrails.LifetimeMax, v => cfg.BloodTrails.LifetimeMax = v, 10f, 3600f);
+                SliderFloat("Particle spread, min##trails", () => cfg.BloodTrails.SpreadMin, v => cfg.BloodTrails.SpreadMin = v, 0f, 1f);
+                SliderFloat("Particle spread, max##trails", () => cfg.BloodTrails.SpreadMax, v => cfg.BloodTrails.SpreadMax = v, 0f, 1f);
+                SliderFloat("Particle lifetime, min (sec)##trails", () => cfg.BloodTrails.LifetimeMin, v => cfg.BloodTrails.LifetimeMin = v, 10f, 3600f);
+                SliderFloat("Particle lifetime, max (sec)##trails", () => cfg.BloodTrails.LifetimeMax, v => cfg.BloodTrails.LifetimeMax = v, 10f, 3600f);
                 Help("Each drop lives a random time in this range, so trails dry up drop by drop, oldest parts first.");
             }
 
             if (ImGui.CollapsingHeader("Blood Splatter"))
             {
-                Checkbox("Enable splatter", () => cfg.BloodSplatter.Enabled, v => cfg.BloodSplatter.Enabled = v);
-                SliderFloat("Particle size, min", () => cfg.BloodSplatter.SizeMin, v => cfg.BloodSplatter.SizeMin = v, 0.02f, 1f);
-                SliderFloat("Particle size, max", () => cfg.BloodSplatter.SizeMax, v => cfg.BloodSplatter.SizeMax = v, 0.02f, 1f);
-                SliderInt("Particle qty, min", () => cfg.BloodSplatter.QtyMin, v => cfg.BloodSplatter.QtyMin = v, 1, 40);
-                SliderInt("Particle qty, max", () => cfg.BloodSplatter.QtyMax, v => cfg.BloodSplatter.QtyMax = v, 1, 40);
-                SliderFloat("Particle spread, min", () => cfg.BloodSplatter.SpreadMin, v => cfg.BloodSplatter.SpreadMin = v, 0.1f, 4f);
-                SliderFloat("Particle spread, max", () => cfg.BloodSplatter.SpreadMax, v => cfg.BloodSplatter.SpreadMax = v, 0.1f, 4f);
+                Checkbox("Enable splatter##splat", () => cfg.BloodSplatter.Enabled, v => cfg.BloodSplatter.Enabled = v);
+                SliderFloat("Particle size, min##splat", () => cfg.BloodSplatter.SizeMin, v => cfg.BloodSplatter.SizeMin = v, 0.02f, 1f);
+                SliderFloat("Particle size, max##splat", () => cfg.BloodSplatter.SizeMax, v => cfg.BloodSplatter.SizeMax = v, 0.02f, 1f);
+                SliderInt("Particle qty, min##splat", () => cfg.BloodSplatter.QtyMin, v => cfg.BloodSplatter.QtyMin = v, 1, 40);
+                SliderInt("Particle qty, max##splat", () => cfg.BloodSplatter.QtyMax, v => cfg.BloodSplatter.QtyMax = v, 1, 40);
+                SliderFloat("Particle spread, min##splat", () => cfg.BloodSplatter.SpreadMin, v => cfg.BloodSplatter.SpreadMin = v, 0.1f, 4f);
+                SliderFloat("Particle spread, max##splat", () => cfg.BloodSplatter.SpreadMax, v => cfg.BloodSplatter.SpreadMax = v, 0.1f, 4f);
                 Help("Spread = how hard the blood launches from the wound (arcs up and over).");
-                SliderFloat("Particle lifetime, min (sec)", () => cfg.BloodSplatter.LifetimeMin, v => cfg.BloodSplatter.LifetimeMin = v, 0.2f, 5f);
-                SliderFloat("Particle lifetime, max (sec)", () => cfg.BloodSplatter.LifetimeMax, v => cfg.BloodSplatter.LifetimeMax = v, 0.2f, 5f);
+                SliderFloat("Particle lifetime, min (sec)##splat", () => cfg.BloodSplatter.LifetimeMin, v => cfg.BloodSplatter.LifetimeMin = v, 0.2f, 5f);
+                SliderFloat("Particle lifetime, max (sec)##splat", () => cfg.BloodSplatter.LifetimeMax, v => cfg.BloodSplatter.LifetimeMax = v, 0.2f, 5f);
             }
 
             if (ImGui.CollapsingHeader("Water Effect"))

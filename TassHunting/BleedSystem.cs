@@ -81,6 +81,9 @@ namespace TassHunting
                     st.Expiries[shortest] = expiry; // at cap: refresh, don't grow
                 }
                 else st.Expiries.Add(expiry);
+                // 0.9.0 client-local visuals: the stack count syncs as a plain
+                // watched attribute; the client lays the drip trail from it.
+                victim.WatchedAttributes.SetInt("thbleed", st.Expiries.Count);
             }
         }
 
@@ -110,9 +113,15 @@ namespace TassHunting
                 foreach (var kv in Active)
                 {
                     var st = kv.Value;
+                    int before = st.Expiries.Count;
                     st.Expiries.RemoveAll(e => e <= now);
                     if (st.Expiries.Count == 0 || st.Ent == null || !st.Ent.Alive)
-                    { (retire = retire ?? new List<long>()).Add(kv.Key); continue; }
+                    {
+                        try { st.Ent?.WatchedAttributes.SetInt("thbleed", 0); } catch { }
+                        (retire = retire ?? new List<long>()).Add(kv.Key); continue;
+                    }
+                    if (st.Expiries.Count != before)
+                        st.Ent.WatchedAttributes.SetInt("thbleed", st.Expiries.Count);
                     if (now < st.NextTickMs) continue;
                     st.NextTickMs = now + (long)(cfg.BleedTickSeconds * 1000f);
 
@@ -121,10 +130,10 @@ namespace TassHunting
                     float perStack = cfg.BleedStaticPerTick + cfg.BleedPctMaxHealthPerTick / 100f * hb.MaxHealth;
                     float total = perStack * st.Expiries.Count;
                     // Injury/Internal never re-procs TryProc (piercing/slashing gate).
+                    // The client splatters on this beat by itself: ReceiveDamage
+                    // bumps the engine's synced onHurt attributes - the same
+                    // signal that drives the red flash (0.9.0 client-local).
                     st.Ent.ReceiveDamage(new DamageSource { Source = EnumDamageSource.Internal, Type = EnumDamageType.Injury }, total);
-                    // blood SPURT lands on the same beat as the hurt sound and
-                    // red flash (playtest 2026-07-21: offbeat spurts feel bad)
-                    try { BloodVisuals.NotifyBleedTick(st.Ent, st.Expiries.Count); } catch { }
                 }
                 if (retire != null) foreach (long id in retire) Active.Remove(id);
             }
@@ -143,11 +152,8 @@ namespace TassHunting
         [HarmonyPostfix]
         private static void Postfix(EntityBehaviorHealth __instance, DamageSource damageSource, ref float damage)
         {
-            // VISUALS FIRST and independent of the DoT proc (field 2026-07-21:
-            // a one-shot chicken left no blood - the victim is already dead by
-            // postfix time, so TryProc's Alive gate skipped everything).
-            try { BloodVisuals.NotifyDamage(__instance.entity, damageSource, damage); }
-            catch { }
+            // 0.9.0: visuals are fully client-local (they key off the engine's
+            // synced onHurt attributes) - this hook only feeds the DoT.
             try { BleedSystem.TryProc(__instance.entity, damageSource, damage); }
             catch { }
         }
