@@ -122,6 +122,9 @@ namespace TassHunting
                     float total = perStack * st.Expiries.Count;
                     // Injury/Internal never re-procs TryProc (piercing/slashing gate).
                     st.Ent.ReceiveDamage(new DamageSource { Source = EnumDamageSource.Internal, Type = EnumDamageType.Injury }, total);
+                    // blood SPURT lands on the same beat as the hurt sound and
+                    // red flash (playtest 2026-07-21: offbeat spurts feel bad)
+                    try { BloodVisuals.NotifyBleedTick(st.Ent, st.Expiries.Count); } catch { }
                 }
                 if (retire != null) foreach (long id in retire) Active.Remove(id);
             }

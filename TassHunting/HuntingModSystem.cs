@@ -196,6 +196,15 @@ namespace TassHunting
         public bool FallingDropletsEnabled = true;      // client: droplets visibly fall from elevated wounds; splat lands with them
         public float BloodScatter = 0.05f;              // client: droplet/splash scatter velocity (BT BloodSpread 0.05)
 
+        // ---- 0.7.1 (playtest: line-not-spurts, water too heavy) ----
+        // Trails render as a dotted LINE along the animal's path (client lays
+        // drops between synced anchor spots); spurts happen ONLY on damage
+        // beats (the shot, each bleed DoT tick).
+        public float TrailDropsPerBlock = 3f;      // client: line density (bigger = more drops)
+        public float WaterClotSizeMin = 0.25f;     // client: water clot size range
+        public float WaterClotSizeMax = 0.7f;
+        public float WaterClotAmount = 1f;         // client: scales clot count (0 = none)
+
         // ---- WOUNDED SLOWDOWN (2026-07-19, see WoundedSlowdown.cs; replaces
         //      FleeExhaustion - all AI states, tiered, per the user's table) ----
         public bool WoundedSlowdownEnabled = true;

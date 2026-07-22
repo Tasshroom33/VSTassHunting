@@ -94,11 +94,13 @@ namespace TassHunting
                 Help("Sprinting animals bleed this much harder. 1 = same as walking.");
                 Checkbox("Rain washes blood away faster", () => cfg.BloodRainEnabled, v => cfg.BloodRainEnabled = v);
                 SliderFloat("Blood lasts in rain (sec)", () => cfg.BloodRainLifetimeSeconds, v => cfg.BloodRainLifetimeSeconds = v, 10f, 600f);
+                SliderFloat("Trail drops per block", () => cfg.TrailDropsPerBlock, v => cfg.TrailDropsPerBlock = v, 1f, 8f);
+                Help("The trail is a line of small drops along the animal's path. Bigger = denser line.");
                 SliderFloat("Particle size, min", () => cfg.BloodParticleSizeMin, v => cfg.BloodParticleSizeMin = v, 0.05f, 2f);
                 SliderFloat("Particle size, max", () => cfg.BloodParticleSizeMax, v => cfg.BloodParticleSizeMax = v, 0.05f, 2.5f);
-                Help("Single drips sit near the min size, big pools near the max.");
-                SliderInt("Particles per spot, min", () => cfg.BloodParticlesMin, v => cfg.BloodParticlesMin = v, 1, 8);
-                SliderInt("Particles per spot, max", () => cfg.BloodParticlesMax, v => cfg.BloodParticlesMax = v, 1, 12);
+                Help("Trail drops use the min size; pools and hit marks range up to the max.");
+                SliderInt("Pool particles, min", () => cfg.BloodParticlesMin, v => cfg.BloodParticlesMin = v, 1, 8);
+                SliderInt("Pool particles, max", () => cfg.BloodParticlesMax, v => cfg.BloodParticlesMax = v, 1, 12);
                 SliderInt("Max blood spots in world", () => cfg.BloodMaxSpots, v => cfg.BloodMaxSpots = v, 256, 16384);
             }
 
@@ -116,6 +118,9 @@ namespace TassHunting
                 SliderFloat("Fade speed", () => cfg.WaterBloodDecayPerSecond, v => cfg.WaterBloodDecayPerSecond = v, 0.02f, 0.5f);
                 SliderFloat("Spread speed", () => cfg.WaterBloodSpreadPerSecond, v => cfg.WaterBloodSpreadPerSecond = v, 0f, 0.1f);
                 Help("Blood in water spreads to neighboring water and fades out. Higher fade = shorter-lived stains.");
+                SliderFloat("Clot amount (0 = none)", () => cfg.WaterClotAmount, v => cfg.WaterClotAmount = v, 0f, 3f);
+                SliderFloat("Clot size, min", () => cfg.WaterClotSizeMin, v => cfg.WaterClotSizeMin = v, 0.05f, 1.5f);
+                SliderFloat("Clot size, max", () => cfg.WaterClotSizeMax, v => cfg.WaterClotSizeMax = v, 0.05f, 2f);
             }
 
             if (ImGui.CollapsingHeader("Blood look (your screen only)"))
@@ -126,7 +131,7 @@ namespace TassHunting
                 SliderFloat("Droplet scatter", () => cfg.BloodScatter, v => cfg.BloodScatter = v, 0f, 0.5f);
                 SliderFloat("Redraw every (sec)", () => cfg.BloodRefreshSeconds, v => cfg.BloodRefreshSeconds = v, 1f, 15f);
                 Help("Blood is drawn with particles that refresh on this cycle. Lower = steadier look, slightly more particle load.");
-                SliderFloat("Water stain opacity", () => cfg.WaterBloodMaxOpacity, v => cfg.WaterBloodMaxOpacity = v, 0.05f, 1f);
+                SliderFloat("Water stain opacity", () => cfg.WaterBloodMaxOpacity, v => cfg.WaterBloodMaxOpacity = v, 0.01f, 1f);
                 SliderFloat("View distance (blocks)", () => cfg.BloodRenderDistanceBlocks, v => cfg.BloodRenderDistanceBlocks = v, 16f, 128f);
                 SliderInt("Max spots drawn", () => cfg.BloodMaxRenderedSpots, v => cfg.BloodMaxRenderedSpots = v, 100, 4000);
             }

@@ -55,6 +55,10 @@ namespace TassHunting
         [ProtoMember(7)] public byte Kind;    // 0 trail, 1 hit, 2 pool
         [ProtoMember(8)] public int AgeMs;    // fresh spots splash on arrival; old ones (login/walk-up) don't
         [ProtoMember(9)] public float FallHeight; // wound height above the surface: drives falling droplets
+        [ProtoMember(10)] public bool HasSeg;     // trail spot continuing a path: client draws a drop LINE
+        [ProtoMember(11)] public double PrevX;    // previous anchor of the segment
+        [ProtoMember(12)] public double PrevY;
+        [ProtoMember(13)] public double PrevZ;
     }
 
     [ProtoContract]
@@ -115,12 +119,14 @@ namespace TassHunting
             public long LifeMs;      // per-spot: rain-deposited blood lives shorter
             public float FallHeight; // wound height above surface at deposit time
             public byte Kind;
+            public bool HasSeg;      // trail continuation: client draws a drop line back to Prev
+            public double PrevX, PrevY, PrevZ;
         }
 
         private class TrailState
         {
             public int LastSpotId = -1;
-            public double LastX, LastZ;
+            public double LastX, LastY, LastZ; // LastY = previous SURFACE height (segment endpoint)
             public long NextWaterMs; // water inflow gate: 1/s per entity, not per deposit tick
         }
 
@@ -218,8 +224,40 @@ namespace TassHunting
                     if (stacksEquiv > 0f)
                         self.RegisterCorpseBleed(victim.Pos.X, victim.Pos.Y, victim.Pos.Z, stacksEquiv);
                 }
+                self.PushSyncNow(); // spurt must land on the hit beat, not the next tick
             }
             catch (Exception ex) { self.WarnRateLimited("damage hook", ex); }
+        }
+
+        /// <summary>Blood spurt synced to the bleed DoT beat - the hurt sound
+        /// and red flash come with visible blood (playtest 2026-07-21: the DoT
+        /// damage type is Injury, which NotifyDamage's slash/pierce gate
+        /// rightly ignores, so this needs its own entry point).</summary>
+        public static void NotifyBleedTick(Entity victim, int stacks)
+        {
+            var self = instance;
+            var cfg = HuntingModSystem.Cfg;
+            if (self?.sapi == null || cfg == null || !cfg.BloodVisualsEnabled || !cfg.BloodOnHitEnabled) return;
+            if (victim == null || !victim.Alive) return;
+            try
+            {
+                float trailScale = Math.Max(0f, cfg.BloodTrailScale);
+                float inten = Math.Min(4f, 1.0f + 0.5f * stacks) * trailScale;
+                if (inten <= 0f) return;
+                self.Deposit(victim.Pos.X, victim.Pos.Y, victim.Pos.Z, KindHit, inten, 0.35f * stacks * trailScale, null);
+                self.PushSyncNow();
+            }
+            catch (Exception ex) { self.WarnRateLimited("bleed tick spurt", ex); }
+        }
+
+        /// <summary>Immediate proximity-scoped delivery of whatever just got
+        /// deposited/dirtied - damage-beat spurts cannot wait for the next
+        /// deposit pass.</summary>
+        private void PushSyncNow()
+        {
+            var cfg = HuntingModSystem.Cfg;
+            if (cfg == null) return;
+            SyncPlayers(cfg, sapi.World.ElapsedMilliseconds);
         }
 
         /// <summary>Immediate death pool + a record that keeps feeding it for
@@ -407,7 +445,7 @@ namespace TassHunting
                     int remain = (int)Math.Max(0, s.LifeMs - (now - s.BornMs));
                     if (remain <= 0) continue;
                     (batch = batch ?? new List<BloodSpotDto>()).Add(new BloodSpotDto
-                    { Id = s.Id, X = s.X, Y = s.Y, Z = s.Z, Intensity = s.Intensity, RemainMs = remain, Kind = s.Kind, AgeMs = (int)(now - s.BornMs), FallHeight = s.FallHeight });
+                    { Id = s.Id, X = s.X, Y = s.Y, Z = s.Z, Intensity = s.Intensity, RemainMs = remain, Kind = s.Kind, AgeMs = (int)(now - s.BornMs), FallHeight = s.FallHeight, HasSeg = s.HasSeg, PrevX = s.PrevX, PrevY = s.PrevY, PrevZ = s.PrevZ });
                     sent.Add(s.Id);
                     if (batch.Count >= SendChunkSize)
                     {
@@ -494,9 +532,22 @@ namespace TassHunting
                 FallHeight = (float)GameMath.Clamp(y - surfY, 0.0, 8.0),
                 Kind = kind
             };
+            // trail continuation: remember the previous anchor so the client
+            // can lay a drop LINE along the path segment (playtest: a line of
+            // blood, not periodic splats)
+            if (ts != null && ts.LastSpotId >= 0 && kind == KindTrail)
+            {
+                double sx = x - ts.LastX, sz = z - ts.LastZ;
+                double segLen2 = sx * sx + sz * sz;
+                if (segLen2 < 36.0) // teleport/despawn guard: no 6+ block lines
+                {
+                    spot.HasSeg = true;
+                    spot.PrevX = ts.LastX; spot.PrevY = ts.LastY; spot.PrevZ = ts.LastZ;
+                }
+            }
             spots[spot.Id] = spot;
             spotsDeposited++;
-            if (ts != null) { ts.LastSpotId = spot.Id; ts.LastX = x; ts.LastZ = z; }
+            if (ts != null) { ts.LastSpotId = spot.Id; ts.LastX = x; ts.LastY = surfY; ts.LastZ = z; }
             return spot.Id;
         }
 
@@ -722,6 +773,8 @@ namespace TassHunting
             public long NextEmitMs;
             public bool BurstDone;
             public bool DropletsPending; // fresh elevated spot: droplets fall before the splat lands
+            public bool HasSeg;          // trail: draw a drop line back to Prev
+            public double PrevX, PrevY, PrevZ;
         }
 
         private class CTile
@@ -775,12 +828,17 @@ namespace TassHunting
             int blood = ParseBloodColor(cfg.BloodColorHex, ColorUtil.ToRgba(255, 116, 8, 12));
             float sc = 4f * scatter; // BT's BloodSpread scale: 0.05 default = gentle scatter
 
+            // Decals (trail drops, splats, pools): fade out and SINK into the
+            // ground instead of popping in/out (playtest 2026-07-21). Quadratic
+            // fade = near-full opacity most of the life, gone at the end;
+            // gentle constant sink reads as soaking in.
             groundProps = new SimpleParticleProperties(
                 1, 1, blood,
                 new Vec3d(), new Vec3d(),
-                new Vec3f(), new Vec3f(),
+                new Vec3f(0f, -0.02f, 0f), new Vec3f(0f, -0.01f, 0f),
                 4.6f, 0f, 0.25f, 0.5f,
                 EnumParticleModel.Cube);
+            groundProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
 
             burstProps = new SimpleParticleProperties(
                 4, 4, blood,
@@ -789,6 +847,7 @@ namespace TassHunting
                 0.9f, 0.8f, 0.1f, 0.22f,
                 EnumParticleModel.Cube);
             burstProps.ShouldDieInLiquid = true;
+            burstProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
 
             // Falling droplets (the "ours felt wrong" fix): blood visibly
             // LEAVES the wound and falls; the ground splat lands with it.
@@ -799,20 +858,50 @@ namespace TassHunting
                 1.1f, 0.9f, 0.1f, 0.2f,
                 EnumParticleModel.Cube);
             dropletProps.ShouldDieInLiquid = true;
+            dropletProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
 
             // Blood in water = the VANILLA lakebed-sediment look, tinted red
             // (user 2026-07-21: like stepping on the bottom of a lake - soft
             // translucent quads hanging IN the water column, not a gradient
             // circle film and not floating cubes). Translucent quad billboards,
-            // near-still drift, alpha from the water opacity dial.
+            // near-still drift, alpha from the water opacity dial, fading out.
             int wr = (blood >> 16) & 0xFF, wg = (blood >> 8) & 0xFF, wb = blood & 0xFF;
-            int water = ColorUtil.ToRgba((int)(160 * waterOpacity), wr, wg, wb);
+            int water = ColorUtil.ToRgba(Math.Max(6, (int)(130 * waterOpacity)), wr, wg, wb);
             waterProps = new SimpleParticleProperties(
                 1, 1, water,
                 new Vec3d(), new Vec3d(),
                 new Vec3f(-0.02f, -0.01f, -0.02f), new Vec3f(0.02f, 0.015f, 0.02f),
                 3.5f, 0f, 0.7f, 1.3f,
                 EnumParticleModel.Quad);
+            waterProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
+        }
+
+        private readonly BlockPos cscratch = new BlockPos(0);
+
+        /// <summary>Client-side surface height for trail-line drops: the line
+        /// interpolates between anchors, so on slopes each drop re-resolves
+        /// the real block top under it (no-floating law). Water = no drop
+        /// (the water tiles own that segment).</summary>
+        private bool ResolveGroundYClient(double x, double yStart, double z, out double surfY)
+        {
+            surfY = 0;
+            var ba = capi.World.BlockAccessor;
+            int ix = (int)Math.Floor(x), iz = (int)Math.Floor(z);
+            int startY = (int)Math.Floor(yStart);
+            for (int i = 0; i <= 4; i++)
+            {
+                int cy = startY - i;
+                if (cy < 1) return false;
+                var fluid = ba.GetBlock(cscratch.Set(ix, cy, iz), BlockLayersAccess.Fluid);
+                if (fluid != null && fluid.IsLiquid()) return false;
+                var solid = ba.GetBlock(cscratch.Set(ix, cy, iz), BlockLayersAccess.Solid);
+                if (solid == null || solid.Id == 0) continue;
+                float h = TopHeightOf(solid);
+                if (h <= 0f) continue;
+                surfY = cy + h;
+                return true;
+            }
+            return false;
         }
 
         /// <summary>Deterministic 0..1 from a seed - splat layouts must be
@@ -836,7 +925,9 @@ namespace TassHunting
                 .SetMessageHandler<WaterBloodPacket>(OnWaterPacket)
                 .SetMessageHandler<BloodClearPacket>(OnClearPacket);
 
-            clientTickId = api.Event.RegisterGameTickListener(ClientRenderTick, 400);
+            // 150ms: damage-beat spurts must appear ON the beat (playtest:
+            // offbeat blood feels bad); heavy early-outs keep idle cost near zero
+            clientTickId = api.Event.RegisterGameTickListener(ClientRenderTick, 150);
 
             api.ChatCommands.Create("tassbloodc")
                 .WithDescription("TassHunting blood client mirror status")
@@ -872,6 +963,8 @@ namespace TassHunting
                     s.Intensity = d.Intensity;
                     s.Kind = d.Kind;
                     s.FallHeight = d.FallHeight;
+                    s.HasSeg = d.HasSeg;
+                    s.PrevX = d.PrevX; s.PrevY = d.PrevY; s.PrevZ = d.PrevZ;
                     s.ExpireMs = now + d.RemainMs;
                     s.TotalLifeMs = Math.Max(1000, d.RemainMs + d.AgeMs);
                 }
@@ -979,26 +1072,54 @@ namespace TassHunting
                     float sMin = Math.Max(0.05f, cfg.BloodParticleSizeMin);
                     float sMax = Math.Max(sMin, cfg.BloodParticleSizeMax);
                     float intenFrac = GameMath.Clamp(s.Intensity / MaxIntensity, 0f, 1f);
-                    float jitter = 0.05f + 0.055f * s.Intensity;
-                    int pMin = Math.Max(1, cfg.BloodParticlesMin);
-                    int pMax = Math.Max(pMin, cfg.BloodParticlesMax);
-                    int count = GameMath.Clamp(pMin + (int)(s.Intensity / 2f), pMin, pMax);
                     int spotId = kv.Key;
                     groundProps.MinQuantity = 1;
                     groundProps.AddQuantity = 0;
                     // particles live a touch past the refresh so cycles overlap seamlessly
                     groundProps.LifeLength = GameMath.Clamp(cfg.BloodRefreshSeconds, 1f, 15f) * 1.15f;
-                    for (int k = 0; k < count; k++)
+
+                    if (s.Kind == KindTrail && s.HasSeg)
                     {
-                        float ang = Hash01(spotId * 97 + k * 13) * GameMath.TWOPI;
-                        float rad = jitter * (float)Math.Sqrt(Hash01(spotId * 131 + k * 29 + 7));
-                        float variation = 0.85f + 0.3f * Hash01(spotId * 173 + k * 41 + 3);
-                        float psize = GameMath.Lerp(sMin, sMax, intenFrac) * variation * fade;
-                        groundProps.MinSize = psize;
-                        groundProps.MaxSize = psize;
-                        groundProps.MinPos.Set(s.X + Math.Sin(ang) * rad, s.Y + 0.02, s.Z + Math.Cos(ang) * rad);
-                        groundProps.AddPos.Set(0, 0, 0);
-                        capi.World.SpawnParticles(groundProps);
+                        // TRAIL = a dotted LINE of small drops along the path
+                        // segment (playtest: a line of blood, not Monty Python
+                        // spurts) - deterministic layout, slope-true placement
+                        double sx = s.X - s.PrevX, sz = s.Z - s.PrevZ;
+                        double segLen = Math.Sqrt(sx * sx + sz * sz);
+                        int drops = GameMath.Clamp((int)Math.Ceiling(segLen * Math.Max(0.5f, cfg.TrailDropsPerBlock)), 1, 24);
+                        for (int k = 0; k < drops; k++)
+                        {
+                            float t = (k + 0.5f) / drops;
+                            double lx = s.PrevX + sx * t + (Hash01(spotId * 211 + k * 17) - 0.5) * 0.14;
+                            double lz = s.PrevZ + sz * t + (Hash01(spotId * 223 + k * 19 + 5) - 0.5) * 0.14;
+                            double ly = s.PrevY + (s.Y - s.PrevY) * t;
+                            if (!ResolveGroundYClient(lx, ly + 1.0, lz, out double gy)) continue; // no floating on slopes
+                            float psize = sMin * (0.8f + 0.4f * Hash01(spotId * 239 + k * 23 + 11)) * fade;
+                            groundProps.MinSize = psize;
+                            groundProps.MaxSize = psize;
+                            groundProps.MinPos.Set(lx, gy + 0.02, lz);
+                            groundProps.AddPos.Set(0, 0, 0);
+                            capi.World.SpawnParticles(groundProps);
+                        }
+                    }
+                    else
+                    {
+                        // POOLS and HIT MARKS keep the clustered splat look
+                        float jitter = 0.05f + 0.055f * s.Intensity;
+                        int pMin = Math.Max(1, cfg.BloodParticlesMin);
+                        int pMax = Math.Max(pMin, cfg.BloodParticlesMax);
+                        int count = GameMath.Clamp(pMin + (int)(s.Intensity / 2f), pMin, pMax);
+                        for (int k = 0; k < count; k++)
+                        {
+                            float ang = Hash01(spotId * 97 + k * 13) * GameMath.TWOPI;
+                            float rad = jitter * (float)Math.Sqrt(Hash01(spotId * 131 + k * 29 + 7));
+                            float variation = 0.85f + 0.3f * Hash01(spotId * 173 + k * 41 + 3);
+                            float psize = GameMath.Lerp(sMin, sMax, intenFrac) * variation * fade;
+                            groundProps.MinSize = psize;
+                            groundProps.MaxSize = psize;
+                            groundProps.MinPos.Set(s.X + Math.Sin(ang) * rad, s.Y + 0.02, s.Z + Math.Cos(ang) * rad);
+                            groundProps.AddPos.Set(0, 0, 0);
+                            capi.World.SpawnParticles(groundProps);
+                        }
                     }
                 }
                 if (dead != null) foreach (int id in dead) cspots.Remove(id);
@@ -1016,10 +1137,15 @@ namespace TassHunting
                     t.NextEmitMs = now + WaterEmitPeriodMs;
 
                     float amt = Math.Min(4f, t.Amount);
-                    waterProps.MinQuantity = 1 + (int)amt;
+                    float clotAmt = Math.Max(0f, cfg.WaterClotAmount);
+                    int clots = (int)((1f + amt) * clotAmt);
+                    if (clots < 1) continue; // dialed off
+                    float wMin = Math.Max(0.05f, cfg.WaterClotSizeMin);
+                    float wMax = Math.Max(wMin, cfg.WaterClotSizeMax);
+                    waterProps.MinQuantity = clots;
                     waterProps.AddQuantity = 1;
-                    waterProps.MinSize = 0.6f + 0.2f * amt;
-                    waterProps.MaxSize = 0.9f + 0.25f * amt;
+                    waterProps.MinSize = wMin + (wMax - wMin) * 0.25f * amt / 4f;
+                    waterProps.MaxSize = wMin + (wMax - wMin) * GameMath.Clamp(amt / 4f, 0.3f, 1f);
                     // hang IN the water column below the surface, not on it
                     waterProps.MinPos.Set(kv.Key.x + 0.5 - 0.42, kv.Key.y + 0.35, kv.Key.z + 0.5 - 0.42);
                     waterProps.AddPos.Set(0.84, 0.45, 0.84);
