@@ -82,8 +82,9 @@ namespace TassHunting
         // ---- STICKY PROJECTILES (see StickyProjectiles.cs) ----
         // Master: arrows/spears ride the animal they hit instead of vanishing.
         public bool StickyProjectilesEnabled = true;
-        // Riding projectile despawns after this long if the animal never dies.
-        public float StickSeconds = 300f;
+        // How long an arrow stays embedded - and (2026-07-22) THE BLEED TIMER:
+        // an embedded arrow bleeds the animal for this long, then works loose.
+        public float StickSeconds = 60f;
         // A stuck SPEAR can be grabbed back at vanilla touch range (arrows stay
         // uncollectible until released - walking near must not yank them out).
         public bool SpearTouchRetrieve = true;
@@ -139,16 +140,21 @@ namespace TassHunting
         // ---- STACKING HYBRID BLEED (see BleedSystem.cs; the damage half).
         //      The visual half lives in BloodVisuals.cs - this mod renders its
         //      own blood, no third-party blood mod needed. ----
+        // ARROW-DRIVEN BLEED (2026-07-22): bleed exists ONLY while arrows are
+        // stuck. Each embedded arrow = one sustained stack; the stick timer
+        // (StickSeconds) IS the bleed timer. No cap, no chance roll, no hit-type
+        // gate. Balance: 0.05 flat + 0.5% max-HP per stack, 3s tick, 60s stick.
         public bool BleedEnabled = true;
-        public int BleedMaxStacks = 3;
-        public float BleedTickSeconds = 10f;
-        public float BleedStaticPerTick = 0.1f;        // flat hp per stack per tick
-        public float BleedPctMaxHealthPerTick = 1f;    // % of max hp per stack per tick
-        public float BleedDurationSeconds = 60f;       // per stack; at cap a new hit refreshes the shortest
-        public int BleedChancePct = 80;                // per qualifying hit
-        public float BleedDamageThreshold = 1f;        // min post-mitigation hit damage
-        public bool BleedPlayerCausedOnly = true;
-        public bool BleedAffectsPlayers = true;        // PvP: humans bleed too
+        public float BleedTickSeconds = 3f;            // tick cadence
+        public float BleedStaticPerTick = 0.05f;       // flat hp per stack per tick
+        public float BleedPctMaxHealthPerTick = 0.5f;  // % of max hp per stack per tick
+        public bool BleedAffectsPlayers = true;        // PvP: stuck arrows bleed humans too
+        // DEPRECATED (arrow-driven model): kept so old configs do not error.
+        public int BleedMaxStacks = 3;                 // no cap now (= arrow count)
+        public float BleedDurationSeconds = 60f;       // stick time is the timer now
+        public int BleedChancePct = 80;                // no chance roll now
+        public float BleedDamageThreshold = 1f;        // no hit-damage gate now
+        public bool BleedPlayerCausedOnly = true;      // n/a: only stuck arrows bleed
 
         // ---- BLOOD VISUALS (see BloodVisuals.cs). In-house blood system:
         //      a spot ledger + water diffusion; the current build renders it

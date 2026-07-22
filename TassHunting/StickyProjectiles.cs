@@ -105,6 +105,7 @@ namespace TassHunting
                     SecondsLeft = arrow.WatchedAttributes.GetFloat("sa_secs", Math.Max(10f, HuntingModSystem.Cfg.StickSeconds)),
                     GraceSeconds = 5f
                 };
+                SyncBleedFor(targetId); // relog: restore this animal's arrow-bleed
             }
             catch { }
         }
@@ -247,6 +248,7 @@ namespace TassHunting
                 SecondsLeft = Math.Max(10f, HuntingModSystem.Cfg.StickSeconds)
             };
             stuck[arrow.EntityId] = s;
+            SyncBleedFor(target.EntityId); // arrow embedded -> one more bleed stack
 
             arrow.WatchedAttributes.SetBool("stuck", true);
             // Ride parameters travel WITH the projectile (watched attributes sync
@@ -282,22 +284,35 @@ namespace TassHunting
 
         private readonly List<long> toRemove = new List<long>();
 
+        /// <summary>Recount arrows stuck in a target and push the count to the
+        /// bleed system (arrows ARE the bleed stacks, 2026-07-22 model).</summary>
+        private void SyncBleedFor(long targetId)
+        {
+            if (targetId == 0L) return;
+            int count = 0;
+            foreach (var kv in stuck) if (kv.Value.TargetId == targetId) count++;
+            var target = sapi.World.GetEntityById(targetId);
+            if (target != null) BleedSystem.SetArrowStacks(target, count);
+        }
+
         private void OnTick(float dt)
         {
             if (stuck.Count == 0) return;
             toRemove.Clear();
+            var affectedTargets = new HashSet<long>();
 
             foreach (var kv in stuck)
             {
                 var s = kv.Value;
                 s.SecondsLeft -= dt;
                 var arrow = sapi.World.GetEntityById(s.ArrowId);
-                if (arrow == null || !arrow.Alive) { toRemove.Add(kv.Key); continue; }
+                if (arrow == null || !arrow.Alive) { toRemove.Add(kv.Key); affectedTargets.Add(s.TargetId); continue; }
 
                 if (s.SecondsLeft <= 0f)
                 {
                     arrow.Die(EnumDespawnReason.Expire); // timed-out ride, NOT a break (arrowhead-drop ignores Expire)
                     toRemove.Add(kv.Key);
+                    affectedTargets.Add(s.TargetId);
                     continue;
                 }
 
@@ -323,6 +338,7 @@ namespace TassHunting
                     arrow.WatchedAttributes.RemoveAttribute("sa_target"); // client stops driving it
                     arrow.Pos.Motion.Set(0.0, -0.02, 0.0);
                     toRemove.Add(kv.Key);
+                    affectedTargets.Add(s.TargetId);
                     continue;
                 }
 
@@ -330,6 +346,8 @@ namespace TassHunting
             }
 
             foreach (long id in toRemove) { stuck.Remove(id); }
+            // arrows left some animals -> recount their stacks (0 = bleed ends)
+            foreach (long tid in affectedTargets) SyncBleedFor(tid);
         }
     }
 

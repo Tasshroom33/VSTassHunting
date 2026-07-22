@@ -27,7 +27,7 @@ namespace TassHunting
         private class State
         {
             public Entity Ent;
-            public List<long> Expiries = new List<long>();
+            public int Stacks;        // = number of arrows currently stuck in this animal
             public long NextTickMs;
         }
 
@@ -48,53 +48,49 @@ namespace TassHunting
             base.Dispose();
         }
 
-        /// <summary>Called from the health-damage postfix: roll and add a stack.</summary>
-        public static void TryProc(Entity victim, DamageSource src, float damage)
+        /// <summary>ARROW-DRIVEN BLEED (2026-07-22 model): bleed exists ONLY
+        /// while arrows are stuck. StickyProjectiles calls this with the live
+        /// count of arrows embedded in the animal; each embedded arrow is one
+        /// sustained stack (no cap, no chance roll, no hit-type gate). When an
+        /// arrow falls out / times out the count drops; at 0 the bleed ends.
+        /// The stick timer (StickSeconds) IS the bleed timer.</summary>
+        public static void SetArrowStacks(Entity victim, int arrowCount)
         {
             var cfg = HuntingModSystem.Cfg;
             if (cfg == null || !cfg.BleedEnabled || victim == null) return;
-            if (victim.World?.Side != EnumAppSide.Server || !victim.Alive) return;
-            if (damage < cfg.BleedDamageThreshold) return;
-            if (src == null || (src.Type != EnumDamageType.PiercingAttack && src.Type != EnumDamageType.SlashingAttack)) return;
-            if (cfg.BleedPlayerCausedOnly && !(src.GetCauseEntity() is EntityPlayer)) return;
+            if (victim.World?.Side != EnumAppSide.Server) return;
             if (!cfg.BleedAffectsPlayers && victim is EntityPlayer) return;
             if (victim.GetBehavior<EntityBehaviorHealth>() == null) return;
-            if (victim.World.Rand.Next(0, 100) >= cfg.BleedChancePct) return;
 
             long now = victim.World.ElapsedMilliseconds;
-            long expiry = now + (long)(cfg.BleedDurationSeconds * 1000f);
             lock (Active)
             {
+                if (arrowCount <= 0)
+                {
+                    if (Active.Remove(victim.EntityId))
+                        try { victim.WatchedAttributes.SetInt("thbleed", 0); } catch { }
+                    return;
+                }
                 if (!Active.TryGetValue(victim.EntityId, out var st))
                 {
                     st = new State { Ent = victim, NextTickMs = now + (long)(cfg.BleedTickSeconds * 1000f) };
                     Active[victim.EntityId] = st;
                 }
-                int cap = Math.Max(1, cfg.BleedMaxStacks);
-                if (st.Expiries.Count >= cap)
-                {
-                    int shortest = 0;
-                    for (int i = 1; i < st.Expiries.Count; i++)
-                        if (st.Expiries[i] < st.Expiries[shortest]) shortest = i;
-                    st.Expiries[shortest] = expiry; // at cap: refresh, don't grow
-                }
-                else st.Expiries.Add(expiry);
-                // 0.9.0 client-local visuals: the stack count syncs as a plain
-                // watched attribute; the client lays the drip trail from it.
-                victim.WatchedAttributes.SetInt("thbleed", st.Expiries.Count);
+                st.Stacks = arrowCount;
+                victim.WatchedAttributes.SetInt("thbleed", arrowCount);
             }
         }
 
-        /// <summary>Current bleeders (entity + stack count) for the blood-visual
-        /// deposit tick. Copies under the lock; caller iterates freely.</summary>
+        /// <summary>Current bleeders (entity + stack count). Copies under the
+        /// lock; caller iterates freely.</summary>
         public static List<(Entity ent, int stacks)> SnapshotActive()
         {
             lock (Active)
             {
                 var list = new List<(Entity, int)>(Active.Count);
                 foreach (var kv in Active)
-                    if (kv.Value.Ent != null && kv.Value.Expiries.Count > 0)
-                        list.Add((kv.Value.Ent, kv.Value.Expiries.Count));
+                    if (kv.Value.Ent != null && kv.Value.Stacks > 0)
+                        list.Add((kv.Value.Ent, kv.Value.Stacks));
                 return list;
             }
         }
@@ -111,22 +107,18 @@ namespace TassHunting
                 foreach (var kv in Active)
                 {
                     var st = kv.Value;
-                    int before = st.Expiries.Count;
-                    st.Expiries.RemoveAll(e => e <= now);
-                    if (st.Expiries.Count == 0 || st.Ent == null || !st.Ent.Alive)
+                    if (st.Stacks <= 0 || st.Ent == null || !st.Ent.Alive)
                     {
                         try { st.Ent?.WatchedAttributes.SetInt("thbleed", 0); } catch { }
                         (retire = retire ?? new List<long>()).Add(kv.Key); continue;
                     }
-                    if (st.Expiries.Count != before)
-                        st.Ent.WatchedAttributes.SetInt("thbleed", st.Expiries.Count);
                     if (now < st.NextTickMs) continue;
                     st.NextTickMs = now + (long)(cfg.BleedTickSeconds * 1000f);
 
                     var hb = st.Ent.GetBehavior<EntityBehaviorHealth>();
                     if (hb == null) { (retire = retire ?? new List<long>()).Add(kv.Key); continue; }
                     float perStack = cfg.BleedStaticPerTick + cfg.BleedPctMaxHealthPerTick / 100f * hb.MaxHealth;
-                    float total = perStack * st.Expiries.Count;
+                    float total = perStack * st.Stacks;
                     // DEDICATED SPLATTER SIGNAL (0.9.3): the client keys DoT
                     // splatter off this monotonic counter, NOT the engine's
                     // onHurt bump. Decompile-verified (Entity.cs:935-953): the
@@ -145,23 +137,10 @@ namespace TassHunting
             }
         }
 
-        /// <summary>Active stack count (narrator/debug use).</summary>
+        /// <summary>Active stack count = arrows stuck (narrator/debug + blood).</summary>
         public static int StacksOn(long entityId)
         {
-            lock (Active) return Active.TryGetValue(entityId, out var st) ? st.Expiries.Count : 0;
-        }
-    }
-
-    [HarmonyPatch(typeof(EntityBehaviorHealth), "OnEntityReceiveDamage")]
-    public static class Patch_BleedProc
-    {
-        [HarmonyPostfix]
-        private static void Postfix(EntityBehaviorHealth __instance, DamageSource damageSource, ref float damage)
-        {
-            // 0.9.0: visuals are fully client-local (they key off the engine's
-            // synced onHurt attributes) - this hook only feeds the DoT.
-            try { BleedSystem.TryProc(__instance.entity, damageSource, damage); }
-            catch { }
+            lock (Active) return Active.TryGetValue(entityId, out var st) ? st.Stacks : 0;
         }
     }
 }
