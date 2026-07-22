@@ -131,6 +131,8 @@ namespace TassHunting
                 SliderFloat("Droplet scatter", () => cfg.BloodScatter, v => cfg.BloodScatter = v, 0f, 0.5f);
                 SliderFloat("Redraw every (sec)", () => cfg.BloodRefreshSeconds, v => cfg.BloodRefreshSeconds = v, 1f, 15f);
                 Help("Blood is drawn with particles that refresh on this cycle. Lower = steadier look, slightly more particle load.");
+                SliderFloat("Fade-out time (sec)", () => cfg.BloodFadeSeconds, v => cfg.BloodFadeSeconds = v, 1f, 120f);
+                Help("Blood holds full strength until its last seconds, then shrinks, fades and sinks away over this long.");
                 SliderFloat("Water stain opacity", () => cfg.WaterBloodMaxOpacity, v => cfg.WaterBloodMaxOpacity = v, 0.01f, 1f);
                 SliderFloat("View distance (blocks)", () => cfg.BloodRenderDistanceBlocks, v => cfg.BloodRenderDistanceBlocks = v, 16f, 128f);
                 SliderInt("Max spots drawn", () => cfg.BloodMaxRenderedSpots, v => cfg.BloodMaxRenderedSpots = v, 100, 4000);

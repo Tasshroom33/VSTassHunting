@@ -854,17 +854,16 @@ namespace TassHunting
             int blood = ParseBloodColor(cfg.BloodColorHex, ColorUtil.ToRgba(255, 116, 8, 12));
             float sc = 4f * scatter; // BT's BloodSpread scale: 0.05 default = gentle scatter
 
-            // Decals (trail drops, splats, pools): fade out and SINK into the
-            // ground instead of popping in/out (playtest 2026-07-21). Quadratic
-            // fade = near-full opacity most of the life, gone at the end;
-            // gentle constant sink reads as soaking in.
+            // Decals (trail drops, splats, pools): STABLE at full opacity for
+            // the spot's whole life; fade + sink are applied per-emit only in
+            // the spot's final BloodFadeSeconds window (0.7.3 - fading every
+            // particle cycle made all blood blink out in ~5s, field report).
             groundProps = new SimpleParticleProperties(
                 1, 1, blood,
                 new Vec3d(), new Vec3d(),
-                new Vec3f(0f, -0.02f, 0f), new Vec3f(0f, -0.01f, 0f),
+                new Vec3f(), new Vec3f(),
                 4.6f, 0f, 0.25f, 0.5f,
                 EnumParticleModel.Cube);
-            groundProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
 
             burstProps = new SimpleParticleProperties(
                 4, 4, blood,
@@ -903,6 +902,8 @@ namespace TassHunting
         }
 
         private readonly BlockPos cscratch = new BlockPos(0);
+        private static readonly EvolvingNatFloat FadeOut = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
+        private static readonly EvolvingNatFloat NoFade = new EvolvingNatFloat(EnumTransformFunction.LINEAR, 0f);
 
         /// <summary>Client-side surface height for trail-line drops: the line
         /// interpolates between anchors, so on slopes each drop re-resolves
@@ -1089,11 +1090,13 @@ namespace TassHunting
 
                     // DETERMINISTIC splat layout: positions/sizes are hashed
                     // from the spot id, so every re-emit re-covers the exact
-                    // same pattern - the pool sits still instead of reshuffling
-                    // every 4 seconds. Fade: last 25% of life shrinks it.
-                    // size: single drips sit near the MIN size, big pools near
-                    // the MAX (user tuning model: size min/max + rate + duration)
-                    float lifeFrac = GameMath.Clamp((s.ExpireMs - now) / (0.25f * Math.Max(1f, s.TotalLifeMs)), 0f, 1f);
+                    // same pattern. STABLE at full opacity until the spot's
+                    // final BloodFadeSeconds window - only then do cohorts
+                    // shrink, fade out and sink into the ground (soak-in end).
+                    long remainMs = s.ExpireMs - now;
+                    long fadeWindowMs = (long)(GameMath.Clamp(cfg.BloodFadeSeconds, 1f, 120f) * 1000f);
+                    bool ending = remainMs <= fadeWindowMs;
+                    float lifeFrac = ending ? GameMath.Clamp(remainMs / (float)fadeWindowMs, 0f, 1f) : 1f;
                     float fade = 0.55f + 0.45f * lifeFrac;
                     float sMin = Math.Max(0.05f, cfg.BloodParticleSizeMin);
                     float sMax = Math.Max(sMin, cfg.BloodParticleSizeMax);
@@ -1101,8 +1104,22 @@ namespace TassHunting
                     int spotId = kv.Key;
                     groundProps.MinQuantity = 1;
                     groundProps.AddQuantity = 0;
-                    // particles live a touch past the refresh so cycles overlap seamlessly
-                    groundProps.LifeLength = GameMath.Clamp(cfg.BloodRefreshSeconds, 1f, 15f) * 1.15f;
+                    float pLife = GameMath.Clamp(cfg.BloodRefreshSeconds, 1f, 15f) * 1.15f;
+                    // particles live a touch past the refresh so cycles overlap
+                    // seamlessly; the final cohort dies WITH the spot
+                    groundProps.LifeLength = ending ? Math.Min(pLife, remainMs / 1000f + 0.4f) : pLife;
+                    if (ending)
+                    {
+                        groundProps.OpacityEvolve = FadeOut;
+                        groundProps.MinVelocity.Set(0f, -0.02f, 0f);
+                        groundProps.AddVelocity.Set(0f, 0.01f, 0f);
+                    }
+                    else
+                    {
+                        groundProps.OpacityEvolve = NoFade;
+                        groundProps.MinVelocity.Set(0f, 0f, 0f);
+                        groundProps.AddVelocity.Set(0f, 0f, 0f);
+                    }
 
                     if (s.Kind == KindTrail && s.HasSeg)
                     {

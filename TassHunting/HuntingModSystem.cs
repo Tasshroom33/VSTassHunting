@@ -201,6 +201,9 @@ namespace TassHunting
         // drops between synced anchor spots); spurts happen ONLY on damage
         // beats (the shot, each bleed DoT tick).
         public float TrailDropsPerBlock = 3f;      // client: line density (bigger = more drops)
+        // 0.7.3: fade belongs to the SPOT's end of life, not the particle
+        // cycle (0.7.1 bug: every splat faded out per 4.6s cycle = slow blink)
+        public float BloodFadeSeconds = 10f;       // client: the last N seconds of a spot fade + sink
         public float WaterClotSizeMin = 0.25f;     // client: water clot size range
         public float WaterClotSizeMax = 0.7f;
         public float WaterClotAmount = 1f;         // client: scales clot count (0 = none)
