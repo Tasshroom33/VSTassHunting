@@ -3,7 +3,7 @@
   "modid": "tasshunting",
   "name": "TassHunting",
   "authors": [ "Tasshroom33" ],
-  "description": "Hunting overhaul with its own built-in blood system: sticky arrows and spears ride the animal they hit (grab a stuck spear back at melee range), true-aim spawn, tiered arrow break chances (steel never breaks, primitive arrows snap) with recoverable arrowheads, stacking bleed damage over time that leaves followable blood trails, pools, and blood-in-water, animals flee AWAY from the shooter, predator overhaul (apex terror bears, tactical wolf packs), predator footsteps audible at realistic ranges, extended projectile pickup, harvest overhaul (faster knife work, loot drops on the ground instead of a window, empty corpses self-remove). Everything config-gated, with an in-game settings panel when ConfigLib is installed.",
+  "description": "Hunting overhaul and tweaks to make the game feel a bit more realistic and alive. Arrows that stick in targets; Arrow break chance modifiers and pickup arrow heads instead of them being destroyed, more aggressive predators, blood trails, bloody water, health based animal run speed, damage over time bleed effects, better close combat bow aiming and accuracy, longer audible footstep range of predators, animals flee from longer range and flee away from you more realistically, faster harvest loot and auto drop loot, and config lib ui support to tweak in-game.  ",
   "version": "0.11.16",
   "side": "universal",
   "dependencies": { "game": "1.22.0" }
