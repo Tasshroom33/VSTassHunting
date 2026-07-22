@@ -52,6 +52,7 @@ namespace TassHunting
             public int Id;
             public double X, Y, Z;
             public float Intensity;
+            public int ArrowCount;   // arrows stuck when deposited - drives blood SIZE (user table)
             public long BornMs, LifeMs;
             public float FallHeight;
             public byte Kind;
@@ -202,7 +203,7 @@ namespace TassHunting
                         // train read as delay - pulse 1 hid inside the mob)
                         float inten = Math.Min(4f, 1.0f + dmg * 0.3f) * trailScale;
                         DepositLocal(ent.Pos.X, WoundY(ent), ent.Pos.Z, KindHit, inten, 0.5f * trailScale, null, now,
-                            ent.Alive ? 1 : 0);
+                            ent.Alive ? 1 : 0, Math.Max(1, stacks));
                     }
                 }
 
@@ -220,7 +221,7 @@ namespace TassHunting
                     {
                         float bdmg = ent.WatchedAttributes.GetFloat("thbleeddmg", 0f);
                         float inten = Math.Min(4f, 1.0f + bdmg * 0.3f) * trailScale;
-                        DepositLocal(ent.Pos.X, WoundY(ent), ent.Pos.Z, KindHit, inten, 0.5f * trailScale, null, now, 1);
+                        DepositLocal(ent.Pos.X, WoundY(ent), ent.Pos.Z, KindHit, inten, 0.5f * trailScale, null, now, 1, Math.Max(1, stacks));
                     }
                 }
 
@@ -232,7 +233,7 @@ namespace TassHunting
                     double horiz = Math.Sqrt(m.X * m.X + m.Z * m.Z);
                     float gait = horiz >= 0.08 ? Math.Max(0.1f, cfg.RunningBloodMult) : (horiz < 0.015 ? 0.85f : 1f);
                     DepositLocal(ent.Pos.X, WoundY(ent), ent.Pos.Z, KindTrail,
-                        (0.8f + 0.5f * stacks) * trailScale * gait, 0.35f * stacks * trailScale * gait, tr, now, 0);
+                        (0.8f + 0.5f * stacks) * trailScale * gait, 0.35f * stacks * trailScale * gait, tr, now, 0, stacks);
                 }
 
                 // 3. DEATH: pool + corpse bleed-out window
@@ -287,7 +288,7 @@ namespace TassHunting
             return ent.Pos.Y + bodyTop * 0.6;
         }
 
-        private int DepositLocal(double x, double y, double z, byte kind, float intensity, float waterAmount, Track tr, long now, int spurts)
+        private int DepositLocal(double x, double y, double z, byte kind, float intensity, float waterAmount, Track tr, long now, int spurts, int arrowCount = 0)
         {
             var cfg = HuntingModSystem.Cfg;
             if (!ResolveSurface(x, y, z, out double surfY, out bool isWater, out var waterKey)) return -1;
@@ -339,6 +340,7 @@ namespace TassHunting
                 Id = nextSpotId++,
                 X = x, Y = surfY, Z = z,
                 Intensity = Math.Min(MaxIntensity, intensity),
+                ArrowCount = arrowCount,
                 BornMs = now,
                 LifeMs = Math.Max(1000, life),
                 FallHeight = (float)GameMath.Clamp(y - surfY, 0.0, 8.0),
@@ -498,6 +500,18 @@ namespace TassHunting
             waterProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
         }
 
+        /// <summary>Blood SIZE multiplier by number of stuck arrows (user table
+        /// 2026-07-22): 1 arrow -> 0.75, 2 -> 1.0, 3+ -> 1.5 (capped). Applied to
+        /// the config base size, so a lone-arrow wound is small and a 3-arrow
+        /// wound is a big gush.</summary>
+        private static float ArrowSizeMult(int arrows)
+        {
+            if (arrows <= 0) return 0.75f; // hit blood before any bleed stack
+            if (arrows == 1) return 0.75f;
+            if (arrows == 2) return 1.0f;
+            return 1.5f;                    // 3+ capped
+        }
+
         /// <summary>Lerp two ARGB ints channel-wise (blood dries fresh->aged).</summary>
         private static float Hash01(int seed)
         {
@@ -594,6 +608,8 @@ namespace TassHunting
 
                 var tr = cfg.BloodTrails;
                 float intenFrac = GameMath.Clamp(s.Intensity / MaxIntensity, 0f, 1f);
+                // SIZE by stuck-arrow count (user table): 1->0.75, 2->1.0, 3+->1.5
+                float arrowSize = ArrowSizeMult(s.ArrowCount);
                 int spotId = kv.Key;
                 float tsMin = Math.Max(0.05f, Math.Min(tr.SizeMin, tr.SizeMax));
                 float tsMax = Math.Max(tsMin, Math.Max(tr.SizeMin, tr.SizeMax));
@@ -640,7 +656,7 @@ namespace TassHunting
                         double lz = s.PrevZ + sz * t + (Hash01(spotId * 223 + k * 19 + 5) - 0.5) * 2.0 * jit;
                         double ly = s.PrevY + (s.Y - s.PrevY) * t;
                         if (!ResolveGroundY(lx, ly + 1.0, lz, out double gy)) continue;
-                        float psize = GameMath.Lerp(tsMin, tsMax, 0.5f * Hash01(spotId * 239 + k * 23 + 11) + 0.5f * intenFrac);
+                        float psize = GameMath.Lerp(tsMin, tsMax, 0.5f * Hash01(spotId * 239 + k * 23 + 11) + 0.5f * intenFrac) * arrowSize;
                         float dropLife = tLifeMin + (tLifeMax - tLifeMin) * Hash01(spotId * 307 + k * 11);
                         groundProps.LifeLength = dropLife;
                         groundProps.MinSize = psize;
@@ -666,7 +682,7 @@ namespace TassHunting
                         float ang = Hash01(spotId * 97 + k * 13) * GameMath.TWOPI;
                         float rad = radius * (float)Math.Sqrt(Hash01(spotId * 131 + k * 29 + 7));
                         float variation = 0.85f + 0.3f * Hash01(spotId * 173 + k * 41 + 3);
-                        float psize = GameMath.Lerp(tsMin, tsMax, intenFrac) * variation;
+                        float psize = GameMath.Lerp(tsMin, tsMax, intenFrac) * variation * arrowSize;
                         float dropLife = tLifeMin + (tLifeMax - tLifeMin) * Hash01(spotId * 349 + k * 17);
                         groundProps.LifeLength = dropLife;
                         groundProps.MinSize = psize;
