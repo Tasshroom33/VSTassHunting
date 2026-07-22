@@ -204,6 +204,10 @@ namespace TassHunting
         // 0.7.3: fade belongs to the SPOT's end of life, not the particle
         // cycle (0.7.1 bug: every splat faded out per 4.6s cycle = slow blink)
         public float BloodFadeSeconds = 10f;       // client: the last N seconds of a spot fade + sink
+        // 0.7.5: the REAL spurt emitter (user: "I asked for a spurt of blood...
+        // yet its not there" - the old burst was 4-6 near-invisible particles
+        // in one frame). Pulsed fountain on the shot and each DoT tick.
+        public float SpurtStrength = 1f;           // client: scales spurt particle count (0 = off)
         public float WaterClotSizeMin = 0.25f;     // client: water clot size range
         public float WaterClotSizeMax = 0.7f;
         public float WaterClotAmount = 1f;         // client: scales clot count (0 = none)

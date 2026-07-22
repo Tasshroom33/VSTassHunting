@@ -128,6 +128,8 @@ namespace TassHunting
                 ColorHex("Blood color", () => cfg.BloodColorHex, v => cfg.BloodColorHex = v);
                 Checkbox("Falling droplets", () => cfg.FallingDropletsEnabled, v => cfg.FallingDropletsEnabled = v);
                 Help("Blood visibly falls from the wound before the splat lands.");
+                SliderFloat("Spurt size (0 = off)", () => cfg.SpurtStrength, v => cfg.SpurtStrength = v, 0f, 3f);
+                Help("The blood fountain when something is shot and on each bleed damage tick.");
                 SliderFloat("Droplet scatter", () => cfg.BloodScatter, v => cfg.BloodScatter = v, 0f, 0.5f);
                 SliderFloat("Redraw every (sec)", () => cfg.BloodRefreshSeconds, v => cfg.BloodRefreshSeconds = v, 1f, 15f);
                 Help("Blood is drawn with particles that refresh on this cycle. Lower = steadier look, slightly more particle load.");

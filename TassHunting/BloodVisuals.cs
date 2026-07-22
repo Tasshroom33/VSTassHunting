@@ -808,7 +808,8 @@ namespace TassHunting
             public float FallHeight;    // wound height above the splat
             public byte Kind;
             public long NextEmitMs;
-            public bool BurstDone;
+            public int SpurtsLeft;       // pulsed fountain: fresh hits 3 pulses, death pools 2
+            public long NextSpurtMs;
             public bool DropletsPending; // fresh elevated spot: droplets fall before the splat lands
             public bool HasSeg;          // trail: draw a drop line back to Prev
             public double PrevX, PrevY, PrevZ;
@@ -877,14 +878,14 @@ namespace TassHunting
                 EnumParticleModel.Cube);
 
             // Hit spurts ARC: launch up-and-over from the wound and fall under
-            // full gravity (playtest: everything was flat, no juice). Scatter
-            // widens both the launch cone and the up-kick.
+            // full gravity. 0.7.5: bigger particles (0.12-0.28) - the fountain
+            // must READ at game scale, per the exaggerated-for-gameplay brief.
             burstProps = new SimpleParticleProperties(
                 4, 4, blood,
                 new Vec3d(), new Vec3d(),
                 new Vec3f(-(0.3f + 3f * sc), 0.5f + 2f * sc, -(0.3f + 3f * sc)),
                 new Vec3f(0.3f + 3f * sc, 1.5f + 2f * sc, 0.3f + 3f * sc),
-                1.1f, 1.0f, 0.1f, 0.22f,
+                1.1f, 1.0f, 0.12f, 0.28f,
                 EnumParticleModel.Cube);
             burstProps.ShouldDieInLiquid = true;
             burstProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
@@ -989,10 +990,11 @@ namespace TassHunting
                     if (!cspots.TryGetValue(d.Id, out var s))
                     {
                         cspots[d.Id] = s = new CSpot();
-                        // splash/droplet juice only for blood that JUST
+                        // spurt/droplet juice only for blood that JUST
                         // happened - login/walk-up blood appears silently
                         bool fresh = d.AgeMs < 3000;
-                        s.BurstDone = !fresh;
+                        if (fresh && d.Kind == KindHit) s.SpurtsLeft = 3;   // shot + DoT tick: fountain
+                        else if (fresh && d.Kind == KindPool) s.SpurtsLeft = 2; // death: shorter gush
                         if (fresh && d.FallHeight > 0.35f && cfg != null && cfg.FallingDropletsEnabled)
                         {
                             // droplets fall first; the splat materializes when
@@ -1085,23 +1087,29 @@ namespace TassHunting
                         }
                     }
 
-                    if (now < s.NextEmitMs) continue;
-                    int emitMs = (int)(GameMath.Clamp(cfg.BloodRefreshSeconds, 1f, 15f) * 1000f);
-                    s.NextEmitMs = now + emitMs;
-
-                    if (!s.BurstDone)
+                    // SPURT EMITTER (0.7.5): a pulsed fountain from the wound -
+                    // fires on its own fast clock (every 130ms while pulses
+                    // remain), NOT gated by the splat's delayed materialization.
+                    // Old version was 4-6 near-invisible particles in ONE frame;
+                    // this is 15-45 arcing particles over ~0.4s, damage-scaled.
+                    if (s.SpurtsLeft > 0 && now >= s.NextSpurtMs)
                     {
-                        s.BurstDone = true;
-                        if (s.Kind != KindTrail)
+                        s.SpurtsLeft--;
+                        s.NextSpurtMs = now + 130;
+                        float strength = Math.Max(0f, cfg.SpurtStrength);
+                        if (strength > 0f)
                         {
-                            // splash at the WOUND height, not at the ground
-                            burstProps.MinQuantity = 3 + s.Intensity;
-                            burstProps.AddQuantity = 3;
-                            burstProps.MinPos.Set(s.X - 0.1, s.Y + s.FallHeight + 0.2, s.Z - 0.1);
-                            burstProps.AddPos.Set(0.2, 0.3, 0.2);
+                            burstProps.MinQuantity = (4f + s.Intensity * 3f) * strength;
+                            burstProps.AddQuantity = 3f * strength;
+                            burstProps.MinPos.Set(s.X - 0.15, s.Y + s.FallHeight + 0.1, s.Z - 0.15);
+                            burstProps.AddPos.Set(0.3, 0.35, 0.3);
                             capi.World.SpawnParticles(burstProps);
                         }
                     }
+
+                    if (now < s.NextEmitMs) continue;
+                    int emitMs = (int)(GameMath.Clamp(cfg.BloodRefreshSeconds, 1f, 15f) * 1000f);
+                    s.NextEmitMs = now + emitMs;
 
                     // DETERMINISTIC splat layout: positions/sizes are hashed
                     // from the spot id, so every re-emit re-covers the exact
