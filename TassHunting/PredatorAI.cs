@@ -33,8 +33,7 @@ namespace TassHunting
     ///
     /// All numbers rewritten IN CODE at AssetsFinalize (tasks matched by their
     /// semantics - code + emotion gate + animation - never by array index, so a
-    /// vanilla reorder can't silently break us). Config-gated; composes with the
-    /// fleeexhaustion mod (wounded SOLO animals still limp at reduced speed).
+    /// vanilla reorder can't silently break us). Config-gated.
     /// </summary>
     public static class PredatorAI
     {

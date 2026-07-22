@@ -1,8 +1,6 @@
-// STACKING HYBRID BLEED (2026-07-19): the DAMAGE half of the bleed feature.
-// As of 0.6.0 the VISUAL half lives in BloodVisuals.cs (server-synced spot
-// ledger + water diffusion) - BloodTrail is fully replaced and should be
-// removed from the mod stack (it was kept for particles only; its damage was
-// always off and its single isBleeding bool cannot express stacks).
+// STACKING HYBRID BLEED: the DAMAGE half of the bleed feature. The VISUAL
+// half lives in BloodVisuals.cs (spot ledger + water diffusion). This mod
+// renders its own blood, so no third-party blood mod is needed.
 //
 // Model per the user's spec: each qualifying hit (piercing/slashing, past a
 // damage threshold, chance roll) adds a bleed STACK (cap configurable, default

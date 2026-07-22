@@ -100,7 +100,7 @@ namespace TassHunting
                 Help("How fast rain clears fresh blood. 0 = rain never clears it, 1 = half lifetime, 2 = a third.");
             }
 
-            if (ImGui.CollapsingHeader("Bleed Damage"))
+            if (ImGui.CollapsingHeader("Bleed Damage over Time"))
             {
                 Checkbox("Enable bleed damage", () => cfg.BleedEnabled, v => cfg.BleedEnabled = v);
                 Checkbox("Spawn splatter on damage", () => cfg.SpawnSplatterOnDamage, v => cfg.SpawnSplatterOnDamage = v);

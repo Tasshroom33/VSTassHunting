@@ -9,19 +9,17 @@ using Vintagestory.GameContent;
 
 namespace TassHunting
 {
-    /// <summary>
-    /// Hunting AI and awareness tweaks (moved OUT of Tasshroom Hardcore Winter
-    /// 2026-07-18 â€” hunting is not winter; every mod stays single-purpose):
-    ///  - FLEE AWAY FROM THE HUNTER: hit from beyond seeking range, animals run
-    ///    in a random direction within the 180-degree arc AWAY from the shooter
-    ///    (vanilla runs blindly in the direction the animal happened to face â€”
-    ///    sometimes straight at the gun). Harmony on AiTaskFleeEntity.TryInstaFlee.
-    ///  - PREDATOR FOOTSTEP RANGES (asset patches): wolf stalk 10->22, wolf run
-    ///    15->30, bear walk 15->30, bear charge 25->44 â€” audible before lethal.
-    /// Future home for the awareness layer (goals Hunting 5).
-    /// </summary>
-    /// <summary>The ONE standard particle vocabulary (user spec 0.8.0) -
-    /// every blood category exposes exactly these eight dials.</summary>
+    // Hunting AI and awareness tweaks live in this assembly:
+    //  - FLEE AWAY FROM THE SHOOTER (Patch_FleeAwayFromHunter below): a hit from
+    //    beyond seeking range makes animals run in a random direction within the
+    //    180-degree arc AWAY from the shooter, instead of vanilla's blind run in
+    //    whatever direction the animal happened to face (sometimes straight at
+    //    you).
+    //  - PREDATOR FOOTSTEP RANGES (asset patches): wolf stalk 10->22, wolf run
+    //    15->30, bear walk 15->30, bear charge 25->44 - audible before lethal.
+
+    /// <summary>The one standard particle vocabulary: every blood category
+    /// (trails, splatter) exposes exactly these eight dials.</summary>
     public class BloodParticleLook
     {
         public bool Enabled = true;
@@ -81,14 +79,13 @@ namespace TassHunting
         public bool EmptyCorpseAutoRemove = true;
         public float EmptyCorpseRemoveSeconds = 10f;
 
-        // ---- STICKY PROJECTILES (absorbed from StickyArrow 0.1.1, 2026-07-19,
-        //      see StickyProjectiles.cs) ----
+        // ---- STICKY PROJECTILES (see StickyProjectiles.cs) ----
         // Master: arrows/spears ride the animal they hit instead of vanishing.
         public bool StickyProjectilesEnabled = true;
         // Riding projectile despawns after this long if the animal never dies.
         public float StickSeconds = 300f;
         // A stuck SPEAR can be grabbed back at vanilla touch range (arrows stay
-        // uncollectible until released — walking near must not yank them out).
+        // uncollectible until released - walking near must not yank them out).
         public bool SpearTouchRetrieve = true;
         // Body-ellipse anchoring (goat-flank playtest): how deep past the body
         // surface the arrow embeds, and how wide the body is across vs along
@@ -96,15 +93,11 @@ namespace TassHunting
         public float StickEmbedFraction = 0.35f;
         public float StickBodyWidthFraction = 0.45f;
 
-        // ---- ARCHERY (absorbed from AccurateArchery via the 0.0.5 asset
-        //      patches; config-gated code since 0.3.0, see ArcheryTweaks.cs).
-        //      0.6.2: bow accuracy flatten REMOVED - bows are pure vanilla
-        //      (crude -0.05 .. recurve +0.3); only arrows are tuned now. ----
+        // ---- ARCHERY (see ArcheryTweaks.cs). Bows are pure vanilla
+        //      (accuracy crude -0.05 .. recurve +0.3); only arrows are tuned. ----
 
-        // Per-material arrow break chance (0.6.1; replaces the 0.3.0-0.6.0
-        // UnbreakableArrowsEnabled blanket zero, which had flattened the old
-        // AccurateArchery per-line list). USER CURVE 2026-07-21, halving per
-        // tech tier working back from steel-never-breaks:
+        // Per-material arrow break chance. Curve halves per tech tier working
+        // back from steel-never-breaks:
         //   reed 32% -> neolithic 16% -> stone 8% -> copper 4% ->
         //   bronze 2% -> iron 1% -> steel 0%.
         // Keys match the arrow code suffix (arrow-<material>). Materials NOT
@@ -143,9 +136,9 @@ namespace TassHunting
             ["steel"] = 0f,
         };
 
-        // ---- STACKING HYBRID BLEED (2026-07-19, see BleedSystem.cs; damage
-        //      half. 0.6.0: visuals now in-house too - BloodTrail fully
-        //      replaced, remove it from the stack) ----
+        // ---- STACKING HYBRID BLEED (see BleedSystem.cs; the damage half).
+        //      The visual half lives in BloodVisuals.cs - this mod renders its
+        //      own blood, no third-party blood mod needed. ----
         public bool BleedEnabled = true;
         public int BleedMaxStacks = 3;
         public float BleedTickSeconds = 10f;
@@ -157,20 +150,17 @@ namespace TassHunting
         public bool BleedPlayerCausedOnly = true;
         public bool BleedAffectsPlayers = true;        // PvP: humans bleed too
 
-        // ---- BLOOD VISUALS (0.6.0, see BloodVisuals.cs; replaces BloodTrail
-        //      entirely). Server-authoritative spot ledger + water diffusion,
-        //      per-player proximity-scoped sync - late joiners and players
-        //      walking up to old blood see the same trail as everyone else. ----
+        // ---- BLOOD VISUALS (see BloodVisuals.cs). In-house blood system:
+        //      a spot ledger + water diffusion; the current build renders it
+        //      client-locally (the sync layer is parked, see BloodVisuals). ----
         public bool BloodVisualsEnabled = true;
-        // How long a ground blood spot stays followable (REAL seconds - same
-        // law-7 combat-pacing carve-out as the bleed itself). DELIBERATELY not
-        // matched to BloodTrail's 10s default: minutes-long trails are the
-        // whole point of the synced ledger (late joiner follows the trail).
+        // How long a ground blood spot stays followable (REAL seconds - the
+        // law-7 combat-pacing carve-out). Long-lived by design: a followable
+        // trail that persists is the whole point of the tracking system.
         public float BloodSpotLifetimeSeconds = 600f;
-        // Server deposit cadence while something bleeds. 0.25s = 4 drips/sec
-        // (0.6.9, nearest we go to BloodTrail's 12.5/s default: their drops
-        // evaporated in 10s so they had to spray; ours persist and re-render,
-        // so spatial density is what matters, and every drip is a synced spot).
+        // Server deposit cadence while something bleeds. 0.25s = 4 drips/sec.
+        // Our drops persist and re-render, so spatial density (spacing along
+        // the path) is what reads, not raw emission rate.
         public float BloodDepositIntervalSeconds = 0.25f;
         // Merge threshold, NOT a density dial (density = drip interval): drips
         // closer together than this GROW the previous spot into a pool, so
@@ -180,7 +170,7 @@ namespace TassHunting
         public int BloodMaxSpots = 4096;          // server ledger cap, oldest pruned
         public float BloodRenderDistanceBlocks = 64f;
         public int BloodMaxRenderedSpots = 1200;  // client per-tick render budget
-        public float CorpseBleedSeconds = 4f;     // death pool keeps growing this long (BT-default-adjacent, 0.6.9)
+        public float CorpseBleedSeconds = 4f;     // death pool keeps growing this long
         public bool WaterBloodEnabled = true;     // blood in water diffuses as tiles
 
         // ---- BLOOD LOOK (0.8.0 - USER-SPEC PANEL: four sections, ONE standard

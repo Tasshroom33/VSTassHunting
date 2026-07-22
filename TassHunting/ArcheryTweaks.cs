@@ -6,22 +6,13 @@ using Vintagestory.API.MathTools;
 namespace TassHunting
 {
     /// <summary>
-    /// Arrow tuning at AssetsFinalize (absorbed from AccurateArchery 0.0.5,
-    /// config-gated code since 0.3.0). Decompile-verified read site (1.22.3):
-    /// arrows read the RESOLVED Attributes["breakChanceOnImpact"] (code
-    /// fallback 0.5; vanilla ships a per-material byType map) at impact.
-    /// Applied on BOTH sides, exactly like the JSON patches were.
-    ///
-    /// 0.6.1: the 0.3.0 absorption had flattened the per-material break list
-    /// into a blanket zero (user: "Ai botched the task"). Restored as the
-    /// config map ArrowBreakChanceByMaterial (user tier curve, halving from
-    /// reed 32% down to steel 0%). Unlisted materials - modded arrows - are
-    /// NOT touched: they keep their own mod's values.
-    ///
-    /// 0.6.2: bow accuracy modification REMOVED entirely (user 2026-07-21) -
-    /// bows fall back to vanilla's rangedWeaponsAcc progression (crude -0.05,
-    /// simple 0, long +0.2, recurve +0.3). True-aim spawn correction (the
-    /// other AccurateArchery half) lives on in HuntingModSystem and is kept.
+    /// Per-material arrow break-chance tuning at AssetsFinalize (config-gated).
+    /// Arrows read the resolved Attributes["breakChanceOnImpact"] (vanilla ships
+    /// a per-material byType map, fallback 0.5) at impact; this writes the
+    /// configured value per material on both sides. The tier curve halves from
+    /// reed 32% down to steel 0%; unlisted materials (modded arrows) are left
+    /// untouched. Bows are pure vanilla; the true-aim spawn correction lives in
+    /// HuntingModSystem.
     /// </summary>
     internal static class ArcheryTweaks
     {

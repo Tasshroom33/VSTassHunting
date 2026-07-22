@@ -10,23 +10,20 @@ using Vintagestory.GameContent;
 namespace TassHunting
 {
     /// <summary>
-    /// STICKY PROJECTILES — absorbed from the standalone StickyArrow mod at its
-    /// 0.1.1 (2026-07-19, naming standardization; the standalone is retired like
-    /// AccurateArchery before it). Arrows and spears STICK to the creatures they
-    /// hit, minecraft-style: the projectile rides the animal at the spot and
-    /// angle it hit, turns with the body, and drops recoverable when the animal
-    /// dies or the stick times out. Spears can be grabbed back at vanilla touch
-    /// range while riding (your melee/ranged all-in-one is never lost).
+    /// STICKY PROJECTILES. Arrows and spears STICK to the creatures they hit:
+    /// the projectile rides the animal at the spot and angle it hit, turns with
+    /// the body, and drops recoverable when the animal dies or the stick times
+    /// out. Spears can be grabbed back at vanilla touch range while riding.
     ///
     /// THE RIDING RENDERER (single-writer, root-caused 2026-07-19,
     /// decompile-proven):
-    /// (a) client entity.Pos is a MAILBOX — SystemNetworkProcess
+    /// (a) client entity.Pos is a MAILBOX - SystemNetworkProcess
     ///     .HandleSinglePacket writes every position packet RAW into Pos at
     ///     15ms tick cadence; it only becomes the smooth render position after
     ///     that entity's OWN EntityBehaviorInterpolatePosition lerps it later
     ///     the same frame;
     /// (b) ClientEventManager.RegisterRenderer inserts new renderers BEFORE
-    ///     existing entries of equal RenderOrder (all interpolators are 0.0) —
+    ///     existing entries of equal RenderOrder (all interpolators are 0.0) -
     ///     the LATER-spawned projectile renders FIRST, so reading target.Pos
     ///     from the projectile's own pass gets raw-server/stale values
     ///     alternately (the "two locations" flicker).
@@ -35,9 +32,8 @@ namespace TassHunting
     /// every rider to the position that pass wrote IN THE SAME CALL. Ordering
     /// cannot exist as a concept; the arrow glides exactly like the animal.
     ///
-    /// Config gates (all runtime, mod absorb request 2026-07-19):
-    /// StickyProjectilesEnabled (master: off = vanilla die/drop on hit),
-    /// SpearTouchRetrieve, StickSeconds.
+    /// Config gates (all runtime): StickyProjectilesEnabled (master: off =
+    /// vanilla die/drop on hit), SpearTouchRetrieve, StickSeconds.
     /// </summary>
     internal class StickyProjectiles
     {
@@ -279,7 +275,7 @@ namespace TassHunting
             arrow.Pos.Roll = s.Roll;
             arrow.Pos.Motion.Set(0.0, 0.0, 0.0);
             // The projectile's own tick recomputes+overwrites this flag from
-            // collision state every 25ms — reassert so the CLIENT keeps treating
+            // collision state every 25ms - reassert so the CLIENT keeps treating
             // the projectile as stuck (no rotation-from-motion, no gravity).
             arrow.WatchedAttributes.SetBool("stuck", true);
         }
@@ -321,7 +317,7 @@ namespace TassHunting
                 }
                 if (target == null || !target.Alive)
                 {
-                    // Release: clear the stuck flag so gravity resumes — the
+                    // Release: clear the stuck flag so gravity resumes - the
                     // projectile falls with the kill and lands recoverable.
                     arrow.WatchedAttributes.SetBool("stuck", false);
                     arrow.WatchedAttributes.RemoveAttribute("sa_target"); // client stops driving it
@@ -339,7 +335,7 @@ namespace TassHunting
 
     /// <summary>
     /// Vanilla touch-collect (1.5 block radius) checks only "settled + alive +
-    /// zero motion" — a RIDING arrow passes and gets yanked out of the animal
+    /// zero motion" - a RIDING arrow passes and gets yanked out of the animal
     /// when you walk near it (playtest 2026-07-18). Riding ARROWS are not
     /// collectible until released. SPEARS are the exception (playtest
     /// 2026-07-19: your melee/ranged all-in-one must be retrievable): a stuck
@@ -378,7 +374,7 @@ namespace TassHunting
 
     /// <summary>
     /// DamageProjectile decides the projectile's FATE after an entity hit
-    /// (durability hit, then die-or-drop — decompile-verified). We keep the
+    /// (durability hit, then die-or-drop - decompile-verified). We keep the
     /// durability hit, then ATTACH instead of dying. Damage was already dealt
     /// by DealDamage before this runs, so gameplay damage is untouched.
     /// </summary>
@@ -407,7 +403,7 @@ namespace TassHunting
             }
 
             StickyProjectiles.Instance?.Attach(__instance, target);
-            return false; // skip vanilla die/drop — the projectile now rides the target
+            return false; // skip vanilla die/drop - the projectile now rides the target
         }
     }
 }
