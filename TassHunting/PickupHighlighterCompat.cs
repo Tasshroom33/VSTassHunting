@@ -56,8 +56,25 @@ namespace TassHunting
         // compiler-defined, so name matching fails).
         public static void FilterPostfix(object __0, ref bool __result)
         {
-            if (!__result || !(__0 is Entity val)) return;
-            // Only constrain PROJECTILES; ground items keep the mod's own rules.
+            if (!(__0 is Entity val)) return;
+
+            // DROPPED ARROWHEADS (2026-07-22): a broken arrow leaves an arrowhead
+            // ItemEntity on the ground - it is arrow debris, always worth finding,
+            // like the arrow it came from. FORCE it highlighted even if the user
+            // has the highlighter's "Items" toggle off (they may highlight only
+            // projectiles, but still want their broken-arrow tips flagged). Match
+            // the itemstack code path "arrowhead...". Runs whether __result was
+            // true or false, so it turns highlighting ON for arrowheads.
+            if (val is Vintagestory.API.Common.EntityItem ei
+                && ei.Itemstack?.Collectible?.Code?.Path is string p
+                && p.StartsWith("arrowhead", StringComparison.OrdinalIgnoreCase))
+            {
+                __result = true;
+                return;
+            }
+
+            if (!__result) return;
+            // Only constrain PROJECTILES; other ground items keep the mod's rules.
             if (val.Class == null || val.Class.IndexOf("projectile", StringComparison.OrdinalIgnoreCase) < 0) return;
             // RIDING a target (StickyArrow's synced sa_target attr): a marker
             // dancing on a live animal is noise, and a riding spear (collectible

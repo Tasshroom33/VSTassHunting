@@ -304,9 +304,19 @@ namespace TassHunting
             foreach (var kv in stuck)
             {
                 var s = kv.Value;
-                s.SecondsLeft -= dt;
                 var arrow = sapi.World.GetEntityById(s.ArrowId);
                 if (arrow == null || !arrow.Alive) { toRemove.Add(kv.Key); affectedTargets.Add(s.TargetId); continue; }
+
+                var target = sapi.World.GetEntityById(s.TargetId);
+
+                // STAY UNTIL DEATH: while the animal is alive and loaded, the stick
+                // timer is FROZEN - the arrow never works loose, it bleeds until
+                // the kill (handled by the target-dead branch below). The timeout
+                // still counts down when the target is MISSING (fled/unloaded), so
+                // StickSeconds is the fallback cap that stops lost arrows leaking.
+                bool freezeTimer = HuntingModSystem.Cfg.StickUntilDeath
+                    && target != null && target.Alive;
+                if (!freezeTimer) s.SecondsLeft -= dt;
 
                 if (s.SecondsLeft <= 0f)
                 {
@@ -331,7 +341,6 @@ namespace TassHunting
                     arrow.WatchedAttributes.SetFloat("sa_secs", s.SecondsLeft);
                 }
 
-                var target = sapi.World.GetEntityById(s.TargetId);
                 if (target == null && s.GraceSeconds > 0f)
                 {
                     s.GraceSeconds -= dt; // rehydrated: target's chunk may load a beat later
@@ -461,6 +470,13 @@ namespace TassHunting
                     __instance.Die(EnumDespawnReason.Death); // -> arrowhead drop; no stick, no bleed
                     return false;
                 }
+            }
+            else if (brokeByDurability)
+            {
+                // A spear whose durability ran out just breaks (no arrowhead, no
+                // stick) - do not embed a snapped weapon in the animal.
+                __instance.Die(EnumDespawnReason.Death);
+                return false;
             }
 
             // Survived the break roll: it rides the target and contributes a bleed

@@ -84,7 +84,16 @@ namespace TassHunting
         public bool StickyProjectilesEnabled = true;
         // How long an arrow stays embedded - and (2026-07-22) THE BLEED TIMER:
         // an embedded arrow bleeds the animal for this long, then works loose.
+        // (When StickUntilDeath is on, this is only the FALLBACK cap for an
+        // animal that fled and never died - see below.)
         public float StickSeconds = 60f;
+        // ARROWS STAY UNTIL DEATH (user request 2026-07-22): while the animal is
+        // ALIVE and loaded, arrows never work loose - they stay embedded and keep
+        // bleeding (bleed = stuck-arrow count) right up until the kill, then all
+        // drop recoverable. StickSeconds still applies as a SAFETY CAP only for a
+        // target that is gone/unloaded (a fled or despawned animal), so arrows in
+        // a lost animal do not ride forever and leak bleed stacks.
+        public bool StickUntilDeath = false;
         // A stuck SPEAR can be grabbed back at vanilla touch range (arrows stay
         // uncollectible until released - walking near must not yank them out).
         public bool SpearTouchRetrieve = true;

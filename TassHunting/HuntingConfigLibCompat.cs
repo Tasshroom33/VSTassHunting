@@ -156,8 +156,10 @@ namespace TassHunting
             if (ImGui.CollapsingHeader("Stuck arrows and spears"))
             {
                 Checkbox("Arrows stick in animals", () => cfg.StickyProjectilesEnabled, v => cfg.StickyProjectilesEnabled = v);
+                Checkbox("Arrows stay until the animal dies", () => cfg.StickUntilDeath, v => cfg.StickUntilDeath = v);
+                Help("On = arrows never fall out of a live animal; they stay and keep bleeding it until the kill, then drop. Off = they work loose after the lifetime below.");
                 SliderFloat("Stuck arrow lifetime (sec)", () => cfg.StickSeconds, v => cfg.StickSeconds = v, 30f, 900f);
-                Help("A stuck arrow disappears after this long if the animal never dies.");
+                Help("How long a stuck arrow lasts if the animal never dies. With 'stay until death' on, this only applies to an animal that fled and vanished.");
                 Checkbox("Grab stuck spears back", () => cfg.SpearTouchRetrieve, v => cfg.SpearTouchRetrieve = v);
             }
 
