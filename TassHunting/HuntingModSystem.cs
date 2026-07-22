@@ -220,8 +220,8 @@ namespace TassHunting
         public float WaterClotSizeMax = 0.7f;
         public float WaterClotAmount = 1f;
 
-        // ---- WOUNDED SLOWDOWN (2026-07-19, see WoundedSlowdown.cs; replaces
-        //      FleeExhaustion - all AI states, tiered, per the user's table) ----
+        // ---- WOUNDED SLOWDOWN (see WoundedSlowdown.cs): a per-tier health
+        //      table that slows creature movement in ALL AI states ----
         public bool WoundedSlowdownEnabled = true;
         public WoundedSlowTier[] WoundedSlowTiers = {
             new WoundedSlowTier { HealthPctMax = 10f, SlowPct = 50f },

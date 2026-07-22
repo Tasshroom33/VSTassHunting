@@ -1,10 +1,7 @@
-// WOUNDED SLOWDOWN (2026-07-19): the user's tier table, applied to ALL
-// creature movement - not just fleeing.
-//
-// Why not FleeExhaustion: its whole engine is one line (flee-task speed =
-// base x hp% x global scalar, floor half speed), it only touches the FLEE
-// task (a wounded wolf CHASING you is never slowed), and its config is a
-// single scalar - the tier table is not expressible. This replaces it.
+// WOUNDED SLOWDOWN: a configurable health-tier table that slows ALL creature
+// movement (chase, flee, wander), not just fleeing - a wounded wolf chasing
+// you slows down too, and the amount is a full per-tier table rather than a
+// single global scalar.
 //
 // Mechanism (decompile-verified 1.22.3): creatures do NOT read the
 // "walkspeed" stat (that is player plumbing - wearables/GUI). Every AI task
