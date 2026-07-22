@@ -80,7 +80,7 @@ namespace TassHunting
         private readonly Dictionary<long, Track> tracks = new Dictionary<long, Track>();
         private readonly Dictionary<(int x, int y, int z), float> waterTiles = new Dictionary<(int, int, int), float>();
         private readonly Dictionary<(int x, int y, int z), float> waterDisplay = new Dictionary<(int, int, int), float>();
-        private readonly Dictionary<(int x, int y, int z), long> waterNextEmit = new Dictionary<(int, int, int), long>();
+        private readonly Dictionary<(int x, int y, int z), float> waterEmittedAt = new Dictionary<(int, int, int), float>();
         private readonly BlockPos scratch = new BlockPos(0);
         private long lastWarnMs = -10000;
 
@@ -915,14 +915,14 @@ namespace TassHunting
                 List<(int, int, int)> cull = null;
                 foreach (var kv in next)
                     if (kv.Value < WaterCull) (cull = cull ?? new List<(int, int, int)>()).Add(kv.Key);
-                if (cull != null) foreach (var k in cull) { next.Remove(k); waterNextEmit.Remove(k); }
+                if (cull != null) foreach (var k in cull) { next.Remove(k); waterEmittedAt.Remove(k); }
                 while (next.Count > WaterTileCap)
                 {
                     (int, int, int) weakest = default; float weakestAmt = float.MaxValue;
                     foreach (var kv in next)
                         if (kv.Value < weakestAmt) { weakestAmt = kv.Value; weakest = kv.Key; }
                     next.Remove(weakest);
-                    waterNextEmit.Remove(weakest);
+                    waterEmittedAt.Remove(weakest);
                 }
                 waterTiles.Clear();
                 foreach (var kv in next) waterTiles[kv.Key] = kv.Value;
@@ -948,9 +948,17 @@ namespace TassHunting
                 if (kv.Value < 0.05f) continue;
                 double dx = kv.Key.x + 0.5 - px, dz = kv.Key.z + 0.5 - pz;
                 if (dx * dx + dz * dz > maxDist2) continue;
-                waterNextEmit.TryGetValue(kv.Key, out long nextEmit);
-                if (now < nextEmit) continue;
-                waterNextEmit[kv.Key] = now + 2400;
+                // ONE-SHOT, like the vanilla sediment effect (user 2026-07-22:
+                // "the murky water starts one shot then slowly fades" - I had a
+                // 2.4s re-emit loop that vanilla does NOT have, so the bloom kept
+                // restarting and you saw fresh red over and over). A tile blooms
+                // ONCE, then again ONLY if its blood strength meaningfully RISES
+                // (new blood arriving) - never on a timer, never while it just
+                // sits/decays. waterEmittedAt stores the strength we last bloomed
+                // at (survives the diffusion rebuild; culled keys pruned with it).
+                waterEmittedAt.TryGetValue(kv.Key, out float emittedAt);
+                if (kv.Value <= emittedAt + 0.5f) continue; // already bloomed at >= this strength
+                waterEmittedAt[kv.Key] = kv.Value;
 
                 // Amount only drives HOW MANY sediment-style puffs bloom this beat
                 // (more blood = denser murk); the look (size 0.25 -> ~3.25 expand,
@@ -983,7 +991,7 @@ namespace TassHunting
                 }
             }
             catch { }
-            spots.Clear(); tracks.Clear(); waterTiles.Clear(); waterDisplay.Clear(); waterNextEmit.Clear();
+            spots.Clear(); tracks.Clear(); waterTiles.Clear(); waterDisplay.Clear(); waterEmittedAt.Clear();
             capi = null;
             tickId = waterTickId = 0;
             base.Dispose();
