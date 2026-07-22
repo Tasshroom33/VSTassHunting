@@ -48,11 +48,18 @@ namespace TassHunting
 
                 string material = path.Substring("arrow-".Length);
                 var headItem = __instance.World.GetItem(new AssetLocation("game", "arrowhead-" + material));
-                if (headItem == null) return; // crude / erel / bone and unknown mods: no head to recover
+                if (headItem == null)
+                {
+                    if (cfg.BloodDiagnostics)
+                        __instance.World.Logger.Notification("[TassHunting] arrow broke ({0}) but no arrowhead-{1} item exists - dropped nothing (expected for crude/reed/bone).", path, material);
+                    return; // crude / erel / bone and unknown mods: no head to recover
+                }
 
                 var pos = __instance.SidedPos;
                 if (pos == null) return;
                 __instance.World.SpawnItemEntity(new ItemStack(headItem, 1), pos.XYZ.Add(0.0, 0.1, 0.0));
+                if (cfg.BloodDiagnostics)
+                    __instance.World.Logger.Notification("[TassHunting] arrow broke ({0}) -> dropped arrowhead-{1} at {2:0.0},{3:0.0},{4:0.0}.", path, material, pos.X, pos.Y, pos.Z);
             }
             catch { }
         }

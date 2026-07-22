@@ -231,7 +231,7 @@ namespace TassHunting
         public float RunningBloodMult = 1.5f;           // server: sprint bleed boost
         public float WaterBloodDecayPerSecond = 0.12f;  // server: water field fade
         public float WaterBloodSpreadPerSecond = 0.02f; // server: water field spread
-        public float WaterBloodMaxOpacity = 0.10f;      // client: water blood particle opacity (0.10 = 10%). Direct %, tune from panel.
+        public float WaterBloodMaxOpacity = 0.50f;      // client: water blood particle opacity (0.50 = 50%). Direct %, tune from panel.
         public float WaterClotAmount = 1f;              // client: how many murk puffs per beat (sediment recipe fixes their size)
 
         // ---- WOUNDED SLOWDOWN (see WoundedSlowdown.cs): a per-tier health

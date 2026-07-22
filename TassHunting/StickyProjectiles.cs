@@ -422,19 +422,49 @@ namespace TassHunting
             // Arrows AND spears stick; thrown stones keep vanilla behavior.
             if (__instance.Code == null) return true;
             string path = __instance.Code.Path;
-            if (!path.Contains("arrow") && !path.Contains("spear")) return true;
+            bool isArrow = path.Contains("arrow");
+            if (!isArrow && !path.Contains("spear")) return true;
 
+            // Durability hit (unchanged - vanilla dealt gameplay damage already).
+            bool brokeByDurability = false;
             if (__instance.DamageStackOnImpact && __instance.ProjectileStack != null)
             {
                 __instance.ProjectileStack.Collectible.DamageItem(
                     target.World, target, new DummySlot(__instance.ProjectileStack));
-                if (__instance.ProjectileStack.Collectible.GetRemainingDurability(__instance.ProjectileStack) <= 0)
+                brokeByDurability = __instance.ProjectileStack.Collectible.GetRemainingDurability(__instance.ProjectileStack) <= 0;
+            }
+
+            // BREAK ROLL FIRST (fixed 2026-07-22: the old code only broke on 0
+            // durability and IGNORED the break-chance roll - so a high-break-chance
+            // arrow that hit an animal never broke, it just STUCK, then timed out
+            // and vanished with no arrowhead. That was the "100% copper break
+            // dropped nothing, swallowed by the wolf" bug). Vanilla's break test
+            // (EntityProjectileBase.DamageProjectile, decompile-verified) is:
+            //   dies if durability<=0 OR Rand >= DropOnImpactChance.
+            // DropOnImpactChance = 1 - breakChanceOnImpact (ItemBow.cs:249), and
+            // our per-material ArrowBreakChance config feeds that breakChance. So
+            // an arrow that BREAKS is destroyed (Die -> Patch_ArrowheadOnBreak
+            // drops game:arrowhead-{material} at the impact point), does NOT stick,
+            // and adds NO bleed stack - it "glanced off bone" (user 2026-07-22).
+            // Spears never break-roll (no arrowhead item); they always stick.
+            if (isArrow)
+            {
+                bool broke = brokeByDurability
+                    || __instance.World.Rand.NextDouble() >= __instance.DropOnImpactChance;
+                if (HuntingModSystem.Cfg.BloodDiagnostics)
+                    __instance.World.Logger.Notification(
+                        "[TassHunting] arrow hit: {0}, DropOnImpactChance={1:0.00} (breakChance={2:0.00}) -> {3}",
+                        path, __instance.DropOnImpactChance, 1f - __instance.DropOnImpactChance,
+                        broke ? "BREAK (drop head, no stick)" : "STICK (+1 bleed)");
+                if (broke)
                 {
-                    __instance.Die();  // the projectile broke on impact: vanilla outcome
+                    __instance.Die(EnumDespawnReason.Death); // -> arrowhead drop; no stick, no bleed
                     return false;
                 }
             }
 
+            // Survived the break roll: it rides the target and contributes a bleed
+            // stack (bleed = count of intact stuck arrows).
             StickyProjectiles.Instance?.Attach(__instance, target);
             return false; // skip vanilla die/drop - the projectile now rides the target
         }
