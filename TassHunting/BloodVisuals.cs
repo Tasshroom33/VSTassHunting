@@ -197,6 +197,17 @@ namespace TassHunting
             (sapi?.Logger ?? capi?.Logger)?.Warning("[TassHunting] blood visuals {0} failed: {1}", site, ex.Message);
         }
 
+        /// <summary>Blood originates at the WOUND (~60% up the collision box),
+        /// not at the feet - feet are ON the ground, so fall height was always
+        /// ~0 and nothing ever visibly fell (playtest 2026-07-21: "why does the
+        /// blood just start at the top of the block instead of falling from
+        /// their center of mass").</summary>
+        private static double WoundY(Entity ent)
+        {
+            float bodyTop = ent.CollisionBox?.Y2 ?? 0.8f;
+            return ent.Pos.Y + bodyTop * 0.6;
+        }
+
         /// <summary>Called from the health-damage postfix on EVERY hit -
         /// deliberately independent of the bleed DoT proc (chance roll, alive
         /// gate). Splashes contact blood for qualifying hits, and guarantees a
@@ -217,7 +228,7 @@ namespace TassHunting
                 float trailScale = Math.Max(0f, cfg.BloodTrailScale);
                 float inten = Math.Min(4f, 1.0f + damage * 0.3f) * trailScale;
                 if (inten > 0f)
-                    self.Deposit(victim.Pos.X, victim.Pos.Y, victim.Pos.Z, KindHit, inten, 0.5f * trailScale, null);
+                    self.Deposit(victim.Pos.X, WoundY(victim), victim.Pos.Z, KindHit, inten, 0.5f * trailScale, null);
                 if (!victim.Alive && BleedSystem.StacksOn(victim.EntityId) == 0)
                 {
                     float stacksEquiv = GameMath.Clamp(1f + damage * 0.35f, 1f, 4f) * Math.Max(0f, cfg.CorpseBloodScale);
@@ -244,7 +255,7 @@ namespace TassHunting
                 float trailScale = Math.Max(0f, cfg.BloodTrailScale);
                 float inten = Math.Min(4f, 1.0f + 0.5f * stacks) * trailScale;
                 if (inten <= 0f) return;
-                self.Deposit(victim.Pos.X, victim.Pos.Y, victim.Pos.Z, KindHit, inten, 0.35f * stacks * trailScale, null);
+                self.Deposit(victim.Pos.X, WoundY(victim), victim.Pos.Z, KindHit, inten, 0.35f * stacks * trailScale, null);
                 self.PushSyncNow();
             }
             catch (Exception ex) { self.WarnRateLimited("bleed tick spurt", ex); }
@@ -343,7 +354,7 @@ namespace TassHunting
                         fwdX = m.X / horiz * half;
                         fwdZ = m.Z / horiz * half;
                     }
-                    Deposit(ent.Pos.X, ent.Pos.Y, ent.Pos.Z,
+                    Deposit(ent.Pos.X, WoundY(ent), ent.Pos.Z,
                         KindTrail, (0.8f + 0.5f * stacks) * trailScale * gait, 0.35f * stacks * trailScale * gait, ts, fwdX, fwdZ);
                 }
 
@@ -865,11 +876,15 @@ namespace TassHunting
                 4.6f, 0f, 0.25f, 0.5f,
                 EnumParticleModel.Cube);
 
+            // Hit spurts ARC: launch up-and-over from the wound and fall under
+            // full gravity (playtest: everything was flat, no juice). Scatter
+            // widens both the launch cone and the up-kick.
             burstProps = new SimpleParticleProperties(
                 4, 4, blood,
                 new Vec3d(), new Vec3d(),
-                new Vec3f(-2f * sc, 0.1f, -2f * sc), new Vec3f(2f * sc, 0.4f + sc, 2f * sc),
-                0.9f, 0.8f, 0.1f, 0.22f,
+                new Vec3f(-(0.3f + 3f * sc), 0.5f + 2f * sc, -(0.3f + 3f * sc)),
+                new Vec3f(0.3f + 3f * sc, 1.5f + 2f * sc, 0.3f + 3f * sc),
+                1.1f, 1.0f, 0.1f, 0.22f,
                 EnumParticleModel.Cube);
             burstProps.ShouldDieInLiquid = true;
             burstProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
@@ -978,7 +993,7 @@ namespace TassHunting
                         // happened - login/walk-up blood appears silently
                         bool fresh = d.AgeMs < 3000;
                         s.BurstDone = !fresh;
-                        if (fresh && d.FallHeight > 0.6f && cfg != null && cfg.FallingDropletsEnabled)
+                        if (fresh && d.FallHeight > 0.35f && cfg != null && cfg.FallingDropletsEnabled)
                         {
                             // droplets fall first; the splat materializes when
                             // they land (BT: ~150ms per block of drop height)
@@ -1124,19 +1139,23 @@ namespace TassHunting
                     if (s.Kind == KindTrail && s.HasSeg)
                     {
                         // TRAIL = a dotted LINE of small drops along the path
-                        // segment (playtest: a line of blood, not Monty Python
-                        // spurts) - deterministic layout, slope-true placement
+                        // segment - ORGANIC, not metronome (playtest: rigid,
+                        // flat, same size): irregular spacing, per-drop size
+                        // variety, and heavier bleeding = bigger, denser drops
+                        // (intensity was ignored here before 0.7.4).
                         double sx = s.X - s.PrevX, sz = s.Z - s.PrevZ;
                         double segLen = Math.Sqrt(sx * sx + sz * sz);
-                        int drops = GameMath.Clamp((int)Math.Ceiling(segLen * Math.Max(0.5f, cfg.TrailDropsPerBlock)), 1, 24);
+                        float segVar = 0.7f + 0.6f * Hash01(spotId * 61);
+                        int drops = GameMath.Clamp((int)Math.Ceiling(segLen * Math.Max(0.5f, cfg.TrailDropsPerBlock) * segVar * (0.8f + 0.5f * intenFrac)), 1, 24);
+                        float dropSizeBase = GameMath.Lerp(sMin, Math.Min(sMax, sMin * 2.2f), intenFrac);
                         for (int k = 0; k < drops; k++)
                         {
-                            float t = (k + 0.5f) / drops;
-                            double lx = s.PrevX + sx * t + (Hash01(spotId * 211 + k * 17) - 0.5) * 0.14;
-                            double lz = s.PrevZ + sz * t + (Hash01(spotId * 223 + k * 19 + 5) - 0.5) * 0.14;
+                            float t = (k + 0.25f + 0.5f * Hash01(spotId * 271 + k * 31)) / drops; // uneven spacing
+                            double lx = s.PrevX + sx * t + (Hash01(spotId * 211 + k * 17) - 0.5) * 0.18;
+                            double lz = s.PrevZ + sz * t + (Hash01(spotId * 223 + k * 19 + 5) - 0.5) * 0.18;
                             double ly = s.PrevY + (s.Y - s.PrevY) * t;
                             if (!ResolveGroundYClient(lx, ly + 1.0, lz, out double gy)) continue; // no floating on slopes
-                            float psize = sMin * (0.8f + 0.4f * Hash01(spotId * 239 + k * 23 + 11)) * fade;
+                            float psize = dropSizeBase * (0.6f + 0.8f * Hash01(spotId * 239 + k * 23 + 11)) * fade;
                             groundProps.MinSize = psize;
                             groundProps.MaxSize = psize;
                             groundProps.MinPos.Set(lx, gy + 0.02, lz);
