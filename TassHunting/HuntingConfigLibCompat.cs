@@ -1,4 +1,4 @@
-// In-game config GUI via ConfigLib (same field-proven pattern as
+﻿// In-game config GUI via ConfigLib (same field-proven pattern as
 // TasshroomHardcoreWinter's THWConfigLibCompat and BodyFatConfigLibCompat).
 //
 // SOFT dependency rules (engineering law 1): HuntingModSystem only calls Init
@@ -59,87 +59,60 @@ namespace TassHunting
             if (!capi.IsSinglePlayer)
                 ImGui.TextWrapped("You are on a server: these edits only change YOUR side. The server's own config decides gameplay.");
 
-            if (ImGui.CollapsingHeader("Bleeding"))
+            // ---- BLOOD (0.8.0): exactly the user-spec four sections with the
+            //      ONE standard particle vocabulary. Everything else json-only.
+
+            if (ImGui.CollapsingHeader("Blood Trails"))
             {
-                Checkbox("Enable bleeding", () => cfg.BleedEnabled, v => cfg.BleedEnabled = v);
+                Checkbox("Enable blood trails", () => cfg.BloodTrails.Enabled, v => cfg.BloodTrails.Enabled = v);
+                SliderFloat("Particle size, min", () => cfg.BloodTrails.SizeMin, v => cfg.BloodTrails.SizeMin = v, 0.05f, 2f);
+                SliderFloat("Particle size, max", () => cfg.BloodTrails.SizeMax, v => cfg.BloodTrails.SizeMax = v, 0.05f, 2f);
+                SliderInt("Particle qty, min", () => cfg.BloodTrails.QtyMin, v => cfg.BloodTrails.QtyMin = v, 1, 12);
+                SliderInt("Particle qty, max", () => cfg.BloodTrails.QtyMax, v => cfg.BloodTrails.QtyMax = v, 1, 12);
+                Help("Qty = drops per block of trail, and particles per pool. Heavier bleeding pushes toward max.");
+                SliderFloat("Particle spread, min", () => cfg.BloodTrails.SpreadMin, v => cfg.BloodTrails.SpreadMin = v, 0f, 1f);
+                SliderFloat("Particle spread, max", () => cfg.BloodTrails.SpreadMax, v => cfg.BloodTrails.SpreadMax = v, 0f, 1f);
+                SliderFloat("Particle lifetime, min (sec)", () => cfg.BloodTrails.LifetimeMin, v => cfg.BloodTrails.LifetimeMin = v, 10f, 3600f);
+                SliderFloat("Particle lifetime, max (sec)", () => cfg.BloodTrails.LifetimeMax, v => cfg.BloodTrails.LifetimeMax = v, 10f, 3600f);
+                Help("Each drop lives a random time in this range, so trails dry up drop by drop, oldest parts first.");
+            }
+
+            if (ImGui.CollapsingHeader("Blood Splatter"))
+            {
+                Checkbox("Enable splatter", () => cfg.BloodSplatter.Enabled, v => cfg.BloodSplatter.Enabled = v);
+                SliderFloat("Particle size, min", () => cfg.BloodSplatter.SizeMin, v => cfg.BloodSplatter.SizeMin = v, 0.02f, 1f);
+                SliderFloat("Particle size, max", () => cfg.BloodSplatter.SizeMax, v => cfg.BloodSplatter.SizeMax = v, 0.02f, 1f);
+                SliderInt("Particle qty, min", () => cfg.BloodSplatter.QtyMin, v => cfg.BloodSplatter.QtyMin = v, 1, 40);
+                SliderInt("Particle qty, max", () => cfg.BloodSplatter.QtyMax, v => cfg.BloodSplatter.QtyMax = v, 1, 40);
+                SliderFloat("Particle spread, min", () => cfg.BloodSplatter.SpreadMin, v => cfg.BloodSplatter.SpreadMin = v, 0.1f, 4f);
+                SliderFloat("Particle spread, max", () => cfg.BloodSplatter.SpreadMax, v => cfg.BloodSplatter.SpreadMax = v, 0.1f, 4f);
+                Help("Spread = how hard the blood launches from the wound (arcs up and over).");
+                SliderFloat("Particle lifetime, min (sec)", () => cfg.BloodSplatter.LifetimeMin, v => cfg.BloodSplatter.LifetimeMin = v, 0.2f, 5f);
+                SliderFloat("Particle lifetime, max (sec)", () => cfg.BloodSplatter.LifetimeMax, v => cfg.BloodSplatter.LifetimeMax = v, 0.2f, 5f);
+            }
+
+            if (ImGui.CollapsingHeader("Water Effect"))
+            {
+                Checkbox("Tint surrounding water", () => cfg.TintSurroundingWater, v => cfg.TintSurroundingWater = v);
+                Checkbox("Softer water particles", () => cfg.SoftWaterParticles, v => cfg.SoftWaterParticles = v);
+                Help("On = soft sediment puffs. Off = cubes.");
+                SliderFloat("Rain clear speed", () => cfg.RainClearSpeed, v => cfg.RainClearSpeed = v, 0f, 2f);
+                Help("How fast rain clears fresh blood. 0 = rain never clears it, 1 = half lifetime, 2 = a third.");
+            }
+
+            if (ImGui.CollapsingHeader("Bleed Damage"))
+            {
+                Checkbox("Enable bleed damage", () => cfg.BleedEnabled, v => cfg.BleedEnabled = v);
+                Checkbox("Spawn splatter on damage", () => cfg.SpawnSplatterOnDamage, v => cfg.SpawnSplatterOnDamage = v);
                 SliderFloat("Bleed time (sec)", () => cfg.BleedDurationSeconds, v => cfg.BleedDurationSeconds = v, 5f, 300f);
                 SliderFloat("Damage per tick", () => cfg.BleedStaticPerTick, v => cfg.BleedStaticPerTick = v, 0f, 2f);
                 SliderFloat("Extra damage, % of max HP", () => cfg.BleedPctMaxHealthPerTick, v => cfg.BleedPctMaxHealthPerTick = v, 0f, 10f);
-                Help("Each tick deals the flat damage PLUS this percent of the animal's max health - small and big animals both feel it.");
                 SliderFloat("Tick every (sec)", () => cfg.BleedTickSeconds, v => cfg.BleedTickSeconds = v, 1f, 60f);
                 SliderInt("Bleed chance (%)", () => cfg.BleedChancePct, v => cfg.BleedChancePct = v, 0, 100);
                 SliderFloat("Min damage to start", () => cfg.BleedDamageThreshold, v => cfg.BleedDamageThreshold = v, 0f, 10f);
                 Checkbox("Player attacks only", () => cfg.BleedPlayerCausedOnly, v => cfg.BleedPlayerCausedOnly = v);
                 Checkbox("Players can bleed (PvP)", () => cfg.BleedAffectsPlayers, v => cfg.BleedAffectsPlayers = v);
-                Help("Repeat hits can stack bleeds. The stack cap lives in TassHunting.json only.");
             }
-
-            if (ImGui.CollapsingHeader("Blood trails"))
-            {
-                Checkbox("Enable blood", () => cfg.BloodVisualsEnabled, v => cfg.BloodVisualsEnabled = v);
-                SliderFloat("Trail blood amount", () => cfg.BloodTrailScale, v => cfg.BloodTrailScale = v, 0f, 3f);
-                Help("How much blood a wounded animal leaves behind. 0 = no trail.");
-                Checkbox("Blood on hit", () => cfg.BloodOnHitEnabled, v => cfg.BloodOnHitEnabled = v);
-                SliderFloat("Min damage for hit blood", () => cfg.BloodOnHitMinDamage, v => cfg.BloodOnHitMinDamage = v, 0f, 5f);
-                // Stored as seconds-between-drips, shown as drips-per-second:
-                // the user read "Drip every (sec) 2.0" as 2 drips/sec and got
-                // the inverse of their intent (2026-07-21). Bigger = more blood.
-                SliderFloat("Drips per second",
-                    () => 1f / Math.Clamp(cfg.BloodDepositIntervalSeconds, 0.25f, 4f),
-                    v => cfg.BloodDepositIntervalSeconds = 1f / Math.Clamp(v, 0.25f, 4f),
-                    0.25f, 4f);
-                Help("Higher = more blood on the ground. A standing animal merges its drips into one growing pool.");
-                SliderFloat("Blood lasts (sec)", () => cfg.BloodSpotLifetimeSeconds, v => cfg.BloodSpotLifetimeSeconds = v, 30f, 3600f);
-                SliderFloat("Running blood boost", () => cfg.RunningBloodMult, v => cfg.RunningBloodMult = v, 1f, 3f);
-                Help("Sprinting animals bleed this much harder. 1 = same as walking.");
-                Checkbox("Rain washes blood away faster", () => cfg.BloodRainEnabled, v => cfg.BloodRainEnabled = v);
-                SliderFloat("Blood lasts in rain (sec)", () => cfg.BloodRainLifetimeSeconds, v => cfg.BloodRainLifetimeSeconds = v, 10f, 600f);
-                SliderFloat("Trail drops per block", () => cfg.TrailDropsPerBlock, v => cfg.TrailDropsPerBlock = v, 1f, 8f);
-                Help("The trail is a line of small drops along the animal's path. Bigger = denser line.");
-                SliderFloat("Particle size, min", () => cfg.BloodParticleSizeMin, v => cfg.BloodParticleSizeMin = v, 0.05f, 2f);
-                SliderFloat("Particle size, max", () => cfg.BloodParticleSizeMax, v => cfg.BloodParticleSizeMax = v, 0.05f, 2.5f);
-                Help("Trail drops use the min size; pools and hit marks range up to the max.");
-                SliderInt("Pool particles, min", () => cfg.BloodParticlesMin, v => cfg.BloodParticlesMin = v, 1, 8);
-                SliderInt("Pool particles, max", () => cfg.BloodParticlesMax, v => cfg.BloodParticlesMax = v, 1, 12);
-                SliderInt("Max blood spots in world", () => cfg.BloodMaxSpots, v => cfg.BloodMaxSpots = v, 256, 16384);
-            }
-
-            if (ImGui.CollapsingHeader("Corpse blood"))
-            {
-                SliderFloat("Corpse blood amount", () => cfg.CorpseBloodScale, v => cfg.CorpseBloodScale = v, 0f, 3f);
-                Help("How much a kill bleeds out where it died. 0 = no death pool.");
-                SliderFloat("Bleed-out time (sec)", () => cfg.CorpseBleedSeconds, v => cfg.CorpseBleedSeconds = v, 0f, 60f);
-            }
-
-            if (ImGui.CollapsingHeader("Blood in water"))
-            {
-                Checkbox("Enable water blood", () => cfg.WaterBloodEnabled, v => cfg.WaterBloodEnabled = v);
-                Help("Off = water swallows blood without a trace (the old BloodTrail behavior).");
-                SliderFloat("Fade speed", () => cfg.WaterBloodDecayPerSecond, v => cfg.WaterBloodDecayPerSecond = v, 0.02f, 0.5f);
-                SliderFloat("Spread speed", () => cfg.WaterBloodSpreadPerSecond, v => cfg.WaterBloodSpreadPerSecond = v, 0f, 0.1f);
-                Help("Blood in water spreads to neighboring water and fades out. Higher fade = shorter-lived stains.");
-                SliderFloat("Clot amount (0 = none)", () => cfg.WaterClotAmount, v => cfg.WaterClotAmount = v, 0f, 3f);
-                SliderFloat("Clot size, min", () => cfg.WaterClotSizeMin, v => cfg.WaterClotSizeMin = v, 0.05f, 1.5f);
-                SliderFloat("Clot size, max", () => cfg.WaterClotSizeMax, v => cfg.WaterClotSizeMax = v, 0.05f, 2f);
-            }
-
-            if (ImGui.CollapsingHeader("Blood look (your screen only)"))
-            {
-                ColorHex("Blood color", () => cfg.BloodColorHex, v => cfg.BloodColorHex = v);
-                Checkbox("Falling droplets", () => cfg.FallingDropletsEnabled, v => cfg.FallingDropletsEnabled = v);
-                Help("Blood visibly falls from the wound before the splat lands.");
-                SliderFloat("Spurt size (0 = off)", () => cfg.SpurtStrength, v => cfg.SpurtStrength = v, 0f, 3f);
-                Help("The blood fountain when something is shot and on each bleed damage tick.");
-                SliderFloat("Droplet scatter", () => cfg.BloodScatter, v => cfg.BloodScatter = v, 0f, 0.5f);
-                SliderFloat("Redraw every (sec)", () => cfg.BloodRefreshSeconds, v => cfg.BloodRefreshSeconds = v, 1f, 15f);
-                Help("Blood is drawn with particles that refresh on this cycle. Lower = steadier look, slightly more particle load.");
-                SliderFloat("Fade-out time (sec)", () => cfg.BloodFadeSeconds, v => cfg.BloodFadeSeconds = v, 1f, 120f);
-                Help("Blood holds full strength until its last seconds, then shrinks, fades and sinks away over this long.");
-                SliderFloat("Water stain opacity", () => cfg.WaterBloodMaxOpacity, v => cfg.WaterBloodMaxOpacity = v, 0.01f, 1f);
-                SliderFloat("View distance (blocks)", () => cfg.BloodRenderDistanceBlocks, v => cfg.BloodRenderDistanceBlocks = v, 16f, 128f);
-                SliderInt("Max spots drawn", () => cfg.BloodMaxRenderedSpots, v => cfg.BloodMaxRenderedSpots = v, 100, 4000);
-            }
-
             if (ImGui.CollapsingHeader("Archery"))
             {
                 Checkbox("Arrows can break", () => cfg.ArrowBreakTuningEnabled, v => cfg.ArrowBreakTuningEnabled = v);

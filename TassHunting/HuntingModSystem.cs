@@ -20,6 +20,17 @@ namespace TassHunting
     ///    15->30, bear walk 15->30, bear charge 25->44 â€” audible before lethal.
     /// Future home for the awareness layer (goals Hunting 5).
     /// </summary>
+    /// <summary>The ONE standard particle vocabulary (user spec 0.8.0) -
+    /// every blood category exposes exactly these eight dials.</summary>
+    public class BloodParticleLook
+    {
+        public bool Enabled = true;
+        public float SizeMin, SizeMax;
+        public int QtyMin, QtyMax;
+        public float SpreadMin, SpreadMax;
+        public float LifetimeMin, LifetimeMax; // seconds
+    }
+
     public class HuntingConfig
     {
         public int Version = 1;
@@ -164,53 +175,51 @@ namespace TassHunting
         public float CorpseBleedSeconds = 4f;     // death pool keeps growing this long (BT-default-adjacent, 0.6.9)
         public bool WaterBloodEnabled = true;     // blood in water diffuses as tiles
 
-        // 0.6.3 look/feel dials (in-game panel via ConfigLib when installed)
-        public string BloodColorHex = "#74080C";        // client: ground blood color
-        public float WaterBloodDecayPerSecond = 0.12f;  // server: fraction of a water tile's blood lost per second
-        public float WaterBloodSpreadPerSecond = 0.02f; // server: fraction leaked to each liquid neighbor per second
+        // ---- BLOOD LOOK (0.8.0 - USER-SPEC PANEL: four sections, ONE standard
+        //      particle vocabulary per category, everything else json-only.
+        //      "Something like this instead of the thousand knobs we have.") ----
+        // The two visual systems (user-identified): TRAILS = ground decals
+        // (line drops, pools, hit marks). SPLATTER = airborne juice (spurt
+        // pulses on the shot / DoT beat, plus falling droplets).
+        public BloodParticleLook BloodTrails = new BloodParticleLook
+        {
+            Enabled = true,
+            SizeMin = 0.3f, SizeMax = 0.8f,
+            QtyMin = 2, QtyMax = 5,          // drops per block of trail / particles per pool
+            SpreadMin = 0.05f, SpreadMax = 0.2f,
+            LifetimeMin = 240f, LifetimeMax = 600f  // per-drop, seconds; ragged decay
+        };
+        public BloodParticleLook BloodSplatter = new BloodParticleLook
+        {
+            Enabled = true,
+            SizeMin = 0.12f, SizeMax = 0.28f,
+            QtyMin = 6, QtyMax = 15,         // particles per spurt pulse (damage-scaled within)
+            SpreadMin = 0.4f, SpreadMax = 1.5f, // launch speed range
+            LifetimeMin = 0.8f, LifetimeMax = 1.6f
+        };
+        // Water Effect
+        public bool TintSurroundingWater = true;  // client: render the blood-in-water sediment
+        public bool SoftWaterParticles = true;    // client: soft quads; off = cubes
+        // Rain clear speed 0..2 (affects newly deposited blood, trails and
+        // splatter marks alike): 0 = rain never clears blood, 1 = rain cuts
+        // lifetime in half, 2 = to a third.
+        public float RainClearSpeed = 1f;
+        // Bleed Damage section extra
+        public bool SpawnSplatterOnDamage = true; // splatter on qualifying hits + DoT ticks
 
-        // 0.6.4 (field regressions): blood visuals independent of the DoT proc
-        public bool BloodOnHitEnabled = true;      // splash on every qualifying hit, proc or not
-        public float BloodOnHitMinDamage = 0.5f;   // min post-mitigation damage for contact blood
-        public float CorpseBloodScale = 1f;        // scales death pools + corpse bleed-out (0 = off)
-        public float WaterBloodMaxOpacity = 0.6f;  // client: water stain tint ceiling
-
-        // 0.6.5 (user: min/max particle + timing knobs were hardcoded; trail
-        // amount needed the same lever corpse blood already had)
-        public int BloodParticlesMin = 1;          // client: particles for the smallest blood spot (BT: 1)
-        public int BloodParticlesMax = 6;          // client: particles for the biggest pool (BT running: 3-7)
-        public float BloodRefreshSeconds = 4f;     // client: how often each spot redraws its particles
-        public float BloodTrailScale = 1f;         // server: scales trail drips + hit splashes (0 = off)
-
-        // 0.6.7 (user's tuning model: size min/max + drop rate + duration).
-        // Replaces BloodSizeScale (redundant once real size bounds exist).
-        // Bigger pools bias toward max, single drips toward min.
-        public float BloodParticleSizeMin = 0.3f;  // client (BT default min 0.3)
-        public float BloodParticleSizeMax = 0.8f;  // client (BT running max 0.8; our max = big pools)
-
-        // ---- 0.7.0: the BloodTrail feature-gap batch (user: build 1-5;
-        //      falling droplets was the "ours felt wrong" culprit) ----
-        public bool BloodRainEnabled = true;            // server: rain shortens NEW blood's life
-        public float BloodRainLifetimeSeconds = 300f;   // server: lifetime for blood deposited in rain (BT halved: 10 to 5)
-        public float RunningBloodMult = 1.5f;           // server: sprinting animals bleed harder (1 = off; BT 3-7 particles running)
-        public bool FallingDropletsEnabled = true;      // client: droplets visibly fall from elevated wounds; splat lands with them
-        public float BloodScatter = 0.05f;              // client: droplet/splash scatter velocity (BT BloodSpread 0.05)
-
-        // ---- 0.7.1 (playtest: line-not-spurts, water too heavy) ----
-        // Trails render as a dotted LINE along the animal's path (client lays
-        // drops between synced anchor spots); spurts happen ONLY on damage
-        // beats (the shot, each bleed DoT tick).
-        public float TrailDropsPerBlock = 3f;      // client: line density (bigger = more drops)
-        // 0.7.3: fade belongs to the SPOT's end of life, not the particle
-        // cycle (0.7.1 bug: every splat faded out per 4.6s cycle = slow blink)
-        public float BloodFadeSeconds = 10f;       // client: the last N seconds of a spot fade + sink
-        // 0.7.5: the REAL spurt emitter (user: "I asked for a spurt of blood...
-        // yet its not there" - the old burst was 4-6 near-invisible particles
-        // in one frame). Pulsed fountain on the shot and each DoT tick.
-        public float SpurtStrength = 1f;           // client: scales spurt particle count (0 = off)
-        public float WaterClotSizeMin = 0.25f;     // client: water clot size range
+        // json-only dials (deliberately NOT in the panel per the 0.8.0 spec)
+        public string BloodColorHex = "#74080C";
+        public float BloodRefreshSeconds = 4f;          // decal redraw cycle
+        public float BloodOnHitMinDamage = 0.5f;
+        public float BloodTrailScale = 1f;              // server: trail/hit deposit amount
+        public float CorpseBloodScale = 1f;             // server: death pool amount (0 = off)
+        public float RunningBloodMult = 1.5f;           // server: sprint bleed boost
+        public float WaterBloodDecayPerSecond = 0.12f;  // server: water field fade
+        public float WaterBloodSpreadPerSecond = 0.02f; // server: water field spread
+        public float WaterBloodMaxOpacity = 0.6f;       // client: water tint ceiling
+        public float WaterClotSizeMin = 0.25f;
         public float WaterClotSizeMax = 0.7f;
-        public float WaterClotAmount = 1f;         // client: scales clot count (0 = none)
+        public float WaterClotAmount = 1f;
 
         // ---- WOUNDED SLOWDOWN (2026-07-19, see WoundedSlowdown.cs; replaces
         //      FleeExhaustion - all AI states, tiered, per the user's table) ----
