@@ -161,6 +161,15 @@ namespace TassHunting
                 Help("Walk within this range of your landed arrows and spears to collect them automatically.");
                 Checkbox("Pick up your own only", () => cfg.PickupOnlyOwnProjectiles, v => cfg.PickupOnlyOwnProjectiles = v);
             }
+
+            if (ImGui.CollapsingHeader("Misc"))
+            {
+                ImGui.PushID("misc");
+                ColorHex("Fresh blood color", () => cfg.BloodColorHex, v => cfg.BloodColorHex = v);
+                ColorHex("Aged blood color", () => cfg.BloodColorAgedHex, v => cfg.BloodColorAgedHex = v);
+                Help("Blood comes out the fresh color and darkens toward the aged color over its lifetime. Set both the same to disable age-darkening.");
+                ImGui.PopID();
+            }
         }
 
         // ---- helpers ----
