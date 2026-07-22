@@ -460,21 +460,24 @@ namespace TassHunting
                 1, 1, blood, new Vec3d(), new Vec3d(), new Vec3f(), new Vec3f(),
                 4.6f, 0f, 0.25f, 0.5f, EnumParticleModel.Cube);
 
-            // splatter: lazy 0.45-weight ballistics so the arc hangs and reads.
-            // NO OPACITY FADE (0.9.2 field: blood must POP visually until the
-            // end of its lifecycle) - the particle stays fully saturated for
-            // flight AND ground-sit, and exits via late-accelerating SHRINK
-            // (quadratic size decay set per shot) = soak-in right at the end.
+            // splatter: real blood, so VINTAGE STORY's own gravity (GravityEffect
+            // 1.0 = the engine's semi-realistic fall, ~9 m/s equivalent) rather
+            // than a hand-picked rate. The arc reads because the launch SPEED
+            // (Splatter spread) is set high, not because gravity is dialed weak.
+            // NO OPACITY FADE (0.9.2: blood POPS to end of lifecycle) - exits
+            // via late-accelerating SHRINK (quadratic size decay set per shot).
             burstProps = new SimpleParticleProperties(
                 4, 4, blood, new Vec3d(), new Vec3d(), new Vec3f(), new Vec3f(),
-                2.5f, 0.45f, 0.12f, 0.28f, EnumParticleModel.Cube);
+                2.5f, 1f, 0.12f, 0.28f, EnumParticleModel.Cube);
             burstProps.ShouldDieInLiquid = true;
             burstProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, 0f);
 
+            // falling droplets: real blood -> VS gravity 1.0 (they only fall,
+            // no launch, so this is a clean natural drip from the wound).
             dropletProps = new SimpleParticleProperties(
                 2, 3, blood, new Vec3d(), new Vec3d(),
-                new Vec3f(-0.2f, -0.15f, -0.2f), new Vec3f(0.2f, -0.02f, 0.2f),
-                1.1f, 0.9f, 0.1f, 0.2f, EnumParticleModel.Cube);
+                new Vec3f(-0.05f, -0.05f, -0.05f), new Vec3f(0.05f, 0f, 0.05f),
+                1.1f, 1f, 0.1f, 0.2f, EnumParticleModel.Cube);
             dropletProps.ShouldDieInLiquid = true;
             dropletProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, -255f);
 
@@ -500,6 +503,10 @@ namespace TassHunting
 
         private void ApplyDecalState(bool ending, long remainMs, float pLife)
         {
+            // baseline: settled decals do NOT gravitate (a pool/ending drop
+            // sits, it does not fall). The trail-draining branch overrides to
+            // GravityEffect 1.0 per-drop AFTER this call.
+            groundProps.GravityEffect = 0f;
             groundProps.LifeLength = ending ? Math.Min(pLife, remainMs / 1000f + 0.4f) : pLife;
             if (ending)
             {
@@ -637,20 +644,22 @@ namespace TassHunting
                         groundProps.MaxSize = psize;
                         if (!dEnd)
                         {
-                            // BLOOD DRAINING (0.9.3): trail drops are born 0.5
-                            // (4/8) blocks up and fall SLOWLY to the ground,
-                            // reading as blood draining from the animal. Terrain
-                            // collision is on, so they land on the surface and
-                            // stop; gravity 0 + fixed slow velocity is more
-                            // controllable than gravity for a fixed 0.5 drop.
+                            // BLOOD DRAINING: trail drops are born 0.5 (4/8)
+                            // blocks up and fall under VINTAGE STORY's own
+                            // gravity (GravityEffect 1.0 = the engine's semi-
+                            // realistic fall) - they accelerate from rest like
+                            // real dripping blood, then terrain collision lands
+                            // them on the surface.
+                            groundProps.GravityEffect = 1f;
                             groundProps.MinPos.Set(lx, gy + 0.5, lz);
-                            groundProps.MinVelocity.Set(0f, -0.35f, 0f);
-                            groundProps.AddVelocity.Set(0f, 0.05f, 0f);
+                            groundProps.MinVelocity.Set(0f, 0f, 0f);
+                            groundProps.AddVelocity.Set(0f, 0f, 0f);
                         }
                         else
                         {
                             // ending drops sink into the surface (velocity from
                             // ApplyDecalState); spawn flush so the sink starts there
+                            groundProps.GravityEffect = 0f;
                             groundProps.MinPos.Set(lx, gy + 0.02, lz);
                         }
                         groundProps.AddPos.Set(0, 0, 0);
