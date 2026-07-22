@@ -81,8 +81,14 @@ namespace TassHunting
                 Help("How much blood a wounded animal leaves behind. 0 = no trail.");
                 Checkbox("Blood on hit", () => cfg.BloodOnHitEnabled, v => cfg.BloodOnHitEnabled = v);
                 SliderFloat("Min damage for hit blood", () => cfg.BloodOnHitMinDamage, v => cfg.BloodOnHitMinDamage = v, 0f, 5f);
-                SliderFloat("Drip every (sec)", () => cfg.BloodDepositIntervalSeconds, v => cfg.BloodDepositIntervalSeconds = v, 0.25f, 2f);
-                Help("Lower = denser trail. A standing animal merges its drips into one growing pool.");
+                // Stored as seconds-between-drips, shown as drips-per-second:
+                // the user read "Drip every (sec) 2.0" as 2 drips/sec and got
+                // the inverse of their intent (2026-07-21). Bigger = more blood.
+                SliderFloat("Drips per second",
+                    () => 1f / Math.Clamp(cfg.BloodDepositIntervalSeconds, 0.25f, 4f),
+                    v => cfg.BloodDepositIntervalSeconds = 1f / Math.Clamp(v, 0.25f, 4f),
+                    0.25f, 4f);
+                Help("Higher = more blood on the ground. A standing animal merges its drips into one growing pool.");
                 SliderFloat("Blood lasts (sec)", () => cfg.BloodSpotLifetimeSeconds, v => cfg.BloodSpotLifetimeSeconds = v, 30f, 3600f);
                 SliderFloat("Particle size, min", () => cfg.BloodParticleSizeMin, v => cfg.BloodParticleSizeMin = v, 0.05f, 2f);
                 SliderFloat("Particle size, max", () => cfg.BloodParticleSizeMax, v => cfg.BloodParticleSizeMax = v, 0.05f, 2.5f);
