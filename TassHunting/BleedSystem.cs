@@ -129,10 +129,18 @@ namespace TassHunting
                     if (hb == null) { (retire = retire ?? new List<long>()).Add(kv.Key); continue; }
                     float perStack = cfg.BleedStaticPerTick + cfg.BleedPctMaxHealthPerTick / 100f * hb.MaxHealth;
                     float total = perStack * st.Expiries.Count;
+                    // DEDICATED SPLATTER SIGNAL (0.9.3): the client keys DoT
+                    // splatter off this monotonic counter, NOT the engine's
+                    // onHurt bump. Decompile-verified (Entity.cs:935-953): the
+                    // onHurt path is gated by a 500ms invuln window + a
+                    // TicksPerDuration check, so an internal Injury tick landing
+                    // near a hit is silently swallowed - the reported "DoT has
+                    // no splatter" bug. This attribute is set UNCONDITIONALLY on
+                    // the exact tick beat and auto-syncs to clients.
+                    int tickN = st.Ent.WatchedAttributes.GetInt("thbleedtick", 0) + 1;
+                    st.Ent.WatchedAttributes.SetInt("thbleedtick", tickN);
+                    st.Ent.WatchedAttributes.SetFloat("thbleeddmg", total);
                     // Injury/Internal never re-procs TryProc (piercing/slashing gate).
-                    // The client splatters on this beat by itself: ReceiveDamage
-                    // bumps the engine's synced onHurt attributes - the same
-                    // signal that drives the red flash (0.9.0 client-local).
                     st.Ent.ReceiveDamage(new DamageSource { Source = EnumDamageSource.Internal, Type = EnumDamageType.Injury }, total);
                 }
                 if (retire != null) foreach (long id in retire) Active.Remove(id);

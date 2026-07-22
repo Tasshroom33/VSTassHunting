@@ -4,13 +4,14 @@
 // PARKED at commit bd8bac6 for the future multiplayer pass.
 //
 // HOW IT WORKS NOW - zero custom networking, zero visual latency:
-//   - The engine already syncs the hurt state every client uses for the red
-//     flash ("onHurt" damage + "onHurtCounter" watched attributes). Splatter
-//     keys off that, so spurts land on EXACTLY the same beat as the flash and
-//     hurt sound - for the shot AND for every bleed DoT tick (the DoT goes
-//     through ReceiveDamage, which bumps the same attributes).
-//   - BleedSystem (server) publishes its stack count as the "thbleed" watched
-//     attribute; the client lays the drip trail locally from that.
+//   - HIT splatter keys off the engine's "onHurtCounter"/"onHurt" watched
+//     attributes (the red-flash signal) - reliable for real attacks.
+//   - DoT-TICK splatter keys off BleedSystem's own "thbleedtick" counter
+//     (0.9.3): the engine onHurt bump is gated by a 500ms invuln window and
+//     drops internal Injury ticks near a hit, so the DoT needs its own
+//     unconditional synced signal (decompile-verified, see BleedSystem).
+//   - BleedSystem (server) also publishes its stack count as "thbleed"; the
+//     client lays the drip trail locally from that.
 //   - Death pools, corpse bleed-out, water sediment: all detected and
 //     simulated locally.
 // Late joiners do NOT see old blood in this mode - that is the deliberate
@@ -67,6 +68,7 @@ namespace TassHunting
         private class Track
         {
             public int LastHurtCounter;
+            public int LastBleedTick;  // dedicated DoT splatter signal (0.9.3)
             public int LastStacks;
             public long NextDripMs;
             public long NextWaterMs;
@@ -176,14 +178,19 @@ namespace TassHunting
                         // alive with a hurt counter (so we catch its next hit)
                         if (hurtC == 0 && stacks <= 0) continue;
                     }
-                    tracks[ent.EntityId] = tr = new Track { LastHurtCounter = hurtC, LastStacks = stacks };
+                    tracks[ent.EntityId] = tr = new Track
+                    {
+                        LastHurtCounter = hurtC,
+                        LastStacks = stacks,
+                        LastBleedTick = ent.WatchedAttributes.GetInt("thbleedtick", 0)
+                    };
                     tr.LastSeenMs = now;
                     continue; // never replay old hurts on first sight
                 }
                 tr.LastSeenMs = now;
 
-                // 1. HURT BEAT: same synced attribute that drives the red
-                //    flash - the shot AND every bleed DoT tick land here.
+                // 1a. HURT BEAT (arrow / melee hits): the engine's onHurt bump,
+                //     reliable for real attacks. Gated by the on-hit min damage.
                 if (hurtC != tr.LastHurtCounter)
                 {
                     tr.LastHurtCounter = hurtC;
@@ -195,6 +202,24 @@ namespace TassHunting
                         float inten = Math.Min(4f, 1.0f + dmg * 0.3f) * trailScale;
                         DepositLocal(ent.Pos.X, WoundY(ent), ent.Pos.Z, KindHit, inten, 0.5f * trailScale, null, now,
                             ent.Alive ? 1 : 0);
+                    }
+                }
+
+                // 1b. BLEED TICK BEAT (0.9.3): the DEDICATED ungated counter -
+                //     the engine onHurt path swallows internal DoT ticks inside
+                //     the 500ms invuln window, and a real bleed tick is tiny
+                //     (~0.14 for a hare) so the on-hit min-damage gate drops it
+                //     too. NO damage floor here: the server already decided a
+                //     tick landed. This is the "DoT has no splatter" fix.
+                int bleedTick = ent.WatchedAttributes.GetInt("thbleedtick", 0);
+                if (bleedTick != tr.LastBleedTick)
+                {
+                    tr.LastBleedTick = bleedTick;
+                    if (cfg.SpawnSplatterOnDamage && trailScale > 0f && ent.Alive)
+                    {
+                        float bdmg = ent.WatchedAttributes.GetFloat("thbleeddmg", 0f);
+                        float inten = Math.Min(4f, 1.0f + bdmg * 0.3f) * trailScale;
+                        DepositLocal(ent.Pos.X, WoundY(ent), ent.Pos.Z, KindHit, inten, 0.5f * trailScale, null, now, 1);
                     }
                 }
 
@@ -478,13 +503,18 @@ namespace TassHunting
             groundProps.LifeLength = ending ? Math.Min(pLife, remainMs / 1000f + 0.4f) : pLife;
             if (ending)
             {
+                // sink DOWN THROUGH the block and fade, instead of blinking out
+                // (WithTerrainCollision off so the sink is not arrested at the
+                // surface). Verified via decompile: it defaults true.
                 groundProps.OpacityEvolve = FadeOut;
-                groundProps.MinVelocity.Set(0f, -0.02f, 0f);
-                groundProps.AddVelocity.Set(0f, 0.01f, 0f);
+                groundProps.WithTerrainCollision = false;
+                groundProps.MinVelocity.Set(0f, -0.12f, 0f);
+                groundProps.AddVelocity.Set(0f, 0.02f, 0f);
             }
             else
             {
                 groundProps.OpacityEvolve = NoFade;
+                groundProps.WithTerrainCollision = true;
                 groundProps.MinVelocity.Set(0f, 0f, 0f);
                 groundProps.AddVelocity.Set(0f, 0f, 0f);
             }
@@ -605,7 +635,24 @@ namespace TassHunting
                         float psize = GameMath.Lerp(tsMin, tsMax, 0.5f * Hash01(spotId * 239 + k * 23 + 11) + 0.5f * intenFrac) * dFade;
                         groundProps.MinSize = psize;
                         groundProps.MaxSize = psize;
-                        groundProps.MinPos.Set(lx, gy + 0.02, lz);
+                        if (!dEnd)
+                        {
+                            // BLOOD DRAINING (0.9.3): trail drops are born 0.5
+                            // (4/8) blocks up and fall SLOWLY to the ground,
+                            // reading as blood draining from the animal. Terrain
+                            // collision is on, so they land on the surface and
+                            // stop; gravity 0 + fixed slow velocity is more
+                            // controllable than gravity for a fixed 0.5 drop.
+                            groundProps.MinPos.Set(lx, gy + 0.5, lz);
+                            groundProps.MinVelocity.Set(0f, -0.35f, 0f);
+                            groundProps.AddVelocity.Set(0f, 0.05f, 0f);
+                        }
+                        else
+                        {
+                            // ending drops sink into the surface (velocity from
+                            // ApplyDecalState); spawn flush so the sink starts there
+                            groundProps.MinPos.Set(lx, gy + 0.02, lz);
+                        }
                         groundProps.AddPos.Set(0, 0, 0);
                         capi.World.SpawnParticles(groundProps);
                     }
