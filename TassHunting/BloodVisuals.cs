@@ -305,8 +305,16 @@ namespace TassHunting
                     // BIG pool intensity - this is the "bled out here" pool,
                     // not a trail dot. Base 4 + generous per-stack, capped.
                     float poolInten = Math.Min(MaxIntensity, 4f + 1.5f * corpseStacks);
-                    DepositLocal(ent.Pos.X, ent.Pos.Y + 0.15, ent.Pos.Z, KindPool,
-                        poolInten, 0.5f * corpseStacks, null, now, 1);
+                    // DIED IN WATER -> water blood, not a ground pool (user
+                    // 2026-07-22). DepositLocal already routes to the water-tile
+                    // system when it resolves water under the deposit; a corpse
+                    // bleeding out in water should be a STRONG murk cloud, so the
+                    // water amount here is big (2 + per-stack, up to the tile cap 6)
+                    // - not the thin 0.5 a live drip uses. Deposited at the WOUND
+                    // height so a submerged/floating body's water column is found.
+                    float corpseWater = Math.Min(6f, 2f + corpseStacks);
+                    DepositLocal(ent.Pos.X, WoundY(ent), ent.Pos.Z, KindPool,
+                        poolInten, corpseWater, null, now, 1);
                 }
             }
 
