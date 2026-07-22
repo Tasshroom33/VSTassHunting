@@ -74,9 +74,12 @@ namespace TassHunting
             if (ImGui.CollapsingHeader("Blood visuals"))
             {
                 Checkbox("Blood visuals enabled", () => cfg.BloodVisualsEnabled, v => cfg.BloodVisualsEnabled = v);
+                Checkbox("Blood on every qualifying hit (no bleed proc needed)", () => cfg.BloodOnHitEnabled, v => cfg.BloodOnHitEnabled = v);
+                SliderFloat("Min hit damage for contact blood", () => cfg.BloodOnHitMinDamage, v => cfg.BloodOnHitMinDamage = v, 0f, 5f);
                 SliderFloat("Blood spot lifetime (seconds)", () => cfg.BloodSpotLifetimeSeconds, v => cfg.BloodSpotLifetimeSeconds = v, 30f, 3600f);
                 SliderFloat("Spot spacing (blocks; closer drips grow a pool)", () => cfg.BloodSpotMinSpacingBlocks, v => cfg.BloodSpotMinSpacingBlocks = v, 0.2f, 4f);
                 SliderFloat("Corpse bleed-out seconds", () => cfg.CorpseBleedSeconds, v => cfg.CorpseBleedSeconds = v, 0f, 60f);
+                SliderFloat("Corpse blood amount scale (0 = off)", () => cfg.CorpseBloodScale, v => cfg.CorpseBloodScale = v, 0f, 3f);
                 SliderFloat("Blood size scale", () => cfg.BloodSizeScale, v => cfg.BloodSizeScale = v, 0.25f, 3f);
                 ColorHex("Blood color", () => cfg.BloodColorHex, v => cfg.BloodColorHex = v);
                 SliderFloat("Render distance (blocks)", () => cfg.BloodRenderDistanceBlocks, v => cfg.BloodRenderDistanceBlocks = v, 16f, 128f);
@@ -90,6 +93,7 @@ namespace TassHunting
                 Checkbox("Water blood enabled", () => cfg.WaterBloodEnabled, v => cfg.WaterBloodEnabled = v);
                 SliderFloat("Decay per second (fraction of a tile's blood)", () => cfg.WaterBloodDecayPerSecond, v => cfg.WaterBloodDecayPerSecond = v, 0.02f, 0.5f);
                 SliderFloat("Spread per second (to each liquid neighbor)", () => cfg.WaterBloodSpreadPerSecond, v => cfg.WaterBloodSpreadPerSecond = v, 0f, 0.1f);
+                SliderFloat("Stain max opacity", () => cfg.WaterBloodMaxOpacity, v => cfg.WaterBloodMaxOpacity = v, 0.05f, 1f);
             }
 
             if (ImGui.CollapsingHeader("Archery"))

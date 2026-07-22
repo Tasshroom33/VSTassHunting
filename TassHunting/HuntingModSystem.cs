@@ -161,8 +161,14 @@ namespace TassHunting
         // 0.6.3 look/feel dials (in-game panel via ConfigLib when installed)
         public float BloodSizeScale = 1f;               // client: multiplies all splat sizes
         public string BloodColorHex = "#74080C";        // client: ground blood color
-        public float WaterBloodDecayPerSecond = 0.10f;  // server: fraction of a water tile's blood lost per second
+        public float WaterBloodDecayPerSecond = 0.12f;  // server: fraction of a water tile's blood lost per second
         public float WaterBloodSpreadPerSecond = 0.02f; // server: fraction leaked to each liquid neighbor per second
+
+        // 0.6.4 (field regressions): blood visuals independent of the DoT proc
+        public bool BloodOnHitEnabled = true;      // splash on every qualifying hit, proc or not
+        public float BloodOnHitMinDamage = 0.5f;   // min post-mitigation damage for contact blood
+        public float CorpseBloodScale = 1f;        // scales death pools + corpse bleed-out (0 = off)
+        public float WaterBloodMaxOpacity = 0.6f;  // client: water stain tint ceiling
 
         // ---- WOUNDED SLOWDOWN (2026-07-19, see WoundedSlowdown.cs; replaces
         //      FleeExhaustion - all AI states, tiered, per the user's table) ----

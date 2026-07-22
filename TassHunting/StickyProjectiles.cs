@@ -54,6 +54,8 @@ namespace TassHunting
             public float YawOff;                  // projectile yaw relative to target body yaw
             public float Roll;                    // vanilla puts the vertical angle in ROLL
             public float SecondsLeft;
+            public float SaveIn;                  // countdown to next sa_secs persist
+            public float GraceSeconds;            // rehydrated riders wait this long for their target's chunk
         }
 
         private readonly Dictionary<long, StuckArrow> stuck = new Dictionary<long, StuckArrow>();
@@ -62,14 +64,53 @@ namespace TassHunting
         {
             Instance = new StickyProjectiles { sapi = api };
             Instance.tickId = api.Event.RegisterGameTickListener(Instance.OnTick, 50);
+            // RELOG FIX (field 2026-07-21: "that arrow is still stuck but never
+            // drops and you lose the arrow forever"): the ride REGISTRY is
+            // in-memory, but the ride PARAMETERS live in watched attributes and
+            // persist with the save - so a reloaded arrow kept riding visually
+            // while no server record existed to ever release or expire it.
+            // Rehydrate the record from the attributes when the entity loads.
+            api.Event.OnEntityLoaded += Instance.OnEntityLoaded;
         }
 
         internal static void StopServer()
         {
             try { if (Instance?.sapi != null && Instance.tickId != 0) Instance.sapi.Event.UnregisterGameTickListener(Instance.tickId); } catch { }
+            try { if (Instance?.sapi != null) Instance.sapi.Event.OnEntityLoaded -= Instance.OnEntityLoaded; } catch { }
             Instance?.stuck.Clear();
             RidersByTarget.Clear();
             Instance = null;
+        }
+
+        /// <summary>Rebuild the server ride record for a projectile loaded from
+        /// the save. Timer resumes from the persisted sa_secs (old saves from
+        /// before this fix default to a fresh StickSeconds - they finally get a
+        /// release path instead of riding forever). GraceSeconds covers the
+        /// target's chunk loading a beat later; if the target never appears the
+        /// release path drops the arrow recoverable.</summary>
+        private void OnEntityLoaded(Entity entity)
+        {
+            try
+            {
+                var arrow = entity as EntityProjectileBase;
+                if (arrow == null) return;
+                long targetId = arrow.WatchedAttributes.GetLong("sa_target", 0L);
+                if (targetId == 0L || stuck.ContainsKey(arrow.EntityId)) return;
+
+                stuck[arrow.EntityId] = new StuckArrow
+                {
+                    ArrowId = arrow.EntityId,
+                    TargetId = targetId,
+                    LocalX = arrow.WatchedAttributes.GetFloat("sa_lx"),
+                    LocalY = arrow.WatchedAttributes.GetFloat("sa_ly"),
+                    LocalZ = arrow.WatchedAttributes.GetFloat("sa_lz"),
+                    YawOff = arrow.WatchedAttributes.GetFloat("sa_yawoff"),
+                    Roll = arrow.WatchedAttributes.GetFloat("sa_roll"),
+                    SecondsLeft = arrow.WatchedAttributes.GetFloat("sa_secs", Math.Max(10f, HuntingModSystem.Cfg.StickSeconds)),
+                    GraceSeconds = 5f
+                };
+            }
+            catch { }
         }
 
         /// <summary>The interpolation hook is a manual patch (the behavior class
@@ -221,6 +262,7 @@ namespace TassHunting
             arrow.WatchedAttributes.SetFloat("sa_lz", (float)s.LocalZ);
             arrow.WatchedAttributes.SetFloat("sa_yawoff", s.YawOff);
             arrow.WatchedAttributes.SetFloat("sa_roll", s.Roll);
+            arrow.WatchedAttributes.SetFloat("sa_secs", s.SecondsLeft); // relog resumes the timer
             ApplyRide(arrow, target, s);
         }
 
@@ -263,7 +305,20 @@ namespace TassHunting
                     continue;
                 }
 
+                // persist the timer so a relog resumes instead of resetting
+                s.SaveIn -= dt;
+                if (s.SaveIn <= 0f)
+                {
+                    s.SaveIn = 5f;
+                    arrow.WatchedAttributes.SetFloat("sa_secs", s.SecondsLeft);
+                }
+
                 var target = sapi.World.GetEntityById(s.TargetId);
+                if (target == null && s.GraceSeconds > 0f)
+                {
+                    s.GraceSeconds -= dt; // rehydrated: target's chunk may load a beat later
+                    continue;
+                }
                 if (target == null || !target.Alive)
                 {
                     // Release: clear the stuck flag so gravity resumes — the

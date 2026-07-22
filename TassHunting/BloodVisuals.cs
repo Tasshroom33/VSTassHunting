@@ -118,6 +118,7 @@ namespace TassHunting
         {
             public int LastSpotId = -1;
             public double LastX, LastZ;
+            public long NextWaterMs; // water inflow gate: 1/s per entity, not per deposit tick
         }
 
         private class CorpseBleed
@@ -185,19 +186,51 @@ namespace TassHunting
             (sapi?.Logger ?? capi?.Logger)?.Warning("[TassHunting] blood visuals {0} failed: {1}", site, ex.Message);
         }
 
-        /// <summary>Called by BleedSystem when a hit actually procs a stack:
-        /// immediate splash spot at the victim (the trail tick then takes over).</summary>
-        public static void NotifyProc(Entity victim, int stacks)
+        /// <summary>Called from the health-damage postfix on EVERY hit -
+        /// deliberately independent of the bleed DoT proc (chance roll, alive
+        /// gate). Splashes contact blood for qualifying hits, and guarantees a
+        /// death pool for one-shot kills where no bleed stack ever existed
+        /// (field 2026-07-21: the chicken must bleed).</summary>
+        public static void NotifyDamage(Entity victim, DamageSource src, float damage)
         {
             var self = instance;
             var cfg = HuntingModSystem.Cfg;
-            if (self?.sapi == null || cfg == null || !cfg.BloodVisualsEnabled || victim == null) return;
+            if (self?.sapi == null || cfg == null || !cfg.BloodVisualsEnabled || !cfg.BloodOnHitEnabled) return;
+            if (victim == null || src == null || victim.World?.Side != EnumAppSide.Server) return;
+            if (damage < cfg.BloodOnHitMinDamage) return;
+            if (src.Type != EnumDamageType.PiercingAttack && src.Type != EnumDamageType.SlashingAttack) return;
+            if (cfg.BleedPlayerCausedOnly && !(src.GetCauseEntity() is EntityPlayer)) return;
+            if (!cfg.BleedAffectsPlayers && victim is EntityPlayer) return;
             try
             {
-                self.Deposit(victim.Pos.X, victim.Pos.Y, victim.Pos.Z,
-                    KindHit, 1.2f + 0.4f * stacks, 0.4f * stacks, null);
+                float inten = Math.Min(4f, 1.0f + damage * 0.3f);
+                self.Deposit(victim.Pos.X, victim.Pos.Y, victim.Pos.Z, KindHit, inten, 0.5f, null);
+                if (!victim.Alive && BleedSystem.StacksOn(victim.EntityId) == 0)
+                {
+                    float stacksEquiv = GameMath.Clamp(1f + damage * 0.35f, 1f, 4f) * Math.Max(0f, cfg.CorpseBloodScale);
+                    if (stacksEquiv > 0f)
+                        self.RegisterCorpseBleed(victim.Pos.X, victim.Pos.Y, victim.Pos.Z, stacksEquiv);
+                }
             }
-            catch (Exception ex) { self.WarnRateLimited("proc deposit", ex); }
+            catch (Exception ex) { self.WarnRateLimited("damage hook", ex); }
+        }
+
+        /// <summary>Immediate death pool + a record that keeps feeding it for
+        /// the corpse bleed-out window. Used by both the stacked-bleeder death
+        /// path and the one-shot-kill path.</summary>
+        private void RegisterCorpseBleed(double x, double y, double z, float stacks)
+        {
+            if (stacks <= 0f) return; // CorpseBloodScale 0 = feature off
+            var cfg = HuntingModSystem.Cfg;
+            long now = sapi.World.ElapsedMilliseconds;
+            int poolId = Deposit(x, y, z, KindPool, 1.5f + 0.8f * stacks, 0.5f * stacks, null);
+            corpses.Add(new CorpseBleed
+            {
+                X = x, Y = y, Z = z, Stacks = stacks,
+                UntilMs = now + (long)(cfg.CorpseBleedSeconds * 1000f),
+                NextMs = now + CorpseTickMs,
+                PoolSpotId = poolId
+            });
         }
 
         private void OnEntityDeath(Entity entity, DamageSource src)
@@ -207,19 +240,10 @@ namespace TassHunting
                 var cfg = HuntingModSystem.Cfg;
                 if (cfg == null || !cfg.BloodVisualsEnabled || entity == null) return;
                 int stacks = BleedSystem.StacksOn(entity.EntityId);
-                if (stacks <= 0) return;
+                if (stacks <= 0) return; // one-shot kills are handled by NotifyDamage
 
-                long now = sapi.World.ElapsedMilliseconds;
-                double x = entity.Pos.X, y = entity.Pos.Y, z = entity.Pos.Z;
-                // Immediate pool, then the corpse keeps feeding it (bleed-out window).
-                int poolId = Deposit(x, y, z, KindPool, 2.0f + 0.8f * stacks, 0.6f * stacks, null);
-                corpses.Add(new CorpseBleed
-                {
-                    X = x, Y = y, Z = z, Stacks = stacks,
-                    UntilMs = now + (long)(cfg.CorpseBleedSeconds * 1000f),
-                    NextMs = now + CorpseTickMs,
-                    PoolSpotId = poolId
-                });
+                RegisterCorpseBleed(entity.Pos.X, entity.Pos.Y, entity.Pos.Z,
+                    stacks * Math.Max(0f, cfg.CorpseBloodScale));
                 trails.Remove(entity.EntityId);
             }
             catch (Exception ex) { WarnRateLimited("death hook", ex); }
@@ -394,17 +418,24 @@ namespace TassHunting
         {
             var cfg = HuntingModSystem.Cfg;
             if (!ResolveSurface(x, y, z, out double surfY, out bool isWater, out var waterKey)) return -1;
+            long now = sapi.World.ElapsedMilliseconds;
 
             if (isWater)
             {
                 if (!cfg.WaterBloodEnabled || waterAmount <= 0f) return -1;
+                if (ts != null)
+                {
+                    // trail drips hit the water at DEPOSIT-TICK rate (0.35s) -
+                    // ungated that pumped ~3 units/s/stack and stains lasted
+                    // forever (field 2026-07-21). One inflow per second.
+                    if (now < ts.NextWaterMs) { ts.LastSpotId = -1; return -1; }
+                    ts.NextWaterMs = now + 1000;
+                }
                 waterTiles.TryGetValue(waterKey, out float cur);
-                waterTiles[waterKey] = Math.Min(12f, cur + waterAmount);
+                waterTiles[waterKey] = Math.Min(6f, cur + waterAmount);
                 if (ts != null) { ts.LastSpotId = -1; } // trail broken by water
                 return -1;
             }
-
-            long now = sapi.World.ElapsedMilliseconds;
 
             // trail spacing: near the last drip -> grow it (pooling), else new spot
             if (ts != null && ts.LastSpotId >= 0 && spots.TryGetValue(ts.LastSpotId, out var last))
@@ -655,22 +686,24 @@ namespace TassHunting
             public bool BurstDone;
         }
 
-        private class CTile
+        internal class CTile
         {
             public float Amount;
             public long LastSeenMs;
-            public long NextEmitMs;
+            public float Display; // renderer-lerped visible amount (smooth bloom/fade)
         }
 
         private ICoreClientAPI capi;
         private long clientTickId;
+        private BloodWaterRenderer waterRenderer;
         private readonly Dictionary<int, CSpot> cspots = new Dictionary<int, CSpot>();
         private readonly Dictionary<(int x, int y, int z), CTile> ctiles = new Dictionary<(int, int, int), CTile>();
-        private SimpleParticleProperties groundProps, burstProps, waterProps;
+        /// <summary>Water tile mirror for the tint renderer (client thread only).</summary>
+        internal Dictionary<(int x, int y, int z), CTile> ClientWaterTiles => ctiles;
+        private SimpleParticleProperties groundProps, burstProps;
         private string appliedColorHex; // rebuild props when the config color changes (live tuning)
 
         private const int EmitPeriodMs = 4000;      // particle life 4.6s: slight overlap
-        private const int WaterEmitPeriodMs = 2200; // life 2.6s
 
         /// <summary>#RRGGBB -> particle color int. ToRgba(a,r,g,b) packs ARGB =
         /// the BGRA byte order the particle system reads (API-doc-verified) -
@@ -697,9 +730,6 @@ namespace TassHunting
             if (groundProps != null && appliedColorHex == cfg.BloodColorHex) return;
             appliedColorHex = cfg.BloodColorHex;
             int blood = ParseBloodColor(cfg.BloodColorHex, ColorUtil.ToRgba(255, 116, 8, 12));
-            // water clots slightly darker than ground blood
-            int wr = (int)(((blood >> 16) & 0xFF) * 0.85), wg = (int)(((blood >> 8) & 0xFF) * 0.85), wb = (int)((blood & 0xFF) * 0.85);
-            int water = ColorUtil.ToRgba(255, wr, wg, wb);
 
             groundProps = new SimpleParticleProperties(
                 1, 1, blood,
@@ -715,15 +745,9 @@ namespace TassHunting
                 0.9f, 0.8f, 0.1f, 0.22f,
                 EnumParticleModel.Cube);
             burstProps.ShouldDieInLiquid = true;
-
-            // No SwimOnLiquid (getter-only in 1.22): the tile key IS the top
-            // liquid block, so clots are placed at the waterline directly.
-            waterProps = new SimpleParticleProperties(
-                1, 1, water,
-                new Vec3d(), new Vec3d(),
-                new Vec3f(), new Vec3f(),
-                2.6f, 0f, 0.3f, 0.6f,
-                EnumParticleModel.Cube);
+            // Water blood is NOT particles anymore - BloodWaterRenderer draws
+            // the cloudy tint quads (field 2026-07-21: cubes floating on water
+            // read as voxel litter, not blood).
         }
 
         /// <summary>Deterministic 0..1 from a seed - splat layouts must be
@@ -748,6 +772,9 @@ namespace TassHunting
                 .SetMessageHandler<BloodClearPacket>(OnClearPacket);
 
             clientTickId = api.Event.RegisterGameTickListener(ClientRenderTick, 400);
+
+            waterRenderer = new BloodWaterRenderer(api, this);
+            api.Event.RegisterRenderer(waterRenderer, EnumRenderStage.AfterOIT, "tassbloodwater");
 
             api.ChatCommands.Create("tassbloodc")
                 .WithDescription("TassHunting blood client mirror status")
@@ -874,29 +901,12 @@ namespace TassHunting
                 }
                 if (dead != null) foreach (int id in dead) cspots.Remove(id);
 
-                // water tiles
+                // water tiles: rendering is BloodWaterRenderer's job now; this
+                // tick only prunes tiles the server stopped refreshing
                 List<(int, int, int)> staleTiles = null;
                 foreach (var kv in ctiles)
-                {
-                    var t = kv.Value;
-                    if (now - t.LastSeenMs > WaterStaleMs)
-                    { (staleTiles = staleTiles ?? new List<(int, int, int)>()).Add(kv.Key); continue; }
-                    double dx = kv.Key.x + 0.5 - px, dz = kv.Key.z + 0.5 - pz;
-                    if (dx * dx + dz * dz > maxDist2) continue;
-                    if (t.Amount < 0.02f || now < t.NextEmitMs) continue;
-                    t.NextEmitMs = now + WaterEmitPeriodMs;
-
-                    // more, smaller clots (not one big cube half out of the water)
-                    float amt = Math.Min(4f, t.Amount);
-                    float wScale = Math.Max(0.05f, cfg.BloodSizeScale);
-                    waterProps.MinQuantity = 1 + (int)(amt * 1.5f);
-                    waterProps.AddQuantity = 2;
-                    waterProps.MinSize = (0.18f + 0.1f * amt) * wScale;
-                    waterProps.MaxSize = (0.28f + 0.14f * amt) * wScale;
-                    waterProps.MinPos.Set(kv.Key.x + 0.5 - 0.38, kv.Key.y + 0.86, kv.Key.z + 0.5 - 0.38);
-                    waterProps.AddPos.Set(0.76, 0.02, 0.76);
-                    capi.World.SpawnParticles(waterProps);
-                }
+                    if (now - kv.Value.LastSeenMs > WaterStaleMs)
+                        (staleTiles = staleTiles ?? new List<(int, int, int)>()).Add(kv.Key);
                 if (staleTiles != null) foreach (var k in staleTiles) ctiles.Remove(k);
             }
             catch (Exception ex) { WarnRateLimited("client render tick", ex); }
@@ -916,8 +926,14 @@ namespace TassHunting
                     sapi.Event.PlayerDisconnect -= OnPlayerDisconnect;
                 }
                 if (capi != null && clientTickId != 0) capi.Event.UnregisterGameTickListener(clientTickId);
+                if (capi != null && waterRenderer != null)
+                {
+                    capi.Event.UnregisterRenderer(waterRenderer, EnumRenderStage.AfterOIT);
+                    waterRenderer.Dispose();
+                }
             }
             catch { }
+            waterRenderer = null;
             if (instance == this) instance = null;
             spots.Clear(); trails.Clear(); corpses.Clear(); waterTiles.Clear(); sentIds.Clear(); dirtySpots.Clear();
             cspots.Clear(); ctiles.Clear();

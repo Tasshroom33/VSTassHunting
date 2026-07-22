@@ -81,7 +81,6 @@ namespace TassHunting
                     st.Expiries[shortest] = expiry; // at cap: refresh, don't grow
                 }
                 else st.Expiries.Add(expiry);
-                BloodVisuals.NotifyProc(victim, st.Expiries.Count); // hit splash spot
             }
         }
 
@@ -141,6 +140,11 @@ namespace TassHunting
         [HarmonyPostfix]
         private static void Postfix(EntityBehaviorHealth __instance, DamageSource damageSource, ref float damage)
         {
+            // VISUALS FIRST and independent of the DoT proc (field 2026-07-21:
+            // a one-shot chicken left no blood - the victim is already dead by
+            // postfix time, so TryProc's Alive gate skipped everything).
+            try { BloodVisuals.NotifyDamage(__instance.entity, damageSource, damage); }
+            catch { }
             try { BleedSystem.TryProc(__instance.entity, damageSource, damage); }
             catch { }
         }
