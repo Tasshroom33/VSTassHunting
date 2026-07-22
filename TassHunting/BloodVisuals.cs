@@ -35,7 +35,6 @@ namespace TassHunting
     {
         private const byte KindTrail = 0, KindHit = 1, KindPool = 2;
         private const float MaxIntensity = 8f;
-        private const int CorpseTickMs = 1200;
         private const float WaterCull = 0.008f;
         private const int WaterTileCap = 1024;
 
@@ -70,13 +69,10 @@ namespace TassHunting
             public int LastHurtCounter;
             public int LastBleedTick;  // dedicated DoT splatter signal (0.9.3)
             public int LastStacks;
-            public long NextDripMs;
             public long NextWaterMs;
             public int LastSpotId = -1;
             public double LastX, LastY, LastZ;
             public bool DeathHandled;
-            public long CorpseUntilMs, NextCorpseMs;
-            public float CorpseStacks;
             public long LastSeenMs;
         }
 
@@ -93,6 +89,13 @@ namespace TassHunting
         private float appliedWaterOpacity = -1f;
         private bool appliedSoftWater;
         private int bloodFresh, bloodAged; // ground blood dries fresh -> aged over the particle's life
+        // last corpse-pool emit, captured for the chat-facing /tassbloodc readout
+        // (point-and-ask: after a kill, ask what the pool actually did)
+        private int lastPoolCount = -1;
+        private float lastPoolLife;
+        private long lastPoolSpotLifeMs;
+        private long lastPoolAtMs = -1;
+        private bool poolSpawnProbe;   // .tassbloodpool sets this; logs the next pool's per-particle placement once
 
         public override void StartClientSide(ICoreClientAPI api)
         {
@@ -102,8 +105,43 @@ namespace TassHunting
 
             api.ChatCommands.Create("tassbloodc")
                 .WithDescription("TassHunting blood (client-local) status")
-                .HandleWith(_ => TextCommandResult.Success(
-                    $"[tassblood client] {spots.Count} spots, {waterTiles.Count} water tiles, {tracks.Count} tracked entities."));
+                .HandleWith(_ =>
+                {
+                    string pool = lastPoolAtMs < 0
+                        ? "no corpse pool emitted yet this session"
+                        : $"last corpse pool: {lastPoolCount} particles, particle life {lastPoolLife:0.0}s, spot-record life {lastPoolSpotLifeMs / 1000f:0.0}s, emitted {(capi.World.ElapsedMilliseconds - lastPoolAtMs) / 1000f:0.0}s ago";
+                    return TextCommandResult.Success(
+                        $"[tassblood client] {spots.Count} spots, {waterTiles.Count} water tiles, {tracks.Count} tracked entities. {pool}");
+                });
+
+            api.ChatCommands.Create("tassbloodcolor")
+                .WithDescription("Dump the RAW blood color numbers at every age (verify red, catch pink)")
+                .HandleWith(_ =>
+                {
+                    var cfg = HuntingModSystem.Cfg;
+                    EnsureParticleProps(cfg);
+                    // RAW TRUTH, chat-facing (no log diving): the exact R,G,B the
+                    // particle is BORN with at each age step. If any row is not
+                    // red (R should dominate G and B), the color path is wrong -
+                    // this is the measured number, not a claim.
+                    var sb = new System.Text.StringBuilder();
+                    sb.Append("[tassblood color] fresh #").Append(cfg.BloodColorHex)
+                      .Append(" -> aged #").Append(cfg.BloodColorAgedHex).Append("\n");
+                    sb.Append("fresh raw R,G,B = ").Append(CR(bloodFresh)).Append(',').Append(CG(bloodFresh)).Append(',').Append(CB(bloodFresh)).Append("\n");
+                    sb.Append("aged  raw R,G,B = ").Append(CR(bloodAged)).Append(',').Append(CG(bloodAged)).Append(',').Append(CB(bloodAged)).Append("\n");
+                    sb.Append("AgeColor lerp (what each drop is BORN, by spot age):\n");
+                    foreach (float t in new[] { 0f, 0.25f, 0.5f, 0.75f, 1f })
+                    {
+                        int c = AgeColor(t);
+                        int r = CR(c), g = CG(c), b = CB(c);
+                        string verdict = (r > 3 * Math.Max(1, g) && r > 3 * Math.Max(1, b)) ? "RED" : "NOT-RED";
+                        sb.Append("  age ").Append((int)(t * 100)).Append("% : R,G,B = ")
+                          .Append(r).Append(',').Append(g).Append(',').Append(b)
+                          .Append("  [").Append(verdict).Append("]\n");
+                    }
+                    sb.Append("no color evolve is applied (0.11.3+): each drop keeps this color for life.");
+                    return TextCommandResult.Success(sb.ToString());
+                });
 
             api.ChatCommands.Create("tassbloodtest")
                 .WithDescription("Lay test blood at your feet: pool + trail line (client-local)")
@@ -122,7 +160,24 @@ namespace TassHunting
                     return TextCommandResult.Success($"[tassblood] test blood laid ({spots.Count} spots, {waterTiles.Count} water tiles).");
                 });
 
-            api.Logger.Event("[TassHunting] blood visuals 0.9.0: client-local mode (sync spine parked).");
+            api.ChatCommands.Create("tassbloodpool")
+                .WithDescription("Lay ONE clean corpse pool at your feet and log exactly what it spawns")
+                .HandleWith(_ =>
+                {
+                    var plr = capi.World.Player?.Entity;
+                    if (plr == null) return TextCommandResult.Success("[tassblood] no player.");
+                    long now = capi.World.ElapsedMilliseconds;
+                    // one big pool, nothing else - isolates the pool from spray/trail
+                    int id = DepositLocal(plr.Pos.X, plr.Pos.Y + 0.1, plr.Pos.Z, KindPool, MaxIntensity, 1f, null, now, 0);
+                    poolSpawnProbe = true; // next pool render logs per-particle placement
+                    return TextCommandResult.Success(
+                        $"[tassblood] laid ONE pool (spot {id}) at your feet. Watch it, then run .tassbloodc for its measured life. Per-particle placement logged to client-main.log.");
+                });
+
+            // Client commands use the DOT prefix (.tassbloodc), NOT slash - slash
+            // is server-side. Print the exact invocations so the prefix is never
+            // a guessing game (VS: client=dot, server=slash).
+            api.Logger.Event("[TassHunting] blood visuals ready. Diagnostics (CLIENT commands, dot prefix): .tassbloodc (status + last pool), .tassbloodcolor (raw color at each age), .tassbloodtest (lay test blood).");
         }
 
         private void Warn(string site, Exception ex)
@@ -233,43 +288,35 @@ namespace TassHunting
                         (0.8f + 0.5f * stacks) * trailScale * gait, 0.35f * stacks * trailScale * gait, tr, now, 0, stacks);
                 }
 
-                // 3. DEATH: pool + corpse bleed-out window
-                if (!ent.Alive && !tr.DeathHandled)
+                // 3. DEATH: a corpse ALWAYS leaves a pool (user 2026-07-22: "where
+                //    is the corpse pile of blood? i see the trail but no large
+                //    corpse pile"). Every kill pools - melee, clean shot, arrow
+                //    that already fell out, bleed-out - not just kills with a
+                //    stuck arrow at the instant of death (the old corpseStacks>0
+                //    gate is why melee/fell-out kills left NOTHING). Stacks only
+                //    make it BIGGER; there is a solid baseline regardless.
+                if (!ent.Alive && !tr.DeathHandled && cfg.CorpseBloodEnabled)
                 {
                     tr.DeathHandled = true;
-                    float corpseStacks = Math.Max(stacks, tr.LastStacks);
-                    if (corpseStacks <= 0 && hurtC != 0) corpseStacks = 1.5f; // one-shot kill still bleeds
-                    corpseStacks *= Math.Max(0f, cfg.CorpseBloodScale);
-                    if (corpseStacks > 0f)
-                    {
-                        int poolId = DepositLocal(ent.Pos.X, ent.Pos.Y + 0.15, ent.Pos.Z, KindPool,
-                            1.5f + 0.8f * corpseStacks, 0.5f * corpseStacks, null, now, 1);
-                        tr.CorpseStacks = corpseStacks;
-                        tr.CorpseUntilMs = now + (long)(cfg.CorpseBleedSeconds * 1000f);
-                        tr.NextCorpseMs = now + CorpseTickMs;
-                        tr.LastSpotId = poolId;
-                        tr.LastX = ent.Pos.X; tr.LastY = ent.Pos.Y; tr.LastZ = ent.Pos.Z;
-                    }
-                }
-
-                // 4. corpse keeps feeding its pool
-                if (tr.DeathHandled && now < tr.CorpseUntilMs && now >= tr.NextCorpseMs)
-                {
-                    tr.NextCorpseMs = now + CorpseTickMs;
-                    if (tr.LastSpotId >= 0 && spots.TryGetValue(tr.LastSpotId, out var pool))
-                        pool.Intensity = Math.Min(MaxIntensity, pool.Intensity + 0.35f * tr.CorpseStacks);
-                    else
-                        tr.LastSpotId = DepositLocal(tr.LastX, tr.LastY + 0.15, tr.LastZ, KindPool,
-                            0.9f * tr.CorpseStacks, 0.5f * tr.CorpseStacks, null, now, 0);
+                    // baseline 1 "stack-equivalent" for any corpse, + the real
+                    // bleed stacks it had. So a clean kill still pools; a heavily
+                    // bled animal pools bigger. The pool is created ONCE, big -
+                    // "Pool size" controls how wide, "Pool stays" how long.
+                    float corpseStacks = 1f + Math.Max(stacks, tr.LastStacks);
+                    // BIG pool intensity - this is the "bled out here" pool,
+                    // not a trail dot. Base 4 + generous per-stack, capped.
+                    float poolInten = Math.Min(MaxIntensity, 4f + 1.5f * corpseStacks);
+                    DepositLocal(ent.Pos.X, ent.Pos.Y + 0.15, ent.Pos.Z, KindPool,
+                        poolInten, 0.5f * corpseStacks, null, now, 1);
                 }
             }
 
-            // prune stale tracks (entity unloaded / long idle, corpse done)
+            // prune stale tracks (entity unloaded / long idle)
             if (tracks.Count > 64)
             {
                 List<long> gone = null;
                 foreach (var kv in tracks)
-                    if (now - kv.Value.LastSeenMs > 15000 && now > kv.Value.CorpseUntilMs)
+                    if (now - kv.Value.LastSeenMs > 15000)
                         (gone = gone ?? new List<long>()).Add(kv.Key);
                 if (gone != null) foreach (long id in gone) tracks.Remove(id);
             }
@@ -477,25 +524,29 @@ namespace TassHunting
             // 1.0 = the engine's semi-realistic fall, ~9 m/s equivalent) rather
             // than a hand-picked rate. The arc reads because the launch SPEED
             // (Splatter spread) is set high, not because gravity is dialed weak.
-            // NO OPACITY FADE (0.9.2: blood POPS to end of lifecycle) - exits
-            // via late-accelerating SHRINK (quadratic size decay set per shot).
-            // UNIFIED COLOR (2026-07-22): all blood - spurt and ground - is born
-            // the SAME fresh color and darkens to aged over its life via these
-            // per-channel evolves.
-            int cfr = CR(blood), cfg2 = CG(blood), cfb = CB(blood);
-            int cagedR = CR(bloodAged), cagedG = CG(bloodAged), cagedB = CB(bloodAged);
-            EvolvingNatFloat RedDark() => new EvolvingNatFloat(EnumTransformFunction.LINEAR, cagedR - cfr);
-            EvolvingNatFloat GreenDark() => new EvolvingNatFloat(EnumTransformFunction.LINEAR, cagedG - cfg2);
-            EvolvingNatFloat BlueDark() => new EvolvingNatFloat(EnumTransformFunction.LINEAR, cagedB - cfb);
-
+            //
+            // BLOOD DRIES DARK, THEN SHRINKS AWAY - it does NOT fade (2026-07-22,
+            // PROVEN with engine source + arithmetic, after pink-at-end-of-life):
+            //
+            // THE PINK, ACTUALLY FIXED (2026-07-22): removing the opacity fade did
+            // NOT fix it - aged blood was STILL pink. Because the pink was never
+            // the fade; it was the per-channel COLOR EVOLVE. RedEvolve/GreenEvolve/
+            // BlueEvolve on a ToRgba SimpleParticleProperties is a path vanilla
+            // NEVER uses (vanilla animates color only via HsvaColor on Advanced
+            // particles; fixed-Color particles only ever OpacityEvolve). Animating
+            // the three byte channels independently drifts the hue - the drop goes
+            // pink partway through its life. FIX: NO color evolve at all. Each drop
+            // is BORN its final color and never changes hue. Aging is done by
+            // picking the SPAWN color as a lerp fresh->aged based on how old the
+            // SPOT is (older spot = darker drops), so a trail still visibly dries
+            // over time - but no single particle ever shifts toward pink.
+            // (Vanish is by SizeEvolve shrink, set per-drop; opacity never fades.)
             burstProps = new SimpleParticleProperties(
                 4, 4, blood, new Vec3d(), new Vec3d(), new Vec3f(), new Vec3f(),
                 2.5f, 1f, 0.12f, 0.28f, EnumParticleModel.Cube);
             burstProps.ShouldDieInLiquid = true;
-            burstProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, -255f); // fade over life (was 0 = never fade)
-            burstProps.RedEvolve = RedDark();
-            burstProps.GreenEvolve = GreenDark();
-            burstProps.BlueEvolve = BlueDark();
+            // NO color evolve, NO opacity fade. Splatter is born its color (set
+            // per-emit) and vanishes by shrinking. Nothing shifts its hue.
 
 
             int water = ColorUtil.ToRgba(Math.Max(6, (int)(130 * waterOpacity)), CR(blood), CG(blood), CB(blood));
@@ -505,6 +556,34 @@ namespace TassHunting
                 3.5f, 0f, 0.7f, 1.3f,
                 soft ? EnumParticleModel.Quad : EnumParticleModel.Cube);
             waterProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, -255f); // LINEAR fade (quadratic vanished instantly)
+        }
+
+        /// <summary>The pink-free VANISH: hold size, then shrink to nothing at
+        /// the end. SizeEvolve is firstval + QUADRATIC term = startSize +
+        /// sign(factor)*(factor*seq)^2. To land at exactly 0 at seq=1 the term
+        /// must equal -startSize, so factor = -sqrt(startSize). The square keeps
+        /// the size near-full early (0.75x at seq .5) and collapses it fast at the
+        /// end (0.19x at .9, 0 at 1.0). Because opacity NEVER fades, the shrinking
+        /// dot stays a solid dark red until it is gone - it can never wash to pink
+        /// over a bright background the way an alpha fade does.</summary>
+        /// <summary>Blood color at spawn, lerped fresh->aged by the SPOT's age
+        /// fraction (0 = just deposited, 1 = old). This is how blood "dries" now -
+        /// per-drop at birth, NOT by animating channels mid-life (which drifted to
+        /// pink). A fresh spot's drops are bright red; an old spot's drops are
+        /// born already dark. Alpha is forced to 255 (blood never fades).</summary>
+        private int AgeColor(float ageFrac)
+        {
+            float t = GameMath.Clamp(ageFrac, 0f, 1f);
+            int r = (int)Math.Round(GameMath.Lerp(CR(bloodFresh), CR(bloodAged), t));
+            int g = (int)Math.Round(GameMath.Lerp(CG(bloodFresh), CG(bloodAged), t));
+            int b = (int)Math.Round(GameMath.Lerp(CB(bloodFresh), CB(bloodAged), t));
+            return ColorUtil.ToRgba(255, r, g, b);
+        }
+
+        private static EvolvingNatFloat ShrinkAway(float startSize)
+        {
+            float factor = -(float)Math.Sqrt(Math.Max(0.0001f, startSize));
+            return new EvolvingNatFloat(EnumTransformFunction.QUADRATIC, factor);
         }
 
         /// <summary>Blood SIZE multiplier by number of stuck arrows (user table
@@ -574,12 +653,12 @@ namespace TassHunting
                         burstProps.LifeLength = splatLife;
                         burstProps.MinVelocity.Set(-0.45f * spdMax, 0.8f * spdMin, -0.45f * spdMax);
                         burstProps.AddVelocity.Set(0.9f * spdMax, spdMax - 0.8f * spdMin, 0.9f * spdMax);
-                        // opacity fades LINEARLY over its life (quadratic -255
-                        // cratered it to 0 at ~6% of life - the vanish bug); it
-                        // EXPANDS like the settled ground blood does.
-                        burstProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, -255f);
-                        burstProps.SizeEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR,
-                            (burstProps.MinSize + burstProps.MaxSize) * 0.5f);
+                        // Born ONE solid color (by the spot's age), NO evolve, NO
+                        // fade - vanishes by shrinking. Fresh spurts are bright red,
+                        // spurts off an older wound are darker; never shifts hue.
+                        float splatAge = GameMath.Clamp((now - s.BornMs) / (float)Math.Max(1, s.LifeMs), 0f, 1f);
+                        burstProps.Color = AgeColor(splatAge);
+                        burstProps.SizeEvolve = ShrinkAway((burstProps.MinSize + burstProps.MaxSize) * 0.5f);
                         // WIDE spawn box: particles emerge at the body surface,
                         // not hidden inside the mesh (the invisible-shot bug)
                         burstProps.MinPos.Set(s.X - 0.35, s.Y + s.FallHeight - 0.05, s.Z - 0.35);
@@ -611,28 +690,20 @@ namespace TassHunting
                 float tLifeMin = Math.Max(1f, Math.Min(tr.LifetimeMin, tr.LifetimeMax));
                 float tLifeMax = Math.Max(tLifeMin, Math.Max(tr.LifetimeMin, tr.LifetimeMax));
 
-                // One persistent decal particle per drop. Blood STAYS on the
-                // ground: EXPANDS to 2x, sinks HALFWAY (50%) into the surface,
-                // holds opacity then fades near the end. Everything below is
-                // driven by the drop's own LIFETIME (the BloodTrails lifetime
-                // config, ragged per-drop) - NO static made-up durations (user
-                // 2026-07-22). Per-drop life is set inside the loops.
-                groundProps.Color = bloodFresh;
+                // One persistent decal particle per drop. Each drop is born ONE
+                // solid color and NEVER changes hue (no color evolve = no pink -
+                // the mid-life channel animation was the pink, not the fade).
+                // "Aging" across the scene comes from the SPOT's age: a fresh spot
+                // deposits bright-red drops, an old spot deposits dark drops - set
+                // per-drop via AgeColor(spot age fraction) below. Blood keeps FULL
+                // opacity its whole life and vanishes only by SHRINKING (SizeEvolve
+                // per-drop). No OpacityEvolve, no Red/Green/BlueEvolve at all.
+                float spotAge = GameMath.Clamp((now - s.BornMs) / (float)Math.Max(1, s.LifeMs), 0f, 1f);
+                groundProps.Color = AgeColor(spotAge);
                 groundProps.MinQuantity = 1;
                 groundProps.AddQuantity = 0;
                 groundProps.GravityEffect = 0f;
                 groundProps.WithTerrainCollision = false;
-                // FADE (fixed 2026-07-22): LINEAR, not QUADRATIC. Quadratic with
-                // factor -255 is firstval + sign*(factor*seq)^2, which craters
-                // opacity to 0 at seq~=0.06 (6% of life) - THAT is why blood
-                // vanished in seconds regardless of the 30/60s lifetime. LINEAR
-                // (255 + -255*seq) fades cleanly 255->0 across the FULL life.
-                groundProps.OpacityEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, -255f);
-                // AGE COLOR: born fresh, darkens to aged over its own life.
-                // BGRA-packed color (red = low byte) via CR/CG/CB accessors.
-                groundProps.RedEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, CR(bloodAged) - CR(bloodFresh));
-                groundProps.GreenEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, CG(bloodAged) - CG(bloodFresh));
-                groundProps.BlueEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, CB(bloodAged) - CB(bloodFresh));
 
                 if (s.Kind == KindTrail && s.HasSeg)
                 {
@@ -653,8 +724,9 @@ namespace TassHunting
                         groundProps.LifeLength = dropLife;
                         groundProps.MinSize = psize;
                         groundProps.MaxSize = psize;
-                        // EXPAND to 2x over the life (blood spreads/soaks outward)
-                        groundProps.SizeEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, psize);
+                        // HOLD size, then SHRINK to nothing at the end (the
+                        // pink-free vanish - opaque dark dot -> gone, no fade).
+                        groundProps.SizeEvolve = ShrinkAway(psize);
                         // SINK 50% of its own height, spread over ITS lifetime
                         // (velocity = half-height / life -> total sink = half a
                         // cube, whatever the life; no static number)
@@ -667,26 +739,97 @@ namespace TassHunting
                 }
                 else
                 {
-                    int count = GameMath.Clamp((int)Math.Round((double)tQtyMin + (tQtyMax - tQtyMin) * intenFrac), 1, 16);
-                    float radius = (tSprMin + (tSprMax - tSprMin) * 0.5f) + 0.05f * s.Intensity;
+                    bool isCorpsePool = s.Kind == KindPool;
+                    if (isCorpsePool && !cfg.CorpseBloodEnabled) continue;
+
+                    // CORPSE POOL (user 2026-07-22: "a large corpse pile of blood
+                    // like youd see in real life"). A death pool is NOT a trail
+                    // dot - it gets its own BIG, DENSE sizing so it reads as a
+                    // real pool: many particles, big particles, filled disc.
+                    // CorpseSpreadMult scales how wide it spreads. Non-corpse
+                    // spots (the rare hit-mark cluster) keep the thin trail sizing.
+                    int count;
+                    float radius, poolSizeMin, poolSizeMax;
+                    if (isCorpsePool)
+                    {
+                        float spread = Math.Max(1f, cfg.CorpseSpreadMult);
+                        // DENSE fill: lots of particles so the disc is solid, not
+                        // dotted. Scales with how much the animal bled (intensity).
+                        count = GameMath.Clamp((int)Math.Round((28 + 34 * intenFrac) * spread), 24, 240);
+                        // WIDE: base radius ~0.6 block, up with intensity, x spread.
+                        radius = (0.55f + 0.5f * intenFrac) * spread;
+                        // BIG particles (a pool is thick), independent of the thin
+                        // trail size config. Bigger animals (more intensity) pool
+                        // with bigger blobs.
+                        poolSizeMin = 0.9f + 0.6f * intenFrac;
+                        poolSizeMax = 1.5f + 1.2f * intenFrac;
+                    }
+                    else
+                    {
+                        count = GameMath.Clamp((int)Math.Round((double)tQtyMin + (tQtyMax - tQtyMin) * intenFrac), 1, 16);
+                        radius = (tSprMin + (tSprMax - tSprMin) * 0.5f) + 0.05f * s.Intensity;
+                        poolSizeMin = tsMin; poolSizeMax = tsMax;
+                    }
                     for (int k = 0; k < count; k++)
                     {
                         float ang = Hash01(spotId * 97 + k * 13) * GameMath.TWOPI;
-                        float rad = radius * (float)Math.Sqrt(Hash01(spotId * 131 + k * 29 + 7));
+                        // bias toward the CENTER (sqrt would be uniform disc; a
+                        // lower power packs more blood in the middle = a real pool
+                        // that is thick at the body and thins at the edge).
+                        float rad = radius * (float)Math.Pow(Hash01(spotId * 131 + k * 29 + 7), 0.75);
                         float variation = 0.85f + 0.3f * Hash01(spotId * 173 + k * 41 + 3);
-                        float psize = GameMath.Lerp(tsMin, tsMax, intenFrac) * variation * arrowSize;
-                        float dropLife = tLifeMin + (tLifeMax - tLifeMin) * Hash01(spotId * 349 + k * 17);
+                        float psize = GameMath.Lerp(poolSizeMin, poolSizeMax, Hash01(spotId * 401 + k * 7)) * variation
+                            * (isCorpsePool ? 1f : arrowSize);
+                        // A corpse pool has its OWN lifetime (it lingers far longer
+                        // than a trail dot); +-20% ragged per particle so the pool
+                        // dries from the edges in rather than blinking out at once.
+                        float dropLife = isCorpsePool
+                            ? Math.Max(1f, cfg.CorpsePoolLifetimeSeconds) * (0.8f + 0.4f * Hash01(spotId * 349 + k * 17))
+                            : tLifeMin + (tLifeMax - tLifeMin) * Hash01(spotId * 349 + k * 17);
                         groundProps.LifeLength = dropLife;
                         groundProps.MinSize = psize;
                         groundProps.MaxSize = psize;
-                        // EXPAND to 2x over the life (blood spreads/soaks outward)
-                        groundProps.SizeEvolve = new EvolvingNatFloat(EnumTransformFunction.LINEAR, psize);
+                        // HOLD size, then SHRINK to nothing at the end (pink-free).
+                        groundProps.SizeEvolve = ShrinkAway(psize);
                         // SINK 50% of its own height, spread over ITS lifetime
                         groundProps.MinVelocity.Set(0f, -(0.5f * psize) / dropLife, 0f);
                         groundProps.AddVelocity.Set(0f, 0f, 0f);
                         groundProps.MinPos.Set(s.X + Math.Sin(ang) * rad, s.Y + 0.02, s.Z + Math.Cos(ang) * rad);
                         groundProps.AddPos.Set(0, 0, 0);
                         capi.World.SpawnParticles(groundProps);
+                    }
+                    // PROBE (.tassbloodpool): compare the pool's spawn Y to the
+                    // real block top under it. If spawn Y is BELOW the surface,
+                    // particles render inside the ground = look swallowed (the
+                    // "thins fast" suspect). Logged once per probe request.
+                    if (isCorpsePool && poolSpawnProbe)
+                    {
+                        poolSpawnProbe = false;
+                        bool resolved = ResolveGroundY(s.X, s.Y + 1.0, s.Z, out double trueTop);
+                        capi.Logger.Notification(
+                            "[TassHunting] POOL PROBE: spawned {0} particles at Y={1:0.00}; block-top under pool = {2} (Y={3:0.00}); spawn is {4} the surface. size {5:0.00}-{6:0.00}, radius {7:0.00}, life ~{8:0.0}s.",
+                            count, s.Y + 0.02, resolved ? "found" : "NOT FOUND", trueTop,
+                            !resolved ? "?" : (s.Y + 0.02 >= trueTop ? "ABOVE (good)" : "BELOW (buried!)"),
+                            poolSizeMin, poolSizeMax, radius, Math.Max(1f, cfg.CorpsePoolLifetimeSeconds));
+                    }
+                    // DIAGNOSTIC (per standing rule: every stubborn-bug iteration
+                    // ships visible instrumentation, preferably CHAT-FACING). Every
+                    // corpse pool records its measured count + lifetime for the
+                    // /tassbloodc readout - so "pool lasts 1-5s" is a number you
+                    // point-and-ask for after a kill, not a guess or a log dive.
+                    if (isCorpsePool)
+                    {
+                        lastPoolCount = count;
+                        // record the ACTUAL per-particle LifeLength last set (not
+                        // the config value) so /tassbloodc reports what really got
+                        // handed to the engine - if these differ, that IS the bug.
+                        lastPoolLife = groundProps.LifeLength;
+                        lastPoolSpotLifeMs = s.LifeMs;
+                        lastPoolAtMs = now;
+                        if (cfg.BloodDiagnostics)
+                            capi.Logger.Notification(
+                                "[TassHunting] corpse POOL emit: {0} particles, radius {1:0.00}, size {2:0.00}-{3:0.00}, life {4:0.0}s, intensity {5:0.0}",
+                                count, radius, poolSizeMin, poolSizeMax, lastPoolLife, s.Intensity);
                     }
                 }
             }

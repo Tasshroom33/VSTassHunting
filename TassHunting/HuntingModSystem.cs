@@ -149,12 +149,6 @@ namespace TassHunting
         public float BleedStaticPerTick = 0.05f;       // flat hp per stack per tick
         public float BleedPctMaxHealthPerTick = 0.5f;  // % of max hp per stack per tick
         public bool BleedAffectsPlayers = true;        // PvP: stuck arrows bleed humans too
-        // DEPRECATED (arrow-driven model): kept so old configs do not error.
-        public int BleedMaxStacks = 3;                 // no cap now (= arrow count)
-        public float BleedDurationSeconds = 60f;       // stick time is the timer now
-        public int BleedChancePct = 80;                // no chance roll now
-        public float BleedDamageThreshold = 1f;        // no hit-damage gate now
-        public bool BleedPlayerCausedOnly = true;      // n/a: only stuck arrows bleed
 
         // ---- BLOOD VISUALS (see BloodVisuals.cs). In-house blood system:
         //      a spot ledger + water diffusion; the current build renders it
@@ -177,8 +171,19 @@ namespace TassHunting
         public int BloodMaxSpots = 4096;          // server ledger cap, oldest pruned
         public float BloodRenderDistanceBlocks = 64f;
         public int BloodMaxRenderedSpots = 1200;  // client per-tick render budget
-        public float CorpseBleedSeconds = 4f;     // death pool keeps growing this long
         public bool WaterBloodEnabled = true;     // blood in water diffuses as tiles
+
+        // ---- CORPSE BLOOD (0.11.0, user 2026-07-22: "darken, hold, then fade
+        //      BUT if its a corpse then the blood spreads out wider" +
+        //      "introduce a corpse config setting again and do corpse blood").
+        //      A death pool is the SAME blood look as a trail drop, but the pool
+        //      radius is multiplied by CorpseSpreadMult so a kill leaves a wide
+        //      spreading pool, not a tight dot. Toggle off to suppress death
+        //      pools entirely (bleed trails while alive are unaffected). ----
+        public bool CorpseBloodEnabled = true;    // client: render the death pool spread
+        public float CorpseSpreadMult = 2.5f;     // client: death pool radius x this (1 = same as a trail spot)
+        public float CorpsePoolLifetimeSeconds = 120f; // client: how long the death pool lingers before it dries away (its OWN duration, not the trail's)
+        public bool BloodDiagnostics = false;          // client: log what each corpse pool emits (count/size/lifetime), for tuning
 
         // ---- BLOOD LOOK (0.8.0 - USER-SPEC PANEL: four sections, ONE standard
         //      particle vocabulary per category, everything else json-only.
@@ -222,10 +227,8 @@ namespace TassHunting
         // their lifetime (field 2026-07-22). Set equal to BloodColorHex to
         // disable the age darkening.
         public string BloodColorAgedHex = "#3A0406";
-        public float BloodRefreshSeconds = 4f;          // DEPRECATED (0.9.12): decals no longer re-emit; kept so old configs don't error
         public float BloodOnHitMinDamage = 0.5f;
         public float BloodTrailScale = 1f;              // server: trail/hit deposit amount
-        public float CorpseBloodScale = 1f;             // server: death pool amount (0 = off)
         public float RunningBloodMult = 1.5f;           // server: sprint bleed boost
         public float WaterBloodDecayPerSecond = 0.12f;  // server: water field fade
         public float WaterBloodSpreadPerSecond = 0.02f; // server: water field spread

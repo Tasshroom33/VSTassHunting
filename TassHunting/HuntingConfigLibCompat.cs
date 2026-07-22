@@ -91,6 +91,20 @@ namespace TassHunting
                 SliderFloat("Particle lifetime, max (sec)##splat", () => cfg.BloodSplatter.LifetimeMax, v => cfg.BloodSplatter.LifetimeMax = v, 0.2f, 5f);
             }
 
+            if (ImGui.CollapsingHeader("Corpse Blood"))
+            {
+                ImGui.PushID("corpse");
+                Checkbox("Pool of blood under a kill", () => cfg.CorpseBloodEnabled, v => cfg.CorpseBloodEnabled = v);
+                Help("A dead animal leaves a pool of blood on the ground.");
+                SliderFloat("Pool size", () => cfg.CorpseSpreadMult, v => cfg.CorpseSpreadMult = v, 1f, 6f);
+                Help("How big the pool is. 1 = small, higher = a wide pool.");
+                SliderFloat("Pool stays (sec)", () => cfg.CorpsePoolLifetimeSeconds, v => cfg.CorpsePoolLifetimeSeconds = v, 5f, 600f);
+                Help("How long the pool stays on the ground before it dries up.");
+                Checkbox("Log pool details (debug)", () => cfg.BloodDiagnostics, v => cfg.BloodDiagnostics = v);
+                Help("Prints each pool's size and lifetime. Read it in chat with /tassbloodc.");
+                ImGui.PopID();
+            }
+
             if (ImGui.CollapsingHeader("Water Effect"))
             {
                 Checkbox("Tint surrounding water", () => cfg.TintSurroundingWater, v => cfg.TintSurroundingWater = v);
@@ -104,13 +118,10 @@ namespace TassHunting
             {
                 Checkbox("Enable bleed damage", () => cfg.BleedEnabled, v => cfg.BleedEnabled = v);
                 Checkbox("Spawn splatter on damage", () => cfg.SpawnSplatterOnDamage, v => cfg.SpawnSplatterOnDamage = v);
-                SliderFloat("Bleed time (sec)", () => cfg.BleedDurationSeconds, v => cfg.BleedDurationSeconds = v, 5f, 300f);
+                Help("Bleed lasts as long as an arrow is stuck; each stuck arrow is one stack. No timer or chance roll.");
                 SliderFloat("Damage per tick", () => cfg.BleedStaticPerTick, v => cfg.BleedStaticPerTick = v, 0f, 2f);
                 SliderFloat("Extra damage, % of max HP", () => cfg.BleedPctMaxHealthPerTick, v => cfg.BleedPctMaxHealthPerTick = v, 0f, 10f);
                 SliderFloat("Tick every (sec)", () => cfg.BleedTickSeconds, v => cfg.BleedTickSeconds = v, 1f, 60f);
-                SliderInt("Bleed chance (%)", () => cfg.BleedChancePct, v => cfg.BleedChancePct = v, 0, 100);
-                SliderFloat("Min damage to start", () => cfg.BleedDamageThreshold, v => cfg.BleedDamageThreshold = v, 0f, 10f);
-                Checkbox("Player attacks only", () => cfg.BleedPlayerCausedOnly, v => cfg.BleedPlayerCausedOnly = v);
                 Checkbox("Players can bleed (PvP)", () => cfg.BleedAffectsPlayers, v => cfg.BleedAffectsPlayers = v);
             }
             if (ImGui.CollapsingHeader("Archery"))
