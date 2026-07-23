@@ -223,12 +223,11 @@ namespace TassHunting
             // across - so a circle-radius anchor leaves side shots hanging in
             // air. Model the body as an ellipse in the target's local frame:
             // semi-axis a = box half (spine, local Z), b = a x BodyWidthFraction
-            // (across, local X). Anchor where the reverse flight ray exits that
-            // ellipse, embedded by StickEmbedFraction. Side hits sink deep,
-            // lengthwise hits stay shallow, every species scales by its own box.
+            // (across, local X). ellipseR = distance center->surface along the
+            // reverse-flight ray - this correctly scales the SURFACE POINT with
+            // the body (side shot on a bear anchors farther out than on a hare).
             double wy = GameMath.Clamp(arrow.Pos.Y - target.Pos.Y,
                 target.CollisionBox?.Y1 ?? 0f, target.CollisionBox?.Y2 ?? 1f);
-            double embed = GameMath.Clamp(HuntingModSystem.Cfg.StickEmbedFraction, 0f, 0.9f);
             double widthFrac = GameMath.Clamp(HuntingModSystem.Cfg.StickBodyWidthFraction, 0.15f, 1f);
             double a = 0.3;
             if (target.CollisionBox != null)
@@ -247,7 +246,24 @@ namespace TassHunting
             double ldz = hx * tsin + hz * tcos;
             // Radius where a unit ray from center exits the body ellipse.
             double ellipseR = 1.0 / Math.Sqrt((ldx * ldx) / (b * b) + (ldz * ldz) / (a * a) + 1e-9);
-            double r = ellipseR * (1.0 - embed);
+            // ABSOLUTE EMBED (2026-07-23): the arrow bites a FIXED depth, not a
+            // fraction of the body, so the bite is identical on a bear and a
+            // pampas deer (a fixed-length arrow otherwise looked swallowed on
+            // small game - the whole bug). r = surface - depth. On a body thinner
+            // than the depth (hare/pampas flank), r goes negative: the anchor
+            // sits AT/THROUGH center and the tip pokes out the far side - a
+            // visible pass-through, which beats an arrow lost inside a thin box
+            // (user preference). The cap stops the tip flying a full body-length
+            // past center. Proven with geometry over every test box + baby sizes.
+            double depth = Math.Max(0.0, HuntingModSystem.Cfg.StickEmbedDepth);
+            double passCap = Math.Max(0f, HuntingModSystem.Cfg.StickPassThroughCap);
+            double r = ellipseR - depth;
+            double floor = -ellipseR * passCap; // most the tip may overshoot center
+            if (r < floor) r = floor;
+            if (HuntingModSystem.Cfg.BloodDiagnostics)
+                target.World.Logger.Notification(
+                    "[TassHunting] stick anchor: box a={0:0.000} b={1:0.000}, surfaceR={2:0.000}, depth={3:0.000} -> r={4:0.000} ({5})",
+                    a, b, ellipseR, ellipseR - r, r, r < 0 ? "THROUGH - tip out far side" : "seated inside");
 
             var s = new StuckArrow
             {

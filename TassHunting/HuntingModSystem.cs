@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using HarmonyLib;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
+using Vintagestory.API.Datastructures;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Vintagestory.GameContent;
@@ -97,11 +98,25 @@ namespace TassHunting
         // A stuck SPEAR can be grabbed back at vanilla touch range (arrows stay
         // uncollectible until released - walking near must not yank them out).
         public bool SpearTouchRetrieve = true;
-        // Body-ellipse anchoring (goat-flank playtest): how deep past the body
-        // surface the arrow embeds, and how wide the body is across vs along
-        // the spine (collision boxes are square; real bodies aren't).
-        public float StickEmbedFraction = 0.35f;
+        // Body-ellipse anchoring (goat-flank playtest): how WIDE the body is
+        // across vs along the spine (collision boxes are square; real bodies
+        // aren't). Still a fraction - this shapes the ellipse, it is not a depth.
         public float StickBodyWidthFraction = 0.45f;
+        // ABSOLUTE EMBED DEPTH in blocks (2026-07-23, replaces the old
+        // StickEmbedFraction). The bug it fixes: embedding by a FRACTION of the
+        // body made the absolute bite scale with animal size - a fixed-length
+        // arrow looked swallowed on a pampas deer/hare and planted on a bear
+        // (proven with geometry across every test box). An arrow physically bites
+        // a roughly FIXED depth regardless of what it hit, so this is one absolute
+        // number for the whole animal kingdom - no per-species/baby tuning, since
+        // Attach reads each target's live CollisionBox. Default 0.12 (~head + a
+        // little shaft). On a body thinner than this (hare/pampas flank, side
+        // hits) the anchor drives to/through center so the TIP POKES OUT THE FAR
+        // SIDE - a visible pass-through is better than an arrow lost inside a thin
+        // box (user 2026-07-23, game-feel-over-realism). StickPassThroughCap is
+        // the json-only backstop that stops the tip flying a full body-length out.
+        public float StickEmbedDepth = 0.12f;
+        public float StickPassThroughCap = 1.0f; // json-only: max tip overshoot past center, in body-radii
 
         // ---- ARCHERY (see ArcheryTweaks.cs). Bows are pure vanilla
         //      (accuracy crude -0.05 .. recurve +0.3); only arrows are tuned. ----
@@ -158,6 +173,19 @@ namespace TassHunting
         public float BleedStaticPerTick = 0.05f;       // flat hp per stack per tick
         public float BleedPctMaxHealthPerTick = 0.5f;  // % of max hp per stack per tick
         public bool BleedAffectsPlayers = true;        // PvP: stuck arrows bleed humans too
+        // WHO SHOWS RED BLOOD (user 2026-07-23): animals and players show blood as
+        // they always have; RUST CREATURES are the only new distinction, gated by
+        // one plain checkbox (default OFF - red blood off a rust being reads
+        // wrong). Sticky arrows and the bleed DoT still apply to EVERY entity
+        // (combat, not viscera); this gates the VISUAL blood only. Player VISUAL
+        // blood is deliberately NOT its own toggle - the existing "Players can
+        // bleed (PvP)" (BleedAffectsPlayers) already covers the player case at the
+        // damage layer; a second player switch would just confuse.
+        //   NOTE: a NEW vanilla/modded rust being we do not yet name is treated
+        //   as an animal (shows blood) until its name is added - it never breaks,
+        //   it just is not recognized as rust yet. That is the accepted tradeoff
+        //   for a name-the-entity classifier (see HuntingModSystem.IsRustCreature).
+        public bool BloodEffectsForRustCreatures = false;
 
         // ---- BLOOD VISUALS (see BloodVisuals.cs). In-house blood system:
         //      a spot ledger + water diffusion; the current build renders it
@@ -258,6 +286,65 @@ namespace TassHunting
     public class HuntingModSystem : ModSystem
     {
         public static HuntingConfig Cfg = new HuntingConfig();
+
+        /// <summary>RUST/TEMPORAL beings, keyed on the engine's own ENTITY TAGS -
+        /// not a class list, not code strings (decompile-verified against 1.22.3,
+        /// and it lands on the [[rule-not-instance]] law: key on the attribute).
+        /// Every rust being in vanilla carries one of these two top-level JSON
+        /// tags: organic-rust ones (drifter, shiver, BOWTORN) are "rust-creature";
+        /// metal ones (locust, bell, eidolon) are "mechanical". Every animal
+        /// carries "animal" and neither of these (verified across 33 animal
+        /// JSONs). This subsumes what was a 5-type list + a bowtorn code hack -
+        /// bowtorn is "rust-creature" like the rest, so the special case is gone.
+        ///
+        /// WHY TAGS BEAT the Type check: robust to class renames, AUTO-CATCHES any
+        /// modded being that tags itself rust-creature/mechanical, one cheap
+        /// bitmask op (Vector256 AND) vs 6 reflective type tests, and Entity.Tags
+        /// is synced to the client (Entity.cs:48-51), where blood spawns.
+        ///
+        /// WE OWN NOTHING: this only READS the entity's tags at blood-spawn time -
+        /// no patching, no behavior injection (that is how Footprints does it and
+        /// it would stomp other mods editing those entities).
+        ///
+        /// Tag INDICES are reassigned every game start and are NOT stable
+        /// (Entity.cs:51), so we resolve the set by NAME through EntityTagRegistry
+        /// once (lazily, after registries load), cache it, and never hardcode a
+        /// bit position. If the names ever fail to resolve the set is empty and
+        /// everything reads as an animal (shows blood) - it degrades, never
+        /// crashes. If VS adds a new rust tag we do not name, that being shows
+        /// blood until the name is added - the accepted, non-breaking tradeoff.</summary>
+        private static readonly string[] RustTagNames = { "rust-creature", "mechanical" };
+        private static TagSetFast rustTags;
+        private static bool rustTagsResolved;
+
+        private static void EnsureRustTags(Entity ent)
+        {
+            if (rustTagsResolved) return;
+            var api = ent?.World?.Api;
+            var reg = api?.EntityTagRegistry;
+            if (reg == null) return; // registries not up yet - retry next call
+            reg.TryCreateTagSet(out rustTags, RustTagNames);
+            rustTagsResolved = true; // resolved once; empty set if names not found
+        }
+
+        public static bool IsRustCreature(Entity ent)
+        {
+            if (ent == null) return false;
+            EnsureRustTags(ent);
+            if (!rustTagsResolved || rustTags.IsEmpty) return false;
+            return ent.Tags.Overlaps(in rustTags);
+        }
+
+        /// <summary>Should this entity show red blood? Rust creatures only when
+        /// the player opted in; everything else (animals, players) always shows
+        /// blood as before. Sticky arrows and bleed DoT are unaffected by this;
+        /// it gates the VISUAL blood only.</summary>
+        public static bool ShowsBlood(Entity ent)
+        {
+            if (ent == null) return false;
+            if (IsRustCreature(ent)) return Cfg.BloodEffectsForRustCreatures;
+            return true;
+        }
 
         // ONE Harmony application per PROCESS, not per ModSystem instance: in
         // single player the client and the local server each get their own

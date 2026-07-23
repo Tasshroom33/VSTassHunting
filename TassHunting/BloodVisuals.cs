@@ -220,6 +220,15 @@ namespace TassHunting
                 double dx = ent.Pos.X - plr.Pos.X, dz = ent.Pos.Z - plr.Pos.Z;
                 if (dx * dx + dz * dz > range2) continue;
 
+                // RUST CREATURES bleed NO red (user 2026-07-23) unless opted in:
+                // a rust being takes the arrows and the DoT (combat, gated
+                // server-side) but leaves no viscera. Huntable = skinnable
+                // (EntityBehaviorHarvestable), the general rule, not a name list.
+                // Skipping here suppresses every deposit path - hit splatter, DoT
+                // splatter, trail, corpse pool, water - in one place. We also
+                // never start a Track for it, so nothing is buffered to replay.
+                if (!HuntingModSystem.ShowsBlood(ent)) { tracks.Remove(ent.EntityId); continue; }
+
                 int stacks = ent.WatchedAttributes.GetInt("thbleed", 0);
                 int hurtC = ent.WatchedAttributes.GetInt("onHurtCounter", 0);
                 bool tracked = tracks.TryGetValue(ent.EntityId, out var tr);

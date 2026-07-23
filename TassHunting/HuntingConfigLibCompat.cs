@@ -71,6 +71,13 @@ namespace TassHunting
             // ---- BLOOD (0.8.0): exactly the user-spec four sections with the
             //      ONE standard particle vocabulary. Everything else json-only.
 
+            // Client-side blood look, governs ALL blood below (trails, splatter,
+            // pool, water) - so it sits above the four sections, not greyed out on
+            // a server. Rust creatures (drifters, locusts) still take arrows and
+            // bleed damage; this only controls whether they show red blood.
+            Checkbox("Enable blood effects for rust creatures", () => cfg.BloodEffectsForRustCreatures, v => cfg.BloodEffectsForRustCreatures = v);
+            Help("Off (default): drifters, locusts and other rust beings show no red blood, since they are not living animals. They still take stuck arrows and bleed damage. On: they bleed red like animals.");
+
             if (ImGui.CollapsingHeader("Blood Trails"))
             {
                 Checkbox("Enable blood trails##trails", () => cfg.BloodTrails.Enabled, v => cfg.BloodTrails.Enabled = v);
