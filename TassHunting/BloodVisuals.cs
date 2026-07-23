@@ -220,13 +220,16 @@ namespace TassHunting
                 double dx = ent.Pos.X - plr.Pos.X, dz = ent.Pos.Z - plr.Pos.Z;
                 if (dx * dx + dz * dz > range2) continue;
 
-                // RUST CREATURES bleed NO red (user 2026-07-23) unless opted in:
-                // a rust being takes the arrows and the DoT (combat, gated
-                // server-side) but leaves no viscera. Huntable = skinnable
-                // (EntityBehaviorHarvestable), the general rule, not a name list.
-                // Skipping here suppresses every deposit path - hit splatter, DoT
-                // splatter, trail, corpse pool, water - in one place. We also
-                // never start a Track for it, so nothing is buffered to replay.
+                // CAN THIS THING BLEED? Early-out BEFORE any attribute read or
+                // deposit. Only players + flesh-tagged creatures (animal/huntable/
+                // human/humanoid) pass; rust creatures pass only when opted in.
+                // Everything else - dropped items, burning logs/clay, arrows, boats
+                // - is skipped here, which is the fix for the "kiln makes blood"
+                // bug: a burning EntityItem takes VANILLA fire damage every tick
+                // (EntityItem.ReceiveDamage bumps onHurtCounter), and we used to
+                // react to that beat. Now a non-bleeder never gets read, tracked,
+                // or deposited (suppresses hit splatter, DoT splatter, trail, pool,
+                // water in one place). See HuntingModSystem.ShowsBlood/CanBleed.
                 if (!HuntingModSystem.ShowsBlood(ent)) { tracks.Remove(ent.EntityId); continue; }
 
                 int stacks = ent.WatchedAttributes.GetInt("thbleed", 0);
@@ -257,6 +260,14 @@ namespace TassHunting
                 {
                     tr.LastHurtCounter = hurtC;
                     float dmg = ent.WatchedAttributes.GetFloat("onHurt", 0f);
+                    // DIAGNOSTIC (diagnostics-every-iteration): name the exact
+                    // entity that triggered blood. This is how we PROVED the
+                    // "kiln makes blood" bug was a burning EntityItem, not a
+                    // creature - turn on BloodDiagnostics and any future false
+                    // positive prints its entity code + damage here.
+                    if (cfg.BloodDiagnostics)
+                        capi.Logger.Notification("[TassHunting] hit-blood on {0} (dmg {1:0.00})",
+                            ent.Code?.ToShortString() ?? ent.GetType().Name, dmg);
                     if (cfg.SpawnSplatterOnDamage && dmg >= cfg.BloodOnHitMinDamage && trailScale > 0f)
                     {
                         // ONE SHOT per damage event (0.9.1 field: the pulse

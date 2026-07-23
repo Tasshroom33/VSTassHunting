@@ -314,36 +314,71 @@ namespace TassHunting
         /// crashes. If VS adds a new rust tag we do not name, that being shows
         /// blood until the name is added - the accepted, non-breaking tradeoff.</summary>
         private static readonly string[] RustTagNames = { "rust-creature", "mechanical" };
-        private static TagSetFast rustTags;
-        private static bool rustTagsResolved;
+        // FLESH tags = "this thing has blood to spill" (real 1.22 vocabulary,
+        // enumerated from the game's own entity JSONs). animal + huntable cover
+        // wildlife/livestock; human + humanoid cover people/traders/villagers.
+        // Everything that CANNOT bleed - dropped items, logs, clay, arrows,
+        // boats, structures, bots - carries none of these (items carry NO tag at
+        // all and have no health behavior). This is the fix for the "burning
+        // logs/clay make blood" bug: EntityItem takes FIRE damage every tick near
+        // a lit kiln (EntityItem.ReceiveDamage -> base sets onHurtCounter/onHurt),
+        // which the client blood system watched with no creature filter. Now blood
+        // requires a flesh tag, so an item's fire-damage beat is ignored.
+        private static readonly string[] BleedTagNames = { "animal", "huntable", "human", "humanoid" };
+        private static TagSetFast rustTags, bleedTags;
+        private static bool rustTagsResolved, bleedTagsResolved;
 
-        private static void EnsureRustTags(Entity ent)
+        private static void EnsureTags(Entity ent)
         {
-            if (rustTagsResolved) return;
-            var api = ent?.World?.Api;
-            var reg = api?.EntityTagRegistry;
+            if (rustTagsResolved && bleedTagsResolved) return;
+            var reg = ent?.World?.Api?.EntityTagRegistry;
             if (reg == null) return; // registries not up yet - retry next call
             reg.TryCreateTagSet(out rustTags, RustTagNames);
-            rustTagsResolved = true; // resolved once; empty set if names not found
+            reg.TryCreateTagSet(out bleedTags, BleedTagNames);
+            rustTagsResolved = bleedTagsResolved = true; // resolved once; empty if names not found
         }
 
         public static bool IsRustCreature(Entity ent)
         {
             if (ent == null) return false;
-            EnsureRustTags(ent);
+            EnsureTags(ent);
             if (!rustTagsResolved || rustTags.IsEmpty) return false;
             return ent.Tags.Overlaps(in rustTags);
         }
 
-        /// <summary>Should this entity show red blood? Rust creatures only when
-        /// the player opted in; everything else (animals, players) always shows
-        /// blood as before. Sticky arrows and bleed DoT are unaffected by this;
-        /// it gates the VISUAL blood only.</summary>
+        /// <summary>Can this entity actually bleed? Players always; anything with a
+        /// FLESH tag (animal/huntable/human/humanoid). A health-bearing creature
+        /// that predates the 1.22 tag system (older/modded mob with NO tags at all)
+        /// still bleeds via the fallback - but a dropped item/log/clay has no health
+        /// behavior AND no tags, so it never does. Rust is handled separately in
+        /// ShowsBlood (checked first, toggle-gated).</summary>
+        public static bool CanBleed(Entity ent)
+        {
+            if (ent == null) return false;
+            if (ent is EntityPlayer) return true; // people bleed
+            EnsureTags(ent);
+            bool tagsUsable = bleedTagsResolved && !bleedTags.IsEmpty;
+            if (tagsUsable && ent.Tags.Overlaps(in bleedTags)) return true;
+            // Health-behavior fallback: a real mob with a health behavior bleeds; an
+            // item/log/clay (no health behavior) never does. Guarded by IsEmpty when
+            // tags ARE usable, so a TAGGED non-creature (boat=inanimate w/ health) is
+            // still excluded; if the flesh tags failed to resolve at all (tagsUsable
+            // false), fall back to health alone so a tag hiccup never stops animals
+            // from bleeding - it degrades to "creatures bleed", never "nothing does".
+            if ((!tagsUsable || ent.Tags.IsEmpty) && ent.GetBehavior<EntityBehaviorHealth>() != null) return true;
+            return false;
+        }
+
+        /// <summary>Should this entity show red blood? Only things that CAN bleed -
+        /// players and non-rust creatures. Rust creatures only when the player opted
+        /// in. Items, logs, clay, arrows, boats, structures show nothing (they have
+        /// no flesh). Sticky arrows and bleed DoT are unaffected; this gates the
+        /// VISUAL blood only.</summary>
         public static bool ShowsBlood(Entity ent)
         {
             if (ent == null) return false;
             if (IsRustCreature(ent)) return Cfg.BloodEffectsForRustCreatures;
-            return true;
+            return CanBleed(ent);
         }
 
         // ONE Harmony application per PROCESS, not per ModSystem instance: in
