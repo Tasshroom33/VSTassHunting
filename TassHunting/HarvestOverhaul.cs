@@ -36,6 +36,33 @@ namespace TassHunting
     /// </summary>
     public static class HarvestOverhaul
     {
+        private static readonly AccessTools.FieldRef<EntityBehaviorHarvestable, BlockDropItemStack[]> jsonDropsRef =
+            AccessTools.FieldRefAccess<EntityBehaviorHarvestable, BlockDropItemStack[]>("jsonDrops");
+
+        /// <summary>GenerateDrops calls Resolve() on the behavior's jsonDrops array,
+        /// leaving live ItemStacks (ResolvedItemstack) attached to it for the rest of
+        /// the corpse's life. Vanilla never reads them again outside GenerateDrops
+        /// (the rolled loot already sits in the behavior inventory, and DropsGenerated
+        /// blocks a re-roll), but other mods reflect this array on corpse interaction -
+        /// Butchering JsonConvert-serializes it for its carcass pickup, and a resolved
+        /// stack's Collectible.Attributes makes that serialize throw ("Can iterate only
+        /// over a JObject or JArray"), which killed carcass pickup on servers running
+        /// both mods. Strip the resolved stacks so the array is back to its at-rest
+        /// vanilla state after our early pre-roll.</summary>
+        public static void UnresolveJsonDrops(EntityBehaviorHarvestable bh)
+        {
+            try
+            {
+                var drops = jsonDropsRef(bh);
+                if (drops == null) return;
+                foreach (var drop in drops)
+                {
+                    if (drop != null) drop.ResolvedItemstack = null;
+                }
+            }
+            catch (Exception) { /* reflection miss on a future game version: leave vanilla state alone */ }
+        }
+
         /// <summary>Spill the harvest inventory onto the ground and remove the
         /// corpse through the engine's own decay path. Server-side only.</summary>
         public static void SpillAndDecay(EntityBehaviorHarvestable bh, Entity entity)
@@ -119,6 +146,7 @@ namespace TassHunting
                 var player = (damageSourceForDeath?.GetCauseEntity() as EntityPlayer)?.Player;
                 if (player == null) return; // not a player kill: vanilla corpse
                 harvestBh.GenerateDrops(player);
+                HarvestOverhaul.UnresolveJsonDrops(harvestBh); // see UnresolveJsonDrops: resolved stacks break Butchering's carcass pickup
                 if (harvestBh.Inventory == null || !harvestBh.Inventory.Empty) return; // real loot: wait for the knife
                 entity.WatchedAttributes.SetBool("harvested", true);
             }
