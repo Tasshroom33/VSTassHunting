@@ -140,6 +140,15 @@ namespace TassHunting
             var entity = __instance.entity;
             if (entity == null || entity.World.Side != EnumAppSide.Server) return;
 
+            // Butchering (modid "butchering") owns the whole corpse lifecycle of any animal it marks
+            // butcherable: empty-hand pickup -> skinning hook -> butcher table, and the pickup DESPAWNS
+            // the entity. Its pickup also hard-refuses corpses flagged "harvested", and its own balance
+            // patch halves field-harvest rolls for those animals - so our death-time pre-roll comes up
+            // empty far more often there, and flagging those corpses harvested + fast-decaying them
+            // randomly robbed players of hook/table processing. Detected by the registered behavior
+            // code, so this is a soft dependency: no Butchering installed, nothing changes.
+            if (entity.HasBehavior("butcherable")) return; // leave the corpse pristine for Butchering
+
             var harvestBh = entity.GetBehavior<EntityBehaviorHarvestable>();
             if (harvestBh != null)
             {
