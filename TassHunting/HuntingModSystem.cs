@@ -170,9 +170,28 @@ namespace TassHunting
         // gate. Balance: 0.05 flat + 0.5% max-HP per stack, 3s tick, 60s stick.
         public bool BleedEnabled = true;
         public float BleedTickSeconds = 3f;            // tick cadence
-        public float BleedStaticPerTick = 0.05f;       // flat hp per stack per tick
-        public float BleedPctMaxHealthPerTick = 0.5f;  // % of max hp per stack per tick
-        public bool BleedAffectsPlayers = true;        // PvP: stuck arrows bleed humans too
+        public float BleedStaticPerTick = 0.05f;       // flat hp per wound per tick
+        public float BleedPctMaxHealthPerTick = 0.5f;  // % of max hp per wound per tick
+        public bool BleedAffectsPlayers = true;        // PvP + creature bites bleed humans too
+
+        // ---- WOUND MODEL (2026-07-27): sharp hits open wounds; tier + combo scale them ----
+        // A hit below this final damage opens no wound (grazes, fully-absorbed hits).
+        public float BleedMinDamage = 0.5f;
+        // How long a wound bleeds before closing. An arrow still embedded keeps its wound open
+        // (StickSeconds governs the arrow; on release the wound gets this window again).
+        public float BleedWoundSeconds = 45f;
+        // Wound strength per damage tier of the hit: strength = weight * (1 + step * tier).
+        // 0.25 -> flint 1.25x, copper 1.5x, bronze 1.75x, iron 2x, steel 2.25x.
+        public float BleedTierStep = 0.25f;
+        // Each additional open wound multiplies the WHOLE bleed by this (the combo payoff).
+        public float BleedComboMultiplier = 1.3f;
+        // Hard cap on open wounds per animal; also caps the combo exponent.
+        public int BleedMaxWounds = 10;
+        // Wound weight by how the hit was delivered (rule by damage type + tool kind, not items).
+        public float BleedArrowWoundWeight = 1f;
+        public float BleedThrownSpearWoundWeight = 1.5f;
+        public float BleedSpearStabWoundWeight = 1f;
+        public float BleedSlashWoundWeight = 0.75f;
         // WHO SHOWS RED BLOOD (user 2026-07-23): animals and players show blood as
         // they always have; RUST CREATURES are the only new distinction, gated by
         // one plain checkbox (default OFF - red blood off a rust being reads

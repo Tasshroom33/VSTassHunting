@@ -313,15 +313,16 @@ namespace TassHunting
 
         private readonly List<long> toRemove = new List<long>();
 
-        /// <summary>Recount arrows stuck in a target and push the count to the
-        /// bleed system (arrows ARE the bleed stacks, 2026-07-22 model).</summary>
+        /// <summary>Recount which projectiles are stuck in a target and sync the bleed system's
+        /// wound pins (2026-07-27 wound model: an embedded arrow keeps ITS wound open; releases
+        /// let that wound start closing normally).</summary>
         private void SyncBleedFor(long targetId)
         {
             if (targetId == 0L) return;
-            int count = 0;
-            foreach (var kv in stuck) if (kv.Value.TargetId == targetId) count++;
+            var ids = new System.Collections.Generic.HashSet<long>();
+            foreach (var kv in stuck) if (kv.Value.TargetId == targetId) ids.Add(kv.Key);
             var target = sapi.World.GetEntityById(targetId);
-            if (target != null) BleedSystem.SetArrowStacks(target, count);
+            if (target != null) BleedSystem.SyncArrowPins(target, ids);
         }
 
         private void OnTick(float dt)

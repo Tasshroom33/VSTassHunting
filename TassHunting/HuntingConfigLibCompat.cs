@@ -137,11 +137,21 @@ namespace TassHunting
                 Checkbox("Spawn splatter on damage", () => cfg.SpawnSplatterOnDamage, v => cfg.SpawnSplatterOnDamage = v);
                 BeginServer(serverDecides);
                 Checkbox("Enable bleed damage", () => cfg.BleedEnabled, v => cfg.BleedEnabled = v);
-                Help("Bleed lasts as long as an arrow is stuck; each stuck arrow is one stack. No timer or chance roll.");
-                SliderFloat("Damage per tick", () => cfg.BleedStaticPerTick, v => cfg.BleedStaticPerTick = v, 0f, 2f);
+                Help("Sharp hits open wounds: arrows, thrown spears, spear stabs, knife/sword/axe slashes. Blunt never bleeds. Better metal = stronger wound; every extra wound multiplies the whole bleed. An arrow left in the animal keeps its wound open.");
+                SliderFloat("Damage per wound per tick", () => cfg.BleedStaticPerTick, v => cfg.BleedStaticPerTick = v, 0f, 2f);
                 SliderFloat("Extra damage, % of max HP", () => cfg.BleedPctMaxHealthPerTick, v => cfg.BleedPctMaxHealthPerTick = v, 0f, 10f);
                 SliderFloat("Tick every (sec)", () => cfg.BleedTickSeconds, v => cfg.BleedTickSeconds = v, 1f, 60f);
-                Checkbox("Players can bleed (PvP)", () => cfg.BleedAffectsPlayers, v => cfg.BleedAffectsPlayers = v);
+                SliderFloat("Wound closes after (sec)", () => cfg.BleedWoundSeconds, v => cfg.BleedWoundSeconds = v, 5f, 300f);
+                SliderFloat("Smallest hit that wounds", () => cfg.BleedMinDamage, v => cfg.BleedMinDamage = v, 0f, 5f);
+                SliderFloat("Bonus per metal tier", () => cfg.BleedTierStep, v => cfg.BleedTierStep = v, 0f, 1f);
+                Help("Wound strength = 1 + this x tier. At 0.25: flint 1.25x, copper 1.5x, bronze 1.75x, iron 2x, steel 2.25x.");
+                SliderFloat("Each extra wound multiplies bleed by", () => cfg.BleedComboMultiplier, v => cfg.BleedComboMultiplier = v, 1f, 2f);
+                SliderInt("Max wounds per animal", () => cfg.BleedMaxWounds, v => cfg.BleedMaxWounds = v, 1, 20);
+                SliderFloat("Arrow wound size", () => cfg.BleedArrowWoundWeight, v => cfg.BleedArrowWoundWeight = v, 0f, 3f);
+                SliderFloat("Thrown spear wound size", () => cfg.BleedThrownSpearWoundWeight, v => cfg.BleedThrownSpearWoundWeight = v, 0f, 3f);
+                SliderFloat("Spear stab wound size", () => cfg.BleedSpearStabWoundWeight, v => cfg.BleedSpearStabWoundWeight = v, 0f, 3f);
+                SliderFloat("Slash wound size (knife, sword, axe)", () => cfg.BleedSlashWoundWeight, v => cfg.BleedSlashWoundWeight = v, 0f, 3f);
+                Checkbox("Players can bleed (PvP + animal bites)", () => cfg.BleedAffectsPlayers, v => cfg.BleedAffectsPlayers = v);
                 EndServer(serverDecides);
             }
             if (ImGui.CollapsingHeader("Archery"))

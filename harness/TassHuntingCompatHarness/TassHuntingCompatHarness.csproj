@@ -24,6 +24,16 @@
       <HintPath>$(VsInstall)/Lib/Newtonsoft.Json.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="VSEssentials">
+      <HintPath>$(VsInstall)/Mods/VSEssentials.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- The mod under test: resolved at runtime because the mod loader loads both dlls
+         (same cross-mod pattern TassModFixesTweaks uses with Vigor.dll). Never copy it. -->
+    <Reference Include="TassHunting">
+      <HintPath>..\..\TassHunting\bin\Release\Mods\mod\TassHunting.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>
