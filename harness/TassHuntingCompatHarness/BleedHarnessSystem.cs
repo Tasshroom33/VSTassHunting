@@ -120,6 +120,13 @@ namespace TassHuntingCompatHarness
                 Check("powershot-cue-rearms", !PowerShot.CrossedThreshold(9002, 0.2f, 1.54f)
                     && PowerShot.CrossedThreshold(9002, 1.6f, 1.54f));
 
+                // Predator speed: an adult wolf's chase task must be vanilla 0.045 times the
+                // configured multiplier - pinned to the shipped vanilla value so a silently
+                // inactive speed pass cannot slip through as a pass.
+                float wolfChase = ReadTaskMovespeed("wolf-", "-adult-", "seekentity");
+                Check("predspeed-wolf-chase-scaled",
+                    Near(wolfChase, 0.045f * HuntingModSystem.Cfg.PredatorSpeedMult));
+
                 RunLiveSetup();
             }
             catch (Exception e) { Crash(e); }
@@ -140,6 +147,26 @@ namespace TassHuntingCompatHarness
             HuntingModSystem.Cfg.BleedWoundSeconds = 6f;
 
             _sapi.Event.RegisterCallback(_ => RunLiveHits(), 1500);
+        }
+
+        /// <summary>First matching entity type's first taskai task of the given code: movespeed.</summary>
+        private float ReadTaskMovespeed(string pathPrefix, string pathContains, string taskCode)
+        {
+            var et = System.Linq.Enumerable.FirstOrDefault(_sapi.World.EntityTypes,
+                t => t?.Code?.Path != null && t.Code.Path.StartsWith(pathPrefix) && t.Code.Path.Contains(pathContains));
+            var behaviors = et?.Server?.BehaviorsAsJsonObj;
+            if (behaviors == null) return -1f;
+            foreach (var jo in behaviors)
+            {
+                if (!(jo?.Token is Newtonsoft.Json.Linq.JObject t) || t["code"]?.ToString() != "taskai") continue;
+                if (!(t["aitasks"] is Newtonsoft.Json.Linq.JArray tasks)) continue;
+                foreach (var jt in tasks)
+                {
+                    if (jt is Newtonsoft.Json.Linq.JObject task && task["code"]?.ToString() == taskCode && task["movespeed"] != null)
+                        return (float)task["movespeed"];
+                }
+            }
+            return -1f;
         }
 
         private Entity? SpawnPig(double x, double y, double z)

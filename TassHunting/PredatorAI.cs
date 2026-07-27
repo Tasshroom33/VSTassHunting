@@ -3,6 +3,7 @@ using HarmonyLib;
 using Newtonsoft.Json.Linq;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
+using Vintagestory.API.Datastructures;
 using Vintagestory.GameContent;
 
 namespace TassHunting
@@ -61,6 +62,50 @@ namespace TassHunting
                 }
             }
             api.Logger.Event("[TassHunting] PredatorAI: hardened {0} apex types, adjusted {1} pack-hunter types.", apex, pack);
+        }
+
+        /// <summary>
+        /// PREDATOR SPEED (2026-07-27, user spec "all predators 20% faster"): classification is the
+        /// vanilla entity TAG VOCABULARY, not a species list - anything tagged "predator" AND "adult"
+        /// (wolves, bears, foxes, hyenas, and any modded creature that declares the tags; pups lack
+        /// the adult tag and keep pup speed). Applied at AssetsFinalize by scaling every taskai
+        /// task's movespeed, so stalking, charging and disengaging all speed up together and the
+        /// pursuit keeps its character. Its own gate: a multiplier of 1 means off.
+        /// </summary>
+        public static void ApplySpeed(ICoreAPI api)
+        {
+            float mult = HuntingModSystem.Cfg.PredatorSpeedMult;
+            if (mult <= 0f || Math.Abs(mult - 1f) < 0.001f) return;
+
+            var reg = api.EntityTagRegistry;
+            if (reg == null) return;
+            reg.TryCreateTagSet(out TagSetFast predatorTag, new[] { "predator" });
+            reg.TryCreateTagSet(out TagSetFast adultTag, new[] { "adult" });
+            if (predatorTag.IsEmpty)
+            {
+                api.Logger.Warning("[TassHunting] 'predator' entity tag not found in this game version - predator speed boost inactive.");
+                return;
+            }
+
+            int types = 0, tasksTouched = 0;
+            foreach (var et in api.World.EntityTypes)
+            {
+                if (et?.Tags == null || !et.Tags.Overlaps(in predatorTag)) continue;
+                if (!adultTag.IsEmpty && !et.Tags.Overlaps(in adultTag)) continue; // pups keep pup speed
+
+                var taskai = FindServerBehavior(et, "taskai");
+                if (!(taskai?["aitasks"] is JArray aitasks)) continue;
+                bool touched = false;
+                foreach (var jt in aitasks)
+                {
+                    if (!(jt is JObject task) || task["movespeed"] == null) continue;
+                    task["movespeed"] = F(task["movespeed"], 0f) * mult;
+                    touched = true;
+                    tasksTouched++;
+                }
+                if (touched) types++;
+            }
+            api.Logger.Event("[TassHunting] predator speed x{0:0.##}: {1} adult predator types, {2} AI tasks scaled.", mult, types, tasksTouched);
         }
 
         private static bool MatchesAny(string path, string[] prefixes)

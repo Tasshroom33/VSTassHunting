@@ -184,6 +184,8 @@ namespace TassHunting
             if (ImGui.CollapsingHeader("Animals"))
             {
                 BeginServer(serverDecides);
+                SliderFloat("Predator speed multiplier", () => cfg.PredatorSpeedMult, v => cfg.PredatorSpeedMult = v, 0.5f, 2f);
+                Help("All adult predators (wolves, bears, foxes, hyenas - anything the game tags as an adult predator) move this much faster. 1 = vanilla speed. Needs world rejoin.");
                 Checkbox("Animals flee away from you", () => cfg.FleeAwayFromHunterEnabled, v => cfg.FleeAwayFromHunterEnabled = v);
                 Help("Vanilla sometimes makes a shot animal run straight at the shooter.");
                 Checkbox("Tougher predators", () => cfg.PredatorOverhaulEnabled, v => cfg.PredatorOverhaulEnabled = v);

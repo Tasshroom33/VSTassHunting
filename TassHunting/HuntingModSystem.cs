@@ -55,6 +55,9 @@ namespace TassHunting
 
         // ---- PREDATOR OVERHAUL (see PredatorAI.cs) ----
         public bool PredatorOverhaulEnabled = true;
+        // All ADULT predators (vanilla "predator"+"adult" entity tags: wolves, bears, foxes,
+        // hyenas, modded creatures that tag themselves) move this much faster. 1 = off.
+        public float PredatorSpeedMult = 1.2f;
         // Apex predators: always charge, never flee, spot you from range.
         public string[] ApexCodes = { "bear-black", "bear-brown", "bear-polar" };
         public float ApexSeekRange = 30f;        // unprovoked (vanilla 16)
@@ -483,6 +486,8 @@ namespace TassHunting
             if (api.Side != EnumAppSide.Server) return;
             try { PredatorAI.ApplyServer(api); }
             catch (Exception ex) { api.Logger.Error("[TassHunting] PredatorAI apply failed: {0}", ex); }
+            try { PredatorAI.ApplySpeed(api); }
+            catch (Exception ex) { api.Logger.Error("[TassHunting] predator speed apply failed: {0}", ex); }
         }
 
         private ICoreServerAPI sapi;
