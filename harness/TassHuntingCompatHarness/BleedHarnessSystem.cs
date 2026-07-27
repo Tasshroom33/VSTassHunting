@@ -22,6 +22,7 @@ namespace TassHuntingCompatHarness
         private int _total, _passed;
         private Entity? _pig, _attacker;
         private float _maxHealth;
+        private int _onHurtBase;
 
         public override bool ShouldLoad(EnumAppSide forSide) => forSide == EnumAppSide.Server;
 
@@ -174,6 +175,10 @@ namespace TassHuntingCompatHarness
                                         // Graze below the wound threshold must not wound either.
                                         _pig.ReceiveDamage(Sharp(2), 0.1f);
                                         Check("live-blunt-and-graze-ignored", _pig.WatchedAttributes.GetInt("thbleed", 0) == 2);
+                                        // Bleed ticks between here and the tick check must NOT bump the
+                                        // engine's hurt counter - that bump arms the 500ms damage-immunity
+                                        // window that made arrows whiff against bleeding animals.
+                                        _onHurtBase = _pig.WatchedAttributes.GetInt("onHurtCounter", 0);
                                         _sapi.Event.RegisterCallback(_4 => RunLiveTickCheck(), 4000);
                                     }
                                     catch (Exception e) { Crash(e); }
@@ -199,6 +204,7 @@ namespace TassHuntingCompatHarness
                 float reported = _pig!.WatchedAttributes.GetFloat("thbleeddmg", -1f);
                 Check("live-tick-damage-matches-formula", Near(reported, expected));
                 Check("live-tick-counter-moved", _pig.WatchedAttributes.GetInt("thbleedtick", 0) >= 1);
+                Check("live-ticks-dont-arm-invuln", _pig.WatchedAttributes.GetInt("onHurtCounter", 0) == _onHurtBase);
 
                 var hb = _pig.GetBehavior<EntityBehaviorHealth>();
                 Check("live-health-dropped", hb != null && hb.Health < _maxHealth);

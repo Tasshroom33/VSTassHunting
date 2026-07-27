@@ -310,7 +310,18 @@ namespace TassHunting
                     st.Ent.WatchedAttributes.SetInt("thbleedtick", tickN);
                     st.Ent.WatchedAttributes.SetFloat("thbleeddmg", total);
                     // Internal/Injury never re-procs OnSharpHit (gated there).
-                    st.Ent.ReceiveDamage(new DamageSource { Source = EnumDamageSource.Internal, Type = EnumDamageType.Injury }, total);
+                    // TicksPerDuration=2 (with Duration zero): damage still applies INSTANTLY
+                    // (EntityBehaviorHealth.TurnIntoDoTEffect requires Duration>0), but the
+                    // onHurt bump at Entity.cs:1001 requires TicksPerDuration<2 - so our tick
+                    // does NOT arm the 500ms invulnerable window. Without this, a bleeding
+                    // animal was damage-immune ~1s in 6 and player arrows whiffed silently
+                    // (no ping, no damage, no wound) while still sticking.
+                    st.Ent.ReceiveDamage(new DamageSource
+                    {
+                        Source = EnumDamageSource.Internal,
+                        Type = EnumDamageType.Injury,
+                        TicksPerDuration = 2
+                    }, total);
                 }
                 if (retire != null) foreach (long id in retire) Active.Remove(id);
             }
