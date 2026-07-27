@@ -80,6 +80,15 @@ namespace TassHunting
         public bool EmptyCorpseAutoRemove = true;
         public float EmptyCorpseRemoveSeconds = 10f;
 
+        // ---- POWER SHOT (see PowerShot.cs): draw past full accuracy for bonus damage ----
+        public bool PowerShotEnabled = true;
+        // Extra hold time past YOUR full-accuracy moment (stat-derived, ~0.54s default player).
+        public float PowerShotExtraDrawSeconds = 1.0f;
+        // Damage multiplier for a power shot. 1.25 = 25% more.
+        public float PowerShotDamageMult = 1.25f;
+        // Quiet click for the shooter the moment the extra hold pays off.
+        public bool PowerShotDrawCue = true;
+
         // ---- STICKY PROJECTILES (see StickyProjectiles.cs) ----
         // Master: arrows/spears ride the animal they hit instead of vanishing.
         public bool StickyProjectilesEnabled = true;
@@ -601,9 +610,18 @@ namespace TassHunting
                       ?? System.Linq.Enumerable.FirstOrDefault(methods, m => m.Name == "PreInitialize");
                 if (mi == null) { api.Logger.Warning("[TassHunting] PreInitialize not found; true-aim inactive."); return; }
                 harmony.Patch(mi, postfix: new HarmonyMethod(typeof(HuntingModSystem), nameof(TrueAimPostfix)));
-                api.Logger.Event("[TassHunting] true-aim spawn correction active (patched {0}).", mi.Name);
+                // Power shot rides the SAME verified binding: this is the one PreInitialize the
+                // engine actually calls at spawn, and the last moment Damage can be scaled.
+                harmony.Patch(mi, postfix: new HarmonyMethod(typeof(HuntingModSystem), nameof(PowerShotPostfix)));
+                api.Logger.Event("[TassHunting] true-aim spawn correction + power shot active (patched {0}).", mi.Name);
             }
             catch (Exception ex) { api.Logger.Warning("[TassHunting] true-aim patch failed: {0}", ex.Message); }
+        }
+
+        public static void PowerShotPostfix(object __instance)
+        {
+            try { PowerShot.ApplyToProjectile(__instance); }
+            catch (Exception) { /* power shot must never break projectile spawning */ }
         }
 
         public static void TrueAimPostfix(object __instance)

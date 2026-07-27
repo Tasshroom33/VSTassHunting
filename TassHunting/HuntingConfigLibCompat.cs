@@ -162,6 +162,11 @@ namespace TassHunting
                 Help("A broken metal or stone arrow leaves its arrowhead to recover. Crude, reed and bone arrows leave nothing.");
                 Checkbox("Arrows fly from your crosshair", () => cfg.TrueAimSpawnEnabled, v => cfg.TrueAimSpawnEnabled = v);
                 Help("Fixes close shots landing high (vanilla spawns the arrow behind your head).");
+                Checkbox("Power shot", () => cfg.PowerShotEnabled, v => cfg.PowerShotEnabled = v);
+                Help("Keep the bow drawn past your full-accuracy moment (about half a second for most players) and the arrow hits harder. Vanilla gives longer draws accuracy only - this gives patience a damage payoff too.");
+                SliderFloat("Extra hold needed (sec)", () => cfg.PowerShotExtraDrawSeconds, v => cfg.PowerShotExtraDrawSeconds = v, 0.25f, 5f);
+                SliderFloat("Power shot damage multiplier", () => cfg.PowerShotDamageMult, v => cfg.PowerShotDamageMult = v, 1f, 2f);
+                Checkbox("Click sound when power shot is ready", () => cfg.PowerShotDrawCue, v => cfg.PowerShotDrawCue = v);
                 if (cfg.ArrowBreakChanceByMaterial != null && cfg.ArrowBreakChanceByMaterial.Count > 0)
                 {
                     ImGui.TextWrapped("Break chance on impact per arrow type. 0 = never breaks, 0.25 = breaks 1 in 4. Needs world rejoin.");

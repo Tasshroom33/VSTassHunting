@@ -100,6 +100,26 @@ namespace TassHuntingCompatHarness
                 Check("ledger-replace-soonest", led.Count == 2 && Near(led.StrengthSum, 10f)
                     && led.SnapshotPins().Count == 1);
 
+                // Power shot: threshold math mirrors BaseAimingAccuracy exactly.
+                Check("powershot-default-full-acc", Near(PowerShot.FullAccuracySeconds(1f, 1f, 1f), 0.925f / 1.7f));
+                Check("powershot-slow-draw-scales", Near(PowerShot.FullAccuracySeconds(1f, 0.5f, 1f), 2f * (0.925f / 1.7f))
+                    && Near(PowerShot.FullAccuracySeconds(1f, 1f, 0.5f), 2f * (0.925f / 1.7f)));
+                Check("powershot-degenerate-fallback", Near(PowerShot.FullAccuracySeconds(0f, 0f, 0f), 0.544f));
+
+                // Stash/consume: fresh consumes once, stale never boosts a later quick shot.
+                PowerShot.Stash(9001, 1.25f, 1000);
+                Check("powershot-consume-fresh", Near(PowerShot.Consume(9001, 1500), 1.25f));
+                Check("powershot-consume-once", Near(PowerShot.Consume(9001, 1600), 1f));
+                PowerShot.Stash(9001, 1.25f, 1000);
+                Check("powershot-stale-purged", Near(PowerShot.Consume(9001, 2500), 1f));
+
+                // Draw cue fires exactly once per crossing, and re-arms on a fresh draw.
+                Check("powershot-cue-not-early", !PowerShot.CrossedThreshold(9002, 0.5f, 1.54f));
+                Check("powershot-cue-on-cross", PowerShot.CrossedThreshold(9002, 1.6f, 1.54f));
+                Check("powershot-cue-not-again", !PowerShot.CrossedThreshold(9002, 1.7f, 1.54f));
+                Check("powershot-cue-rearms", !PowerShot.CrossedThreshold(9002, 0.2f, 1.54f)
+                    && PowerShot.CrossedThreshold(9002, 1.6f, 1.54f));
+
                 RunLiveSetup();
             }
             catch (Exception e) { Crash(e); }
