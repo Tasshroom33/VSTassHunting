@@ -110,6 +110,11 @@ namespace TassHunting
         // A stuck SPEAR can be grabbed back at vanilla touch range (arrows stay
         // uncollectible until released - walking near must not yank them out).
         public bool SpearTouchRetrieve = true;
+        // ---- ARROW OWNERSHIP (see ArrowOwnership.cs) ----
+        // Your fired arrows are YOURS for this many seconds: other players'
+        // walk-over pickup ignores them, you always may collect your own, and
+        // after the window anyone may. 0 turns the lock off.
+        public float ArrowOwnerLockSeconds = 120f;
         // Body-ellipse anchoring (goat-flank playtest): how WIDE the body is
         // across vs along the spine (collision boxes are square; real bodies
         // aren't). Still a fraction - this shapes the ellipse, it is not a depth.

@@ -203,6 +203,8 @@ namespace TassHunting
                 SliderFloat("Stuck arrow lifetime (sec)", () => cfg.StickSeconds, v => cfg.StickSeconds = v, 30f, 900f);
                 Help("How long a stuck arrow lasts if the animal never dies. With 'stay until death' on, this only applies to an animal that fled and vanished.");
                 Checkbox("Grab stuck spears back", () => cfg.SpearTouchRetrieve, v => cfg.SpearTouchRetrieve = v);
+                SliderFloat("Your arrows stay yours (sec)", () => cfg.ArrowOwnerLockSeconds, v => cfg.ArrowOwnerLockSeconds = v, 0f, 900f);
+                Help("Other players cannot walk-over collect your fired arrows for this long. You always can. 0 turns it off.");
                 EndServer(serverDecides);
             }
 
