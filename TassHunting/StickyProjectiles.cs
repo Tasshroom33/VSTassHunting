@@ -345,7 +345,11 @@ namespace TassHunting
                 // still counts down when the target is MISSING (fled/unloaded), so
                 // StickSeconds is the fallback cap that stops lost arrows leaking.
                 bool freezeTimer = HuntingModSystem.Cfg.StickUntilDeath
-                    && target != null && target.Alive;
+                    && target != null && target.Alive
+                    // Players are never pinned forever: a downed-state mod keeps
+                    // a "dead" player Alive, and a revived player must not walk
+                    // away permanently wearing an arrow - the normal timer runs.
+                    && !(target is EntityPlayer);
                 if (!freezeTimer) s.SecondsLeft -= dt;
 
                 if (s.SecondsLeft <= 0f)
@@ -410,12 +414,28 @@ namespace TassHunting
     [HarmonyPatch(typeof(EntityProjectileBase), "CanCollect")]
     public static class Patch_NoCollectWhileRiding
     {
-        public static void Postfix(EntityProjectileBase __instance, ref bool __result)
+        public static void Postfix(EntityProjectileBase __instance, Entity byEntity, ref bool __result)
         {
             if (!__result) return;
-            if (__instance.WatchedAttributes.GetLong("sa_target", 0L) == 0L) return;
+            long ridingTargetId = __instance.WatchedAttributes.GetLong("sa_target", 0L);
+            if (ridingTargetId == 0L) return;
             if (HuntingModSystem.Cfg.SpearTouchRetrieve
                 && __instance.Code?.Path?.Contains("spear") == true) return; // grab your spear back
+            // ARROW IN A PLAYER (user request 2026-07-28): a body is not a
+            // pincushion. The stuck player may always pull an arrow out of
+            // themselves, and the SHOOTER may reclaim their arrow from a player
+            // at touch range. Everyone else keeps the no-yank rule, and arrows
+            // in ANIMALS stay untouchable until released (mid-hunt walk-past
+            // must never strip a bleeding animal's arrows).
+            if (HuntingModSystem.Cfg.PlayerArrowTouchRetrieve && byEntity is EntityPlayer asker)
+            {
+                if (asker.EntityId == ridingTargetId) return; // out of my own body, always
+                var ridingTarget = __instance.World.GetEntityById(ridingTargetId);
+                if (ridingTarget is EntityPlayer
+                    && !string.IsNullOrEmpty(asker.PlayerUID)
+                    && asker.PlayerUID == __instance.WatchedAttributes.GetString("tassOwner", null))
+                    return; // the shooter reclaims from a player
+            }
             __result = false;
         }
     }

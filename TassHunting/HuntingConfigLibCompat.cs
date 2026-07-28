@@ -205,6 +205,8 @@ namespace TassHunting
                 Checkbox("Grab stuck spears back", () => cfg.SpearTouchRetrieve, v => cfg.SpearTouchRetrieve = v);
                 SliderFloat("Your arrows stay yours (sec)", () => cfg.ArrowOwnerLockSeconds, v => cfg.ArrowOwnerLockSeconds = v, 0f, 900f);
                 Help("Other players cannot walk-over collect your fired arrows for this long. You always can. 0 turns it off.");
+                Checkbox("Pull arrows out of players", () => cfg.PlayerArrowTouchRetrieve, v => cfg.PlayerArrowTouchRetrieve = v);
+                Help("An arrow stuck in a player can be pulled out at touch range by its shooter or by the stuck player. Arrows in animals stay in until they release.");
                 EndServer(serverDecides);
             }
 

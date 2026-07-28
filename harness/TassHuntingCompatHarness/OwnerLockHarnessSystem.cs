@@ -91,12 +91,14 @@ namespace TassHuntingCompatHarness
             }
         }
 
-        private bool AskWolf()
+        private bool Ask(Entity byEntity)
         {
             _arrow.Pos.Motion.Set(0.0, 0.0, 0.0);
             _arrow.ServerPos.Motion.Set(0.0, 0.0, 0.0);
-            return _arrow.CanCollect(_wolf);
+            return _arrow.CanCollect(byEntity);
         }
+
+        private bool AskWolf() => Ask(_wolf);
 
         private void Run()
         {
@@ -147,6 +149,7 @@ namespace TassHuntingCompatHarness
                     {
                         Check("open-after-real-expiry", AskWolf());
                         TassHunting.HuntingModSystem.Cfg.ArrowOwnerLockSeconds = saved;
+                        RetrievalLegs();
                         Done();
                     }
                     catch (Exception e2)
@@ -163,6 +166,67 @@ namespace TassHuntingCompatHarness
                 Check("no-exception", false);
                 Done();
             }
+        }
+
+        /// <summary>Player-retrieval rules (0.13.5): an EntityPlayer's identity
+        /// (PlayerUID) is a watched attribute, so offline player entities can be
+        /// fabricated headless - no session needed for the identity checks the
+        /// patches make. If the engine refuses to spawn one, the legs are skipped
+        /// (logged), not failed; the wolf leg runs regardless.</summary>
+        private void RetrievalLegs()
+        {
+            var wa = _arrow.WatchedAttributes;
+            long now = _sapi.World.ElapsedMilliseconds;
+            wa.SetString("tassOwner", "shooter-uid");
+            wa.SetLong("tassFiredMs", now); // fresh: the 120s owner window is ACTIVE
+
+            // Arrow riding an ANIMAL: nobody hand-pulls it, not even the owner.
+            wa.SetLong("sa_target", _wolf.EntityId);
+            Check("riding-animal-stays-in", !AskWolf());
+
+            Entity shooter = null, victim = null, thief = null;
+            try
+            {
+                EntityProperties playerType = null;
+                foreach (var et in _sapi.World.EntityTypes)
+                    if (et.Code?.Path == "player") { playerType = et; break; }
+                if (playerType == null) throw new Exception("no player entity type");
+                Entity Fab(string uid, int dx)
+                {
+                    var e = _sapi.World.ClassRegistry.CreateEntity(playerType);
+                    e.WatchedAttributes.SetString("playerUID", uid);
+                    e.ServerPos.SetPosWithDimension(_arrow.ServerPos.XYZ.AddCopy(dx, 0, 2));
+                    e.Pos.SetFrom(e.ServerPos);
+                    _sapi.World.SpawnEntity(e);
+                    return e;
+                }
+                shooter = Fab("shooter-uid", 1);
+                victim = Fab("victim-uid", 2);
+                thief = Fab("thief-uid", 3);
+            }
+            catch (Exception e)
+            {
+                _sapi.Logger.Notification("[ownertest] SKIP player-retrieval legs (offline EntityPlayer unsupported): {0}", e.Message);
+                wa.RemoveAttribute("sa_target");
+                return;
+            }
+
+            // Arrow riding the VICTIM, owner window active:
+            wa.SetLong("sa_target", victim.EntityId);
+            Check("thief-cannot-pull-from-player", !Ask(thief));
+            Check("shooter-pulls-own-from-player", Ask(shooter));
+            Check("victim-pulls-from-own-body", Ask(victim));
+
+            // Feature off: even the victim waits for the timer.
+            TassHunting.HuntingModSystem.Cfg.PlayerArrowTouchRetrieve = false;
+            Check("retrieval-off-blocks-victim", !Ask(victim));
+            TassHunting.HuntingModSystem.Cfg.PlayerArrowTouchRetrieve = true;
+
+            wa.RemoveAttribute("sa_target");
+            // The sessionless fakes NRE in the engine's player tick (caught and
+            // logged every tick) - remove them the moment the legs are done.
+            foreach (var e in new[] { shooter, victim, thief })
+                try { e.Die(EnumDespawnReason.Removed, null); } catch { }
         }
     }
 }

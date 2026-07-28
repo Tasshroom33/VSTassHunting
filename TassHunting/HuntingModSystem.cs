@@ -115,6 +115,10 @@ namespace TassHunting
         // walk-over pickup ignores them, you always may collect your own, and
         // after the window anyone may. 0 turns the lock off.
         public float ArrowOwnerLockSeconds = 120f;
+        // An arrow stuck in a PLAYER can be pulled out by hand at touch range -
+        // by its shooter, or by the stuck player themselves. Arrows in animals
+        // stay untouchable until released. Off = the stick timer is the only way out.
+        public bool PlayerArrowTouchRetrieve = true;
         // Body-ellipse anchoring (goat-flank playtest): how WIDE the body is
         // across vs along the spine (collision boxes are square; real bodies
         // aren't). Still a fraction - this shapes the ellipse, it is not a depth.

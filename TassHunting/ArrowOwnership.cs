@@ -58,8 +58,12 @@ namespace TassHunting
             var wa = __instance.WatchedAttributes;
             string owner = wa.GetString("tassOwner", null);
             if (string.IsNullOrEmpty(owner)) return;                // no owner (mob-thrown): unlocked
-            var plr = (byEntity as EntityPlayer)?.Player;
-            if (plr != null && plr.PlayerUID == owner) return;      // the shooter always may
+            // An arrow riding YOU is always yours to remove: the shooter's
+            // ownership window must never pin an arrow in a player's body
+            // against their will.
+            if (byEntity != null && wa.GetLong("sa_target", 0L) == byEntity.EntityId) return;
+            string askerUid = (byEntity as EntityPlayer)?.PlayerUID;
+            if (askerUid != null && askerUid == owner) return;      // the shooter always may
             long fired = wa.GetLong("tassFiredMs", 0L);
             long now = __instance.World.ElapsedMilliseconds;
             if (fired <= 0L || fired > now) return;                 // no stamp, or pre-restart stamp: released
