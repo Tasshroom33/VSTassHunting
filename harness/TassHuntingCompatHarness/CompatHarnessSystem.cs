@@ -35,6 +35,11 @@ namespace TassHuntingCompatHarness
 
         public override void StartServerSide(ICoreServerAPI api)
         {
+            // Gated like every other test in this harness (added 2026-07-29). Without it this
+            // ran on ANY server carrying the harness - during the bleeding-box run it spawned and
+            // killed its own pig on the same join and logged four FAILs for a Butchering mod that
+            // was never meant to be there.
+            if (Environment.GetEnvironmentVariable("TASSHUNTING_BUTCHERTEST") != "1") return;
             _sapi = api;
             api.Event.PlayerNowPlaying += OnPlayerNowPlaying;
             api.Logger.Notification("[butchercompat] armed - waiting for a player to join.");

@@ -100,6 +100,19 @@ namespace TassHuntingCompatHarness
                 Check("ledger-replace-soonest", led.Count == 2 && Near(led.StrengthSum, 10f)
                     && led.SnapshotPins().Count == 1);
 
+                // The countdown the bleeding box shows: whole seconds until the LAST wound
+                // closes, rounded up so "half a second left" never reads as zero; -1 while an
+                // arrow pins one open (that wound has no closing time); 0 with nothing open.
+                led.Clear();
+                Check("ledger-secs-none", led.SecondsLeft(0) == 0);
+                led.Add(1f, 10000, 0, 10);
+                led.Add(1f, 4500, 0, 10);
+                Check("ledger-secs-latest-wound", led.SecondsLeft(1000) == 9);
+                Check("ledger-secs-rounds-up", led.SecondsLeft(9500) == 1);
+                Check("ledger-secs-never-negative", led.SecondsLeft(20000) == 0);
+                led.Add(1f, 5000, 42, 10); // arrow still in
+                Check("ledger-secs-pinned", led.SecondsLeft(1000) == -1);
+
                 // Power shot: threshold math mirrors BaseAimingAccuracy exactly.
                 Check("powershot-default-full-acc", Near(PowerShot.FullAccuracySeconds(1f, 1f, 1f), 0.925f / 1.7f));
                 Check("powershot-slow-draw-scales", Near(PowerShot.FullAccuracySeconds(1f, 0.5f, 1f), 2f * (0.925f / 1.7f))
@@ -267,6 +280,43 @@ namespace TassHuntingCompatHarness
             try
             {
                 Check("live-wounds-closed", _pig!.WatchedAttributes.GetInt("thbleed", 0) == 0);
+                // Re-open one wound, then dress it: a finished bandage/poultice sends exactly
+                // this shape (Heal type with a Duration), and it must close every wound.
+                _pig.ReceiveDamage(Sharp(2), 1.5f);
+                _sapi.Event.RegisterCallback(_ => RunLiveBandage(), 700);
+            }
+            catch (Exception e) { Crash(e); }
+        }
+
+        /// <summary>
+        /// The dressing path, through the real damage funnel. A healing item sends one
+        /// Heal-typed DamageSource carrying a Duration; the per-tick heals that follow carry
+        /// none, so only the application closes wounds - checked here both ways.
+        /// </summary>
+        private void RunLiveBandage()
+        {
+            try
+            {
+                Check("live-bandage-setup-wound", _pig!.WatchedAttributes.GetInt("thbleed", 0) == 1);
+
+                // A bare heal TICK (no Duration) must leave the wound alone.
+                _pig.ReceiveDamage(new DamageSource
+                {
+                    Source = EnumDamageSource.Internal,
+                    Type = EnumDamageType.Heal
+                }, 0.5f);
+                Check("live-heal-tick-keeps-wound", _pig.WatchedAttributes.GetInt("thbleed", 0) == 1);
+
+                // The application itself (vanilla poultice values: 4 health over 10s, 10 ticks).
+                _pig.ReceiveDamage(new DamageSource
+                {
+                    Source = EnumDamageSource.Internal,
+                    Type = EnumDamageType.Heal,
+                    Duration = TimeSpan.FromSeconds(10),
+                    TicksPerDuration = 10
+                }, 4f);
+                Check("live-bandage-stops-bleeding", _pig.WatchedAttributes.GetInt("thbleed", 0) == 0);
+                Check("live-bandage-clears-ledger", BleedSystem.StacksOn(_pig.EntityId) == 0);
                 Done();
             }
             catch (Exception e) { Crash(e); }

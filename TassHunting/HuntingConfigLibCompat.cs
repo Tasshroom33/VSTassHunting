@@ -132,9 +132,13 @@ namespace TassHunting
 
             if (ImGui.CollapsingHeader("Bleed Damage over Time"))
             {
-                // "Spawn splatter on damage" is the only CLIENT-side dial here
-                // (it drives the visual spurt); the rest is server-decided damage.
+                // "Spawn splatter on damage" and the bleeding box are the CLIENT-side
+                // dials here (they drive what you see); the rest is server-decided damage.
                 Checkbox("Spawn splatter on damage", () => cfg.SpawnSplatterOnDamage, v => cfg.SpawnSplatterOnDamage = v);
+                Checkbox("Show bleeding box", () => cfg.BleedHudEnabled, v => cfg.BleedHudEnabled = v);
+                Help("A small panel on screen while YOU are bleeding: a blood drop, how many wounds are open and how long until they close.");
+                Combo("Bleeding box corner", BleedHudPositions, () => cfg.BleedHudPosition, v => cfg.BleedHudPosition = v);
+                Help("Where that panel sits. Left middle by default. If you run XSkills its effects panel sits there too, so move this if they stack up.");
                 BeginServer(serverDecides);
                 Checkbox("Enable bleed damage", () => cfg.BleedEnabled, v => cfg.BleedEnabled = v);
                 Help("Sharp hits open wounds: arrows, thrown spears, spear stabs, knife/sword/axe slashes. Blunt never bleeds. Better metal = stronger wound; every extra wound multiplies the whole bleed. An arrow left in the animal keeps its wound open.");
@@ -152,6 +156,8 @@ namespace TassHunting
                 SliderFloat("Spear stab wound size", () => cfg.BleedSpearStabWoundWeight, v => cfg.BleedSpearStabWoundWeight = v, 0f, 3f);
                 SliderFloat("Slash wound size (knife, sword, axe)", () => cfg.BleedSlashWoundWeight, v => cfg.BleedSlashWoundWeight = v, 0f, 3f);
                 Checkbox("Players can bleed (PvP + animal bites)", () => cfg.BleedAffectsPlayers, v => cfg.BleedAffectsPlayers = v);
+                Checkbox("Bandages stop bleeding", () => cfg.BleedStoppedByHealingItems, v => cfg.BleedStoppedByHealingItems = v);
+                Help("Finishing a bandage or a poultice closes every open wound on whoever it was used on, yourself or an animal you patched up. Off = you wait the wounds out.");
                 EndServer(serverDecides);
             }
             if (ImGui.CollapsingHeader("Archery"))
@@ -274,6 +280,34 @@ namespace TassHunting
         {
             bool value = get();
             if (ImGui.Checkbox(label, ref value)) set(value);
+        }
+
+        // Screen corners offered for the bleeding box. Display text on the left, the
+        // value stored in the config on the right - the config keeps plain names so a
+        // hand-edited json stays readable.
+        private static readonly string[][] BleedHudPositions =
+        {
+            new[] { "Left middle", "LeftMiddle" },
+            new[] { "Left top", "LeftTop" },
+            new[] { "Left bottom", "LeftBottom" },
+            new[] { "Right middle", "RightMiddle" },
+            new[] { "Right top", "RightTop" },
+            new[] { "Right bottom", "RightBottom" },
+            new[] { "Top middle", "CenterTop" },
+            new[] { "Bottom middle", "CenterBottom" },
+        };
+
+        private static void Combo(string label, string[][] options, Func<string> get, Action<string> set)
+        {
+            string current = get() ?? "";
+            int index = 0;
+            var labels = new string[options.Length];
+            for (int i = 0; i < options.Length; i++)
+            {
+                labels[i] = options[i][0];
+                if (string.Equals(options[i][1], current, StringComparison.OrdinalIgnoreCase)) index = i;
+            }
+            if (ImGui.Combo(label, ref index, labels, labels.Length)) set(options[index][1]);
         }
 
         private static void ColorHex(string label, Func<string> get, Action<string> set)

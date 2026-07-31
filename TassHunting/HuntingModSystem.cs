@@ -213,6 +213,24 @@ namespace TassHunting
         public float BleedThrownSpearWoundWeight = 1.5f;
         public float BleedSpearStabWoundWeight = 1f;
         public float BleedSlashWoundWeight = 0.75f;
+
+        // ---- DRESSINGS AND THE BLEEDING BOX (2026-07-29) ----
+        // SERVER: a finished bandage or poultice closes every open wound on whoever it was
+        // applied to. Keyed on the engine's healing-item contract, so modded dressings count too
+        // (see BleedSystem.OnHealItemApplied).
+        public bool BleedStoppedByHealingItems = true;
+        // CLIENT: the on-screen bleeding box - blood-drop icon, open wound count and the
+        // countdown to it closing, in the same shape as the XSkills effect box. Deliberately
+        // just that: no hover description panel (user call 2026-07-29, it read as clutter).
+        public bool BleedHudEnabled = true;
+        // Corner the box sits in. One of: LeftTop, LeftMiddle, LeftBottom, RightTop,
+        // RightMiddle, RightBottom, CenterTop, CenterBottom. Left middle by user call
+        // 2026-07-29 - note that is also where the XSkills effect frame sits, so anyone running
+        // both and finding them stacked can move this.
+        public string BleedHudPosition = "LeftMiddle";
+        // Nudge the box in pixels from that corner (json-only).
+        public int BleedHudOffsetX = 0;
+        public int BleedHudOffsetY = 0;
         // WHO SHOWS RED BLOOD (user 2026-07-23): animals and players show blood as
         // they always have; RUST CREATURES are the only new distinction, gated by
         // one plain checkbox (default OFF - red blood off a rust being reads
@@ -502,12 +520,32 @@ namespace TassHunting
         private ICoreServerAPI sapi;
         private long pickupTickId;
 
+        // VACUUM COUNTERS (diagnostics law, 2026-07-30). The arrow vacuum is the only
+        // place this mod touches a player's inventory, so when someone reports items
+        // going missing these three numbers say straight away whether it was involved:
+        //  - collected: pickups that put something in a player's inventory
+        //  - partial:   pickups where only part of a stack fit; the rest stayed on the
+        //               ground (this is what the old code used to DELETE)
+        //  - no room:   pickups refused outright, nothing moved, item untouched
+        // Read them in game with /tasspickup.
+        private int pickupCollected, pickupPartial, pickupNoRoom;
+
         public override void StartServerSide(ICoreServerAPI api)
         {
             sapi = api;
             StickyProjectiles.StartServer(api);
             if (Cfg.ProjectilePickupRadius > 0f)
                 pickupTickId = api.Event.RegisterGameTickListener(PickupTick, 400);
+
+            api.ChatCommands.Create("tasspickup")
+                .WithDescription("TassHunting arrow vacuum: what it has collected and what it left on the ground")
+                .RequiresPrivilege(Vintagestory.API.Server.Privilege.chat)
+                .HandleWith(_ => TextCommandResult.Success(
+                    string.Format(
+                        "[tasshunting pickup] radius {0} blocks, own arrows only {1}. This session: {2} collected, {3} part-fit (rest left on the ground), {4} refused for no room. Set ProjectilePickupRadius to 0 in TassHunting.json to switch the vacuum off entirely.",
+                        Cfg.ProjectilePickupRadius, Cfg.PickupOnlyOwnProjectiles,
+                        pickupCollected, pickupPartial, pickupNoRoom)));
+
             api.Logger.Event("[TassHunting] {0} active (sticky projectiles {1}, spear grab-back {2}, flee-away-from-hunter, predator footstep ranges, projectile pickup radius {3}, harvest overhaul: time x{4}, autodrop {5}, empty-corpse removal {6}, blood visuals {7}, water blood {8}).",
                 Mod.Info.Version, Cfg.StickyProjectilesEnabled, Cfg.SpearTouchRetrieve, Cfg.ProjectilePickupRadius, Cfg.HarvestTimeMult, Cfg.HarvestAutoDrop, Cfg.EmptyCorpseAutoRemove, Cfg.BloodVisualsEnabled, Cfg.WaterBloodEnabled);
         }
@@ -554,25 +592,63 @@ namespace TassHunting
                     return false;
                 });
 
-                foreach (var ent in found)
-                {
-                    if (ent is Vintagestory.GameContent.EntityProjectileBase proj)
-                    {
-                        var stack = proj.OnCollected(e);
-                        if (stack == null) continue;
-                        if (!e.TryGiveItemStack(stack)) continue; // inventory full: leave it
-                        sapi.World.PlaySoundAt(new AssetLocation("sounds/player/collect"), ent, null, true, 16f);
-                        ent.Die(EnumDespawnReason.PickedUp);
-                    }
-                    else if (ent is EntityItem head && head.Itemstack != null)
-                    {
-                        var stack = head.Itemstack;
-                        if (!e.TryGiveItemStack(stack)) continue; // inventory full: leave it
-                        sapi.World.PlaySoundAt(new AssetLocation("sounds/player/collect"), ent, null, true, 16f);
-                        ent.Die(EnumDespawnReason.PickedUp);
-                    }
-                }
+                foreach (var ent in found) Collect(ent, e);
             }
+        }
+
+        /// <summary>
+        /// One ground pickup, step for step the way the engine does it
+        /// (EntityBehaviorCollectEntities.OnFoundCollectible, decompile-verified 1.22.5).
+        ///
+        /// THE BUG THIS REPLACES (field report 2026-07-30, "items disappearing"): the old
+        /// code despawned the ground entity whenever TryGiveItemStack returned TRUE. That
+        /// bool does not mean "all of it fit" - PlayerInventoryManager.TryGiveItemstack
+        /// returns true when ANY amount moved, and it drains the stack you hand it as it
+        /// goes. So a stack that only PARTLY fit had its remainder deleted along with the
+        /// entity. The engine never uses that bool to decide despawn: it despawns only
+        /// once the source stack is drained (StackSize &lt;= 0), which is the only honest
+        /// signal that nothing is left on the ground.
+        ///
+        /// The two engine steps the old code also skipped are back: the collectible's own
+        /// OnCollected hook, and the "onitemcollected" event other mods listen on - a
+        /// vacuumed arrow now looks exactly like a walked-over one to everything else.
+        /// </summary>
+        private void Collect(Entity ent, EntityPlayer e)
+        {
+            var stack = ent.OnCollected(e);
+            if (stack == null || stack.StackSize <= 0) return;
+
+            var announced = stack.Clone();      // pre-pickup contents, for the event
+            bool gave = e.TryGiveItemStack(stack); // NOTE: drains stack as it consumes it
+
+            if (stack.StackSize <= 0)
+            {
+                ent.Die(EnumDespawnReason.PickedUp);
+            }
+            else
+            {
+                // Some or none of it fit. The entity stays on the ground with what is
+                // left. An EntityItem keeps its stack IN a watched attribute
+                // (EntityItem.Itemstack is WatchedAttributes["itemstack"]) and we just
+                // mutated it in place, so resend it or the client keeps showing the old
+                // count.
+                if (gave)
+                {
+                    ent.WatchedAttributes.MarkPathDirty("itemstack");
+                    pickupPartial++;
+                }
+                else pickupNoRoom++;
+            }
+
+            if (!gave) return;
+
+            stack.Collectible?.OnCollected(stack, e);
+            var evt = new TreeAttribute();
+            evt["itemstack"] = new ItemstackAttribute(announced);
+            evt["byentityid"] = new LongAttribute(e.EntityId);
+            sapi.Event.PushEvent("onitemcollected", evt);
+            sapi.World.PlaySoundAt(new AssetLocation("sounds/player/collect"), ent, null, true, 16f);
+            pickupCollected++;
         }
 
         /// <summary>Startup probe (compat sweep 2026-07-22, diagnostics law): the

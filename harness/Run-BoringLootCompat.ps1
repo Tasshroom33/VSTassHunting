@@ -1,9 +1,9 @@
-# Butchering-compat end-to-end test. Boots an OFFLINE dedicated server with TassHunting +
-# Butchering + the compat harness, joins it with a real client (borrowed local session, isolated
+# Boring Loot compat end-to-end test. Boots an OFFLINE dedicated server with TassHunting +
+# Boring Loot + the compat harness, joins it with a real client (borrowed local session, isolated
 # profile), and the harness then runs the whole pipeline server-side: spawn pig -> player-kill ->
 # corpse must be pristine (no pre-roll flags) -> Butchering empty-hand pickup -> AnimalDrops JSON
 # must satisfy the butcher table's input contract. Results: PASS/FAIL lines + a
-# "BUTCHERCOMPAT COMPLETE total= pass= fail=" summary in the server log.
+# "BORINGLOOT COMPLETE total= pass= fail=" summary in the server log.
 #
 # DEDICATED ONLY: requires no other Vintage Story client running (the game forwards -c to an
 # existing instance - see the TassFactions Run-ClientSmoke.ps1 notes). No SP fallback here, because
@@ -15,15 +15,15 @@ $vs      = "C:\Users\8byteTass\AppData\Roaming\Vintagestory1.22.5"
 $srvExe  = "$vs\VintagestoryServer.exe"
 $cliExe  = "$vs\Vintagestory.exe"
 $realProfile   = "C:\Users\8byteTass\AppData\Roaming\VintagestoryData"
-$butcheringZip = "$realProfile\Mods\butchering_1.13.5.zip"
+$blZip = "$realProfile\Mods\boringloot.zip"
 $scratch = "C:\Users\8BYTET~1\AppData\Local\Temp\claude\j--Root-Games-VintageStoryCustomMods\1e07fe82-7e1f-43bf-adf8-a7bdd1441ef5\scratchpad"
-$port    = 42487   # distinct from live 42420, TassFactions smoke 42488, TassFactions harness 42489
+$port    = 42491   # distinct from live 42420, bleed 42486, butcher/owner 42487, factions 42488/42489, pickup 42490
 
 if (Get-Process -Name "Vintagestory" -ErrorAction SilentlyContinue) {
     Write-Host "SKIPPED: a Vintage Story client is already running - close it and re-run (dedicated join required)."
     exit 2
 }
-if (-not (Test-Path $butcheringZip)) { throw "Butchering zip not found at $butcheringZip" }
+if (-not (Test-Path $blZip)) { throw "Boring Loot zip not found at $blZip" }
 
 Write-Host "Building TassHunting + harness..."
 $env:VINTAGE_STORY = "$env:APPDATA\Vintagestory1.22.5"   # the machine's env var points at a stale dir
@@ -36,19 +36,19 @@ $huntOut    = "$root\TassHunting\bin\Release\Mods\mod"
 $harnessOut = "$root\harness\TassHuntingCompatHarness\bin\Release"
 if (-not (Test-Path "$huntOut\TassHunting.dll")) { throw "TassHunting output missing at $huntOut" }
 
-$run   = Join-Path $scratch ("butchercompat\" + [Guid]::NewGuid().ToString("N").Substring(0,8))
+$run   = Join-Path $scratch ("boringloot\" + [Guid]::NewGuid().ToString("N").Substring(0,8))
 $sdata = Join-Path $run "server"
 $cdata = Join-Path $run "client"
 New-Item -ItemType Directory -Force "$sdata\Mods","$cdata\Mods" | Out-Null
 
-# Server mods: tasshunting (folder), butchering (zip), harness (folder).
+# Server mods: tasshunting (folder), boringloot (zip), harness (folder).
 Copy-Item $huntOut "$sdata\Mods\tasshunting" -Recurse
-Copy-Item $butcheringZip "$sdata\Mods\"
+Copy-Item $blZip "$sdata\Mods\"
 New-Item -ItemType Directory -Force "$sdata\Mods\tasshuntingcompatharness" | Out-Null
 Copy-Item "$harnessOut\TassHuntingCompatHarness.dll","$harnessOut\modinfo.json" "$sdata\Mods\tasshuntingcompatharness\"
-# Client mods: tasshunting + butchering only (harness is server-side).
+# Client mods: tasshunting + boringloot only (harness is server-side).
 Copy-Item $huntOut "$cdata\Mods\tasshunting" -Recurse
-Copy-Item $butcheringZip "$cdata\Mods\"
+Copy-Item $blZip "$cdata\Mods\"
 
 # Isolated client profile with the borrowed local session; multipleInstances defensively true.
 $csPath = Join-Path $cdata "clientsettings.json"
@@ -73,9 +73,9 @@ if ($cfg.PSObject.Properties.Name -contains "Upnp") { $cfg.Upnp = $false }
 [System.IO.File]::WriteAllText($cfgPath, ($cfg | ConvertTo-Json -Depth 40))
 
 Write-Host "Launching server on port $port ..."
-$env:TASSHUNTING_BUTCHERTEST = "1"   # the harness system is gated on this, like every other test here
+$env:TASSHUNTING_BORINGLOOTTEST = "1"   # the harness system is gated on this, like every other test here
 $sp = Start-Process $srvExe -ArgumentList @("--dataPath",$sdata) -PassThru -WindowStyle Hidden
-$env:TASSHUNTING_BUTCHERTEST = $null
+$env:TASSHUNTING_BORINGLOOTTEST = $null
 $serverUp = $false
 for ($i=0; $i -lt 40; $i++) {
     Start-Sleep -Seconds 3
@@ -89,7 +89,7 @@ if ($serverUp) {
     $cp = Start-Process $cliExe -ArgumentList @("--dataPath",$cdata,"-c","localhost:$port") -PassThru -WindowStyle Minimized
     for ($i=0; $i -lt 60; $i++) {
         Start-Sleep -Seconds 3
-        if (Select-String -Path $slog -Pattern "BUTCHERCOMPAT COMPLETE" -Quiet) { $complete = $true; break }
+        if (Select-String -Path $slog -Pattern "BORINGLOOT COMPLETE" -Quiet) { $complete = $true; break }
     }
     try { Stop-Process -Id $cp.Id -Force -ErrorAction SilentlyContinue } catch {}
 }
@@ -98,6 +98,6 @@ Remove-Item $csPath -Force -ErrorAction SilentlyContinue   # borrowed credential
 
 Write-Host "===== RESULT: server-up=$serverUp complete=$complete ====="
 if (Test-Path $slog) {
-    Select-String -Path $slog -Pattern "\[butchercompat\]|\[Error\]|Exception" | ForEach-Object { $_.Line } | Select-Object -First 40
+    Select-String -Path $slog -Pattern "\[boringloot\]|\[Error\]|Exception" | ForEach-Object { $_.Line } | Select-Object -First 40
 }
-if (-not $complete) { Write-Host "COMPAT TEST FAILED TO COMPLETE - inspect $slog" }
+if (-not $complete) { Write-Host "BORING LOOT COMPAT TEST FAILED TO COMPLETE - inspect $slog" }

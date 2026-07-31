@@ -306,9 +306,18 @@ namespace TassHunting
             arrow.Pos.Roll = s.Roll;
             arrow.Pos.Motion.Set(0.0, 0.0, 0.0);
             // The projectile's own tick recomputes+overwrites this flag from
-            // collision state every 25ms - reassert so the CLIENT keeps treating
-            // the projectile as stuck (no rotation-from-motion, no gravity).
-            arrow.WatchedAttributes.SetBool("stuck", true);
+            // collision state - reassert so the CLIENT keeps treating the
+            // projectile as stuck (no rotation-from-motion, no gravity).
+            //
+            // READ BEFORE WRITE (2026-07-30). This runs 20x a second for every
+            // embedded arrow, and SyncedTreeAttribute.SetBool marks the path dirty
+            // and queues a sync EVERY time, even when the value did not change
+            // (decompile-verified) - so a few arrows in a few animals were pushing
+            // a steady stream of pointless attribute packets down the same
+            // connection inventory updates use. Writing only on the actual flip
+            // reaches the identical end state for a fraction of the traffic.
+            if (!arrow.WatchedAttributes.GetBool("stuck", false))
+                arrow.WatchedAttributes.SetBool("stuck", true);
         }
 
         private readonly List<long> toRemove = new List<long>();

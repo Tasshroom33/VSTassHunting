@@ -2,10 +2,10 @@
   "type": "code",
   "modid": "tasshuntingcompatharness",
   "name": "TassHunting Compat Harness",
-  "description": "Self-driving Butchering-compat test. Never ship this.",
+  "description": "Self-driving compat and hud tests. Never ship this.",
   "authors": [ "Tass" ],
-  "version": "0.1.0",
-  "side": "Server",
+  "version": "0.2.1",
+  "side": "Universal",
   "requiredOnClient": false,
   "dependencies": {
     "game": "1.22.0"

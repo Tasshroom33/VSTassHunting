@@ -26,7 +26,14 @@
 //
 // The VISUAL half lives in BloodVisuals.cs and keys off the same watched
 // attributes as before: "thbleed" (wound count), "thbleedtick", "thbleeddmg".
+// "thbleedsecs" (2026-07-29) is added for PLAYERS only: seconds until the last
+// wound closes, which is what the on-screen bleeding box counts down.
 // Time lane: real seconds - combat pacing is player-experience pacing.
+//
+// DRESSINGS STOP IT (2026-07-29): a finished bandage or poultice closes every
+// open wound on the target at once - see OnHealItemApplied for the engine
+// contract that identifies "a dressing was just applied" without naming a
+// single item code.
 
 using System;
 using System.Collections.Generic;
@@ -134,6 +141,25 @@ namespace TassHunting
             return pins;
         }
 
+        /// <summary>
+        /// Whole seconds until the LAST open wound closes by itself. 0 = nothing open.
+        /// -1 = at least one wound is PINNED by an embedded projectile, which never times out
+        /// while the arrow is in - the HUD shows that as "arrow still in" instead of a countdown.
+        /// </summary>
+        public int SecondsLeft(long nowMs)
+        {
+            if (_wounds.Count == 0) return 0;
+            long latest = long.MinValue;
+            for (int i = 0; i < _wounds.Count; i++)
+            {
+                if (_wounds[i].PinProjectileId != 0) return -1;
+                if (_wounds[i].ExpiresAtMs > latest) latest = _wounds[i].ExpiresAtMs;
+            }
+            long ms = latest - nowMs;
+            if (ms <= 0) return 0;
+            return (int)((ms + 999) / 1000); // round up, so "1s left" never reads as 0
+        }
+
         /// <summary>Drop expired unpinned wounds. Returns true if anything closed.</summary>
         public bool ExpireStep(long nowMs)
         {
@@ -230,8 +256,79 @@ namespace TassHunting
                     Active[victim.EntityId] = st;
                 }
                 st.Ledger.Add(strength, now + (long)(cfg.BleedWoundSeconds * 1000f), pinId, cfg.BleedMaxWounds);
-                victim.WatchedAttributes.SetInt("thbleed", st.Ledger.Count);
+                Publish(victim, st.Ledger, now);
             }
+        }
+
+        /// <summary>
+        /// What the bleeding box on the client reads, straight off the player's own entity:
+        /// "thbleed" (open wounds) and "thbleedsecs" (seconds until the last one closes, -1 while
+        /// an embedded arrow pins one open). The countdown is written for PLAYERS ONLY and only
+        /// when the number actually changed - no animal needs it, and a per-second attribute write
+        /// on every bleeding animal would be one sync packet per animal per second for nothing.
+        /// </summary>
+        private static void Publish(Entity ent, WoundLedger led, long nowMs)
+        {
+            if (ent == null) return;
+            var wa = ent.WatchedAttributes;
+            if (wa == null) return;
+            int wounds = led.Count;
+            if (wa.GetInt("thbleed", 0) != wounds) wa.SetInt("thbleed", wounds);
+            if (!(ent is EntityPlayer)) return;
+            int secs = led.SecondsLeft(nowMs);
+            if (wa.GetInt("thbleedsecs", 0) != secs) wa.SetInt("thbleedsecs", secs);
+        }
+
+        /// <summary>Zero the published state for an entity that has stopped bleeding.</summary>
+        private static void PublishNone(Entity ent)
+        {
+            if (ent?.WatchedAttributes == null) return;
+            if (ent.WatchedAttributes.GetInt("thbleed", 0) != 0) ent.WatchedAttributes.SetInt("thbleed", 0);
+            if (ent is EntityPlayer && ent.WatchedAttributes.GetInt("thbleedsecs", 0) != 0)
+                ent.WatchedAttributes.SetInt("thbleedsecs", 0);
+        }
+
+        /// <summary>
+        /// Close EVERY open wound on this entity at once - a dressing went on. Returns true if
+        /// there was anything to close. An arrow still embedded does NOT re-open the wound: the
+        /// bandage went on over it, and only a fresh sharp hit opens a new one.
+        /// </summary>
+        public static bool ClearWounds(Entity victim)
+        {
+            if (victim == null) return false;
+            bool had;
+            lock (Active)
+            {
+                had = Active.TryGetValue(victim.EntityId, out var st) && st.Ledger.Count > 0;
+                if (had) st.Ledger.Clear();
+                Active.Remove(victim.EntityId);
+            }
+            if (had) PublishNone(victim); // engine calls stay outside the lock
+            return had;
+        }
+
+        /// <summary>
+        /// A bandage or poultice finished going on - stop the bleeding outright.
+        ///
+        /// ENGINE CONTRACT (decompile-verified 1.22.5): CollectibleBehaviorHealingItem.
+        /// OnHeldInteractStop sends ONE DamageSource{Source=Internal, Type=Heal,
+        /// Duration=EffectDurationSec, TicksPerDuration=Ticks} at the target the moment the
+        /// application completes, server side only. EntityBehaviorHealth turns that into a
+        /// heal-over-time effect, and every later heal TICK re-enters the same funnel with a bare
+        /// DamageSource whose Duration is ZERO (EntityBehaviorHealth.ProcessDoTEffects builds it
+        /// fresh) - so "Type is Heal AND Duration > 0" is exactly "a dressing was just applied",
+        /// exactly once, and the ten seconds of healing that follow do not re-fire it. Keying on
+        /// the engine contract instead of on item codes means every vanilla bandage and poultice
+        /// AND any modded healing item built on the vanilla behavior all stop bleeding.
+        /// </summary>
+        public static void OnHealItemApplied(Entity victim, DamageSource src)
+        {
+            var cfg = HuntingModSystem.Cfg;
+            if (cfg == null || !cfg.BleedStoppedByHealingItems) return;
+            if (victim == null || src == null) return;
+            if (victim.World?.Side != EnumAppSide.Server) return;
+            if (src.Type != EnumDamageType.Heal || src.Duration <= TimeSpan.Zero) return;
+            ClearWounds(victim);
         }
 
         /// <summary>
@@ -278,7 +375,7 @@ namespace TassHunting
                     var st = kv.Value;
                     if (st.Ent == null || !st.Ent.Alive || st.Ledger.Count == 0)
                     {
-                        try { st.Ent?.WatchedAttributes.SetInt("thbleed", 0); } catch { }
+                        try { PublishNone(st.Ent); } catch { }
                         (retire = retire ?? new List<long>()).Add(kv.Key); continue;
                     }
 
@@ -286,13 +383,14 @@ namespace TassHunting
                     // a pin whose projectile entity no longer exists unpins into a normal wound.
                     st.Ledger.SyncPins(CollectLiveProjectiles(st), now + (long)(cfg.BleedWoundSeconds * 1000f));
 
-                    if (st.Ledger.ExpireStep(now))
-                        st.Ent.WatchedAttributes.SetInt("thbleed", st.Ledger.Count);
+                    st.Ledger.ExpireStep(now);
                     if (st.Ledger.Count == 0)
                     {
-                        st.Ent.WatchedAttributes.SetInt("thbleed", 0);
+                        PublishNone(st.Ent);
                         (retire = retire ?? new List<long>()).Add(kv.Key); continue;
                     }
+                    // Every second: wound count if it moved, plus the player's countdown.
+                    Publish(st.Ent, st.Ledger, now);
 
                     if (now < st.NextTickMs) continue;
                     st.NextTickMs = now + (long)(cfg.BleedTickSeconds * 1000f);
@@ -360,6 +458,9 @@ namespace TassHunting
         {
             try { BleedSystem.OnSharpHit(__instance.entity, damageSource, damage); }
             catch (Exception) { /* bleed must never break damage handling */ }
+            // The same funnel carries healing: a finished bandage/poultice closes every wound.
+            try { BleedSystem.OnHealItemApplied(__instance.entity, damageSource); }
+            catch (Exception) { /* ditto */ }
         }
     }
 }
