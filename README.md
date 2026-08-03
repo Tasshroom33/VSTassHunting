@@ -25,5 +25,10 @@ lib/ are third-party build-reference dependencies and keep their own licenses:
 ## Building
 
 Set the VINTAGE_STORY environment variable to your Vintage Story install
-directory, then build TassHunting/TassHunting.csproj. The build syncs the mod
-to your VintagestoryData/Mods folder automatically.
+directory, then run `Make-Release.ps1`. It builds Release and packages
+`Releases/tasshunting_VS<gameVersion>_<version>.zip`.
+
+A build writes build output and nothing else. It does not install: nothing is
+copied to your VintagestoryData/Mods folder. To install, either drop that zip
+in yourself or run `Build-AllMods.ps1` from the workspace root, which packages
+every mod and installs the zips with a SHA256 check.

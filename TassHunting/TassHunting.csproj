@@ -81,18 +81,11 @@
   </Content>
 </ItemGroup>
 
-  <!-- AUTO-INSTALL, same pattern as THW/TassNarrator: sync to the live Mods
-       folder on every successful build; locked files fail soft when the game
-       runs (exit-watchers deliver then). Was MISSING here - 0.4.0/0.5.0
-       builds silently never reached the live folder. -->
-  <Target Name="InstallToGameMods" AfterTargets="Build" Condition="Exists('$(AppData)\VintagestoryData\Mods')">
-    <ItemGroup>
-      <ModOutput Include="$(OutputPath)\**\*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(ModOutput)"
-          DestinationFiles="@(ModOutput->'$(AppData)\VintagestoryData\Mods\tasshunting\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true"
-          ContinueOnError="WarnAndContinue" />
-    <Message Importance="high" Text="[TassHunting] mod synced to VintagestoryData\Mods" />
-  </Target>
+  <!-- NO AUTO-INSTALL. A build produces build output and nothing else; it must
+       never write to the player's Mods folder. The retired InstallToGameMods
+       target copied an UNPACKED FOLDER to Mods\tasshunting on every build, so a
+       stale folder could load alongside a zip of a different version - two
+       copies of one mod id. Installing is a zip, and it is Build-AllMods.ps1's
+       job (or Make-Release.ps1 for this mod alone). Same reason THW retired its
+       unpacked-folder install. -->
 </Project>
