@@ -34,6 +34,20 @@
 // open wound on the target at once - see OnHealItemApplied for the engine
 // contract that identifies "a dressing was just applied" without naming a
 // single item code.
+//
+// WHAT SOFTENS A WOUND (2026-08-03, three rules that all key off the same hit):
+//   ARMOR is measured, not queried. A prefix records the damage as it ARRIVED;
+//   by the time our postfix runs, EntityBehaviorHealth has put it through
+//   ApplyOnDamageDelegates, which is where vanilla armor and shields subtract
+//   (ModSystemWearableStats.handleDamaged). The gap between the two IS the
+//   protection, whatever produced it - vanilla armor, a shield, or a mod we
+//   have never heard of. Armor that soaks most of a blow turns the edge
+//   outright; otherwise the wound is only as big as what got through.
+//   WHO SWUNG gets one multiplier per attacker class (rust beings, wild
+//   creatures), 0 = that class never opens a wound. Classified by TAG through
+//   HuntingModSystem.IsRustCreature, never by entity code.
+//   SITTING STILL for an unbroken stretch halves both the bleed damage and the
+//   wound clock while you stay down - see SitRule.
 
 using System;
 using System.Collections.Generic;
@@ -66,6 +80,43 @@ namespace TassHunting
             float baseTick = flatPerTick + pctMaxHealthPerTick / 100f * maxHealth;
             int comboWounds = Math.Min(woundCount, Math.Max(1, comboCap));
             return baseTick * strengthSum * (float)Math.Pow(comboMult, comboWounds - 1);
+        }
+    }
+
+    /// <summary>
+    /// SITTING STILL, as pure timestamp math so the harness can prove it without a client
+    /// pressing the sit key. The rule: you must stay seated for an unbroken stretch before it
+    /// helps at all, and standing up both ends the help instantly and ZEROES the credit, so the
+    /// next sit starts the count over. The help is continuous (a rate, not a one-time cut),
+    /// which is why bobbing up and down can never beat simply staying down - there is nothing
+    /// to re-trigger.
+    /// </summary>
+    public static class SitRule
+    {
+        /// <summary>When the current unbroken sit began. 0 = not seated (credit lost).</summary>
+        public static long Track(long seatedSinceMs, bool seated, long nowMs)
+        {
+            if (!seated) return 0L;
+            return seatedSinceMs == 0 ? nowMs : seatedSinceMs;
+        }
+
+        /// <summary>Has this one unbroken sit lasted long enough to start helping?</summary>
+        public static bool Helps(long seatedSinceMs, long nowMs, float requiredSeconds)
+        {
+            if (seatedSinceMs == 0) return false;
+            return nowMs - seatedSinceMs >= (long)(Math.Max(0f, requiredSeconds) * 1000f);
+        }
+
+        /// <summary>
+        /// Extra wound-clock milliseconds to burn for elapsedMs of real time. durationMult 0.5
+        /// means the clock runs at double speed, so one real second burns one EXTRA second on
+        /// top of the one it already burns. Clamped so a hand-edited 0 cannot divide by zero.
+        /// </summary>
+        public static long ExtraCloseMs(long elapsedMs, float durationMult)
+        {
+            if (elapsedMs <= 0) return 0L;
+            float m = Math.Max(0.05f, Math.Min(1f, durationMult));
+            return (long)(elapsedMs * (1f / m - 1f));
         }
     }
 
@@ -160,6 +211,24 @@ namespace TassHunting
             return (int)((ms + 999) / 1000); // round up, so "1s left" never reads as 0
         }
 
+        /// <summary>
+        /// Pull every unpinned wound's closing time forward - sitting still, pressing on it.
+        /// A PINNED wound has no closing time to pull; the arrow has to come out first.
+        /// Returns true if anything moved.
+        /// </summary>
+        public bool Accelerate(long ms)
+        {
+            if (ms <= 0) return false;
+            bool moved = false;
+            for (int i = 0; i < _wounds.Count; i++)
+            {
+                if (_wounds[i].PinProjectileId != 0) continue;
+                _wounds[i].ExpiresAtMs -= ms;
+                moved = true;
+            }
+            return moved;
+        }
+
         /// <summary>Drop expired unpinned wounds. Returns true if anything closed.</summary>
         public bool ExpireStep(long nowMs)
         {
@@ -185,6 +254,8 @@ namespace TassHunting
             public Entity Ent;
             public WoundLedger Ledger = new WoundLedger();
             public long NextTickMs;
+            public long SeatedSinceMs;  // 0 = not seated; else when this unbroken sit began
+            public long LastStepMs;     // world clock at our last step, for real elapsed time
         }
 
         private static readonly Dictionary<long, State> Active = new Dictionary<long, State>();
@@ -206,9 +277,11 @@ namespace TassHunting
 
         /// <summary>
         /// Classify a landed hit and open a wound if it was sharp. Called from the
-        /// OnEntityReceiveDamage postfix with the FINAL damage (post armor/shields).
+        /// OnEntityReceiveDamage postfix with the FINAL damage (post armor/shields) and with
+        /// incomingDamage as the hit ARRIVED (pre armor/shields), the pair that tells us how
+        /// much protection actually did.
         /// </summary>
-        public static void OnSharpHit(Entity victim, DamageSource src, float damage)
+        public static void OnSharpHit(Entity victim, DamageSource src, float damage, float incomingDamage)
         {
             var cfg = HuntingModSystem.Cfg;
             if (cfg == null || !cfg.BleedEnabled || victim == null || src == null) return;
@@ -246,6 +319,27 @@ namespace TassHunting
                 weight = pierce ? cfg.BleedSpearStabWoundWeight : cfg.BleedSlashWoundWeight;
             }
 
+            // ---- WHO SWUNG: one multiplier per attacker class, 0 = that class never opens a
+            // wound. GetCauseEntity is the SHOOTER for a projectile (CauseEntity = FiredBy,
+            // EntityProjectileBase.cs:332) and the attacker for melee, so a player's arrow is
+            // classified as the PLAYER and not as the arrow.
+            float classMult = AttackerWoundMult(src, cfg);
+            if (classMult <= 0f) return;
+            weight *= classMult;
+
+            // ---- WHAT STOPPED IT: armor measured, not queried (see the file header). Vanilla
+            // rolls ONE armor slot per hit (20% head / 50% chest / 30% legs, handleDamaged:172),
+            // so the absorbed share legitimately varies hit to hit - sometimes the blade finds
+            // the gap. incomingDamage <= 0 means our prefix never ran (another mod's prefix
+            // returned false ahead of it): that degrades to "armor changes nothing", never to a
+            // free wound.
+            float absorbed = 0f;
+            if (incomingDamage > 0f)
+                absorbed = Math.Max(0f, Math.Min(1f, 1f - damage / incomingDamage));
+            if (absorbed >= cfg.BleedArmorNoWoundAbsorb) return;   // it turned the edge
+            weight *= 1f - Math.Max(0f, Math.Min(1f, cfg.BleedArmorMitigation)) * absorbed;
+            if (weight <= 0f) return;
+
             float strength = WoundMath.Strength(weight, src.DamageTier, cfg.BleedTierStep);
             long now = victim.World.ElapsedMilliseconds;
             lock (Active)
@@ -258,6 +352,19 @@ namespace TassHunting
                 st.Ledger.Add(strength, now + (long)(cfg.BleedWoundSeconds * 1000f), pinId, cfg.BleedMaxWounds);
                 Publish(victim, st.Ledger, now);
             }
+        }
+
+        /// <summary>
+        /// Wound size multiplier for who dealt the hit: people keep their own weapon weights,
+        /// rust beings and wild creatures each get their own dial (0 = never wounds). A hit with
+        /// no attacker at all - a trap, a world hazard - is left alone.
+        /// </summary>
+        private static float AttackerWoundMult(DamageSource src, HuntingConfig cfg)
+        {
+            Entity cause = src.GetCauseEntity();
+            if (cause == null || cause is EntityPlayer) return 1f;
+            if (HuntingModSystem.IsRustCreature(cause)) return cfg.BleedRustAttackWoundMult;
+            return cfg.BleedCreatureAttackWoundMult;
         }
 
         /// <summary>
@@ -383,6 +490,22 @@ namespace TassHunting
                     // a pin whose projectile entity no longer exists unpins into a normal wound.
                     st.Ledger.SyncPins(CollectLiveProjectiles(st), now + (long)(cfg.BleedWoundSeconds * 1000f));
 
+                    // SITTING STILL: after an unbroken BleedSitSecondsRequired seated, the bleed
+                    // damage and the wound clock both run at their sit multipliers for as long as
+                    // you stay down. Standing up reverts both instantly AND zeroes the credit, so
+                    // the next sit starts the count over. Measured off the world clock rather than
+                    // the tick's dt, so a lagging or catching-up server cannot pay double.
+                    long stepMs = st.LastStepMs == 0 ? 0 : now - st.LastStepMs;
+                    st.LastStepMs = now;
+                    bool sitHelps = false;
+                    if (cfg.BleedSittingHelps)
+                    {
+                        st.SeatedSinceMs = SitRule.Track(st.SeatedSinceMs, HuntingModSystem.IsSeated(st.Ent), now);
+                        sitHelps = SitRule.Helps(st.SeatedSinceMs, now, cfg.BleedSitSecondsRequired);
+                        if (sitHelps) st.Ledger.Accelerate(SitRule.ExtraCloseMs(stepMs, cfg.BleedSitDurationMult));
+                    }
+                    else st.SeatedSinceMs = 0;
+
                     st.Ledger.ExpireStep(now);
                     if (st.Ledger.Count == 0)
                     {
@@ -400,6 +523,7 @@ namespace TassHunting
 
                     float total = WoundMath.TotalPerTick(cfg.BleedStaticPerTick, cfg.BleedPctMaxHealthPerTick,
                         hb.MaxHealth, st.Ledger.StrengthSum, st.Ledger.Count, cfg.BleedComboMultiplier, cfg.BleedMaxWounds);
+                    if (sitHelps) total *= Math.Max(0f, cfg.BleedSitDamageMult);
 
                     // DEDICATED SPLATTER SIGNAL (0.9.3): the client keys DoT splatter off this
                     // monotonic counter, NOT the engine's onHurt bump (that path swallows ticks
@@ -454,9 +578,16 @@ namespace TassHunting
     [HarmonyPatch(typeof(EntityBehaviorHealth), nameof(EntityBehaviorHealth.OnEntityReceiveDamage))]
     public static class Patch_BleedOnSharpHit
     {
-        public static void Postfix(EntityBehaviorHealth __instance, DamageSource damageSource, float damage)
+        /// <summary>
+        /// The damage as it ARRIVED, before ApplyOnDamageDelegates (armor, shields, other mods)
+        /// subtracted anything. Read-only by design: this prefix never skips the original and
+        /// never edits the value, so it cannot change what any other mod sees.
+        /// </summary>
+        public static void Prefix(float damage, out float __state) => __state = damage;
+
+        public static void Postfix(EntityBehaviorHealth __instance, DamageSource damageSource, float damage, float __state)
         {
-            try { BleedSystem.OnSharpHit(__instance.entity, damageSource, damage); }
+            try { BleedSystem.OnSharpHit(__instance.entity, damageSource, damage, __state); }
             catch (Exception) { /* bleed must never break damage handling */ }
             // The same funnel carries healing: a finished bandage/poultice closes every wound.
             try { BleedSystem.OnHealItemApplied(__instance.entity, damageSource); }

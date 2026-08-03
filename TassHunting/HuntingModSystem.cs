@@ -214,6 +214,31 @@ namespace TassHunting
         public float BleedSpearStabWoundWeight = 1f;
         public float BleedSlashWoundWeight = 0.75f;
 
+        // ---- SITTING, ARMOR AND WHO SWUNG (2026-08-03) ----
+        // Sit still and, after an unbroken stretch, both the bleed damage and the wound
+        // clock run at half for as long as you stay down. Standing up ends it instantly and
+        // zeroes the credit - a fresh sit starts the count over, and because the help is a
+        // rate rather than a one-time cut there is nothing to farm by bobbing up and down.
+        // An arrow still in you pins its wound: no amount of sitting closes that one.
+        public bool BleedSittingHelps = true;
+        public float BleedSitSecondsRequired = 5f;   // unbroken seconds seated before it helps
+        public float BleedSitDamageMult = 0.5f;      // bleed damage while it is helping
+        public float BleedSitDurationMult = 0.5f;    // wound time left while it is helping
+        // Wound size by attacker class; 0 = that class never opens a wound. Rust = anything
+        // tagged rust-creature or mechanical (drifters, locusts, bells and modded kin);
+        // creature = everything else alive that is not a player. Players keep the weapon
+        // weights above. Only the sharp ones ever wounded at all: among drifters that is
+        // corrupt, nightmare and double-headed; among locusts the bronze and sawblade ones.
+        public float BleedRustAttackWoundMult = 1f;
+        public float BleedCreatureAttackWoundMult = 1f;
+        // How much armor shrinks the wound, measured from what it actually absorbed (see
+        // BleedSystem's header). 1 = the wound is only as big as the part of the hit that got
+        // through; 0 = armor makes no difference to bleeding, as before 2026-08-03.
+        public float BleedArmorMitigation = 1f;
+        // Armor that absorbs at least this share of a blow turns the edge: no wound at all.
+        // 1 = never, leaving BleedMinDamage as the only way a hit fails to wound.
+        public float BleedArmorNoWoundAbsorb = 0.85f;
+
         // ---- DRESSINGS AND THE BLEEDING BOX (2026-07-29) ----
         // SERVER: a finished bandage or poultice closes every open wound on whoever it was
         // applied to. Keyed on the engine's healing-item contract, so modded dressings count too
@@ -425,6 +450,32 @@ namespace TassHunting
             // from bleeding - it degrades to "creatures bleed", never "nothing does".
             if ((!tagsUsable || ent.Tags.IsEmpty) && ent.GetBehavior<EntityBehaviorHealth>() != null) return true;
             return false;
+        }
+
+        /// <summary>
+        /// Is this entity sitting still? Two ways to be seated and both count: the vanilla
+        /// "Sit down" action (EnumEntityAction.FloorSit, read off ServerControls - the copy the
+        /// server keeps and the engine's own activity/animation code trusts, EntityAgent.cs:587),
+        /// or occupying a seat. A seat with no entity behind it is furniture and always counts;
+        /// a seat that IS an entity (raft, tamed elk) counts only while that entity is basically
+        /// still, so galloping across the map does not close anyone's wounds. Read through
+        /// MountSupplier.OnEntity rather than IMountableSeat.Entity: the vanilla EntitySeat
+        /// implementation of the latter casts unguarded and would throw for a seat we did not
+        /// anticipate. Animals never satisfy either arm, so this costs them two field reads.
+        ///   NOTE the sit flag originates on the client, like every other control. It gates
+        /// wound TIMING and nothing else, which is the most it should ever gate.
+        /// </summary>
+        public static bool IsSeated(Entity ent)
+        {
+            var agent = ent as EntityAgent;
+            if (agent == null) return false;
+            var seat = agent.MountedOn;
+            if (seat != null)
+            {
+                var carrier = seat.MountSupplier?.OnEntity;
+                return carrier == null || carrier.Pos.Motion.LengthSq() < 0.0001;
+            }
+            return agent.ServerControls?.FloorSitting == true;
         }
 
         /// <summary>Should this entity show red blood? Only things that CAN bleed -

@@ -20,9 +20,14 @@ namespace TassHuntingCompatHarness
     {
         private ICoreServerAPI _sapi = null!;
         private int _total, _passed;
-        private Entity? _pig, _attacker;
+        private Entity? _pig, _attacker, _drifter;
         private float _maxHealth;
         private int _onHurtBase;
+        // Stand-in for worn armor: multiplies an incoming sharp/blunt hit exactly where real
+        // armor does (EntityBehaviorHealth.onDamaged, the hook ModSystemWearableStats uses), and
+        // filters by damage type exactly as vanilla does, so bleed's own Injury ticks pass
+        // through untouched. 1 = wearing nothing.
+        private float _armorFactor = 1f;
 
         public override bool ShouldLoad(EnumAppSide forSide) => forSide == EnumAppSide.Server;
 
@@ -113,6 +118,35 @@ namespace TassHuntingCompatHarness
                 led.Add(1f, 5000, 42, 10); // arrow still in
                 Check("ledger-secs-pinned", led.SecondsLeft(1000) == -1);
 
+                // Sitting still (2026-08-03). The seated FLAG needs a real client pressing the
+                // sit key, but the RULE is pure timestamp math and is proven here: an unbroken
+                // stretch before it helps, instant loss on standing up, no credit carried into
+                // the next sit, and a pinned wound that no amount of sitting closes.
+                Check("sit-needs-unbroken-time", !SitRule.Helps(SitRule.Track(0, true, 1000), 4000, 5f)
+                    && SitRule.Helps(SitRule.Track(0, true, 1000), 6000, 5f));
+                long sat = SitRule.Track(0, true, 1000);
+                sat = SitRule.Track(sat, true, 4000);
+                Check("sit-keeps-its-start", sat == 1000);
+                sat = SitRule.Track(sat, false, 4500);       // stood up one second short
+                Check("sit-standing-zeroes-credit", sat == 0);
+                sat = SitRule.Track(sat, true, 5000);        // sat straight back down
+                Check("sit-restart-earns-nothing", sat == 5000 && !SitRule.Helps(sat, 9000, 5f)
+                    && SitRule.Helps(sat, 10000, 5f));
+                Check("sit-half-time-burns-double", SitRule.ExtraCloseMs(1000, 0.5f) == 1000
+                    && SitRule.ExtraCloseMs(1000, 1f) == 0
+                    && SitRule.ExtraCloseMs(0, 0.5f) == 0);
+                Check("sit-degenerate-mult-safe", SitRule.ExtraCloseMs(1000, 0f) == 19000);
+
+                led.Clear();
+                led.Add(1f, 10000, 0, 10);
+                led.Accelerate(3000);
+                Check("ledger-accelerate", led.SecondsLeft(0) == 7);
+                led.Clear();
+                led.Add(1f, 10000, 88, 10);                  // arrow still in
+                led.Accelerate(60000);
+                led.ExpireStep(999999);
+                Check("ledger-accelerate-skips-pinned", led.Count == 1);
+
                 // Power shot: threshold math mirrors BaseAimingAccuracy exactly.
                 Check("powershot-default-full-acc", Near(PowerShot.FullAccuracySeconds(1f, 1f, 1f), 0.925f / 1.7f));
                 Check("powershot-slow-draw-scales", Near(PowerShot.FullAccuracySeconds(1f, 0.5f, 1f), 2f * (0.925f / 1.7f))
@@ -159,6 +193,14 @@ namespace TassHuntingCompatHarness
             // throwaway test server's in-memory config.
             HuntingModSystem.Cfg.BleedWoundSeconds = 6f;
 
+            // Wire the fake armor in once, inert (factor 1) until the armor stage sets it.
+            var hbSetup = _pig.GetBehavior<EntityBehaviorHealth>();
+            if (hbSetup != null)
+                hbSetup.onDamaged += (dmg, src) =>
+                    src.Type == EnumDamageType.PiercingAttack || src.Type == EnumDamageType.SlashingAttack
+                        || src.Type == EnumDamageType.BluntAttack
+                        ? dmg * _armorFactor : dmg;
+
             _sapi.Event.RegisterCallback(_ => RunLiveHits(), 1500);
         }
 
@@ -182,10 +224,12 @@ namespace TassHuntingCompatHarness
             return -1f;
         }
 
-        private Entity? SpawnPig(double x, double y, double z)
+        private Entity? SpawnPig(double x, double y, double z) => Spawn("pig-", "-adult-", x, y, z);
+
+        private Entity? Spawn(string pathPrefix, string pathContains, double x, double y, double z)
         {
             var type = System.Linq.Enumerable.FirstOrDefault(_sapi.World.EntityTypes,
-                t => t?.Code?.Path != null && t.Code.Path.StartsWith("pig-") && t.Code.Path.Contains("-adult-"));
+                t => t?.Code?.Path != null && t.Code.Path.StartsWith(pathPrefix) && t.Code.Path.Contains(pathContains));
             if (type == null) return null;
             Entity e = _sapi.World.ClassRegistry.CreateEntity(type);
             e.ServerPos.SetPos(x, y, z);
@@ -198,6 +242,15 @@ namespace TassHuntingCompatHarness
         {
             Source = EnumDamageSource.Entity,
             SourceEntity = _attacker,
+            Type = EnumDamageType.PiercingAttack,
+            DamageTier = tier
+        };
+
+        /// <summary>The same hit, dealt by a rust being (a spawned drifter).</summary>
+        private DamageSource RustSharp(int tier) => new DamageSource
+        {
+            Source = EnumDamageSource.Entity,
+            SourceEntity = _drifter,
             Type = EnumDamageType.PiercingAttack,
             DamageTier = tier
         };
@@ -317,7 +370,223 @@ namespace TassHuntingCompatHarness
                 }, 4f);
                 Check("live-bandage-stops-bleeding", _pig.WatchedAttributes.GetInt("thbleed", 0) == 0);
                 Check("live-bandage-clears-ledger", BleedSystem.StacksOn(_pig.EntityId) == 0);
-                Done();
+                _sapi.Event.RegisterCallback(_ => RunLiveAttackerClass(), 300);
+            }
+            catch (Exception e) { Crash(e); }
+        }
+
+        /// <summary>Full health and no open wounds, so each guard test starts from the same
+        /// place and nothing dies mid-run.</summary>
+        private void Reset()
+        {
+            BleedSystem.ClearWounds(_pig!);
+            var hb = _pig!.GetBehavior<EntityBehaviorHealth>();
+            if (hb != null) hb.Health = hb.MaxHealth;
+        }
+
+        /// <summary>
+        /// WHO SWUNG. The attacker pig is a creature (not a player, not rust), so the creature
+        /// dial governs its hits; a spawned drifter is rust and takes the rust dial. Both are
+        /// checked at 0 (never wounds) and back at 1, through the real damage funnel. Hits are
+        /// spaced past the engine's 500ms invulnerability window - a hit inside it lands for
+        /// nothing and would prove nothing.
+        /// </summary>
+        private void RunLiveAttackerClass()
+        {
+            try
+            {
+                var spawn = _sapi.World.DefaultSpawnPosition;
+                _drifter = Spawn("drifter-", "", spawn.X + 6, spawn.Y + 1, spawn.Z);
+                Check("live-rust-classifier", _drifter != null
+                    && HuntingModSystem.IsRustCreature(_drifter)
+                    && !HuntingModSystem.IsRustCreature(_pig!));
+
+                var cfg = HuntingModSystem.Cfg;
+                Reset();
+                cfg.BleedCreatureAttackWoundMult = 0f;
+                _pig!.ReceiveDamage(Sharp(2), 1.5f);
+                Check("live-creature-class-zero-blocks", _pig.WatchedAttributes.GetInt("thbleed", 0) == 0);
+
+                _sapi.Event.RegisterCallback(_ =>
+                {
+                    try
+                    {
+                        cfg.BleedCreatureAttackWoundMult = 1f;
+                        Reset();
+                        _pig.ReceiveDamage(Sharp(2), 1.5f);
+                        Check("live-creature-class-restored", _pig.WatchedAttributes.GetInt("thbleed", 0) == 1);
+
+                        _sapi.Event.RegisterCallback(_2 =>
+                        {
+                            try
+                            {
+                                cfg.BleedRustAttackWoundMult = 0f;
+                                Reset();
+                                _pig.ReceiveDamage(RustSharp(2), 1.5f);
+                                Check("live-rust-class-zero-blocks", _pig.WatchedAttributes.GetInt("thbleed", 0) == 0);
+
+                                _sapi.Event.RegisterCallback(_3 =>
+                                {
+                                    try
+                                    {
+                                        cfg.BleedRustAttackWoundMult = 1f;
+                                        Reset();
+                                        _pig.ReceiveDamage(RustSharp(2), 1.5f);
+                                        Check("live-rust-class-restored", _pig.WatchedAttributes.GetInt("thbleed", 0) == 1);
+                                        _sapi.Event.RegisterCallback(_4 => RunLiveArmor(), 700);
+                                    }
+                                    catch (Exception e) { Crash(e); }
+                                }, 700);
+                            }
+                            catch (Exception e) { Crash(e); }
+                        }, 700);
+                    }
+                    catch (Exception e) { Crash(e); }
+                }, 700);
+            }
+            catch (Exception e) { Crash(e); }
+        }
+
+        /// <summary>
+        /// ARMOR, measured rather than queried. The fake armor sits on the same onDamaged hook
+        /// vanilla armor uses, so this exercises the real prefix-to-postfix path: 88% absorbed
+        /// turns the edge outright (and the hit still lands for 0.6, well past the smallest-hit
+        /// threshold, so it is the ARMOR rule being proven and not that one), while 50% absorbed
+        /// opens a wound of exactly half strength.
+        /// </summary>
+        private void RunLiveArmor()
+        {
+            try
+            {
+                var cfg0 = HuntingModSystem.Cfg;
+                // CONTROL first, or "no wound" proves nothing: the exact same 88%-absorbed hit
+                // with the turn-the-edge rule switched off HAS to open a wound. That pins the
+                // blame for the next check on the armor rule and not on the hit being too small
+                // for BleedMinDamage (0.6 through vs a 0.5 threshold is a thin margin).
+                Reset();
+                _armorFactor = 0.12f;
+                cfg0.BleedArmorNoWoundAbsorb = 1f;   // never turn the edge
+                _pig!.ReceiveDamage(Sharp(2), 5f);   // 5.0 in, 0.6 out
+                Check("live-armor-control-wound-opens", _pig.WatchedAttributes.GetInt("thbleed", 0) == 1);
+                var hbEdge = _pig.GetBehavior<EntityBehaviorHealth>();
+                Check("live-armor-hit-still-landed", hbEdge != null && hbEdge.Health < hbEdge.MaxHealth);
+
+                _sapi.Event.RegisterCallback(_c =>
+                {
+                    try
+                    {
+                        Reset();
+                        cfg0.BleedArmorNoWoundAbsorb = 0.85f;   // back to the shipped rule
+                        _pig.ReceiveDamage(Sharp(2), 5f);
+                        Check("live-armor-turns-the-edge", _pig.WatchedAttributes.GetInt("thbleed", 0) == 0);
+                        _sapi.Event.RegisterCallback(_ => RunLiveArmorHalf(), 700);
+                    }
+                    catch (Exception e) { Crash(e); }
+                }, 700);
+            }
+            catch (Exception e) { Crash(e); }
+        }
+
+        private void RunLiveArmorHalf()
+        {
+            try
+            {
+                Reset();
+                _armorFactor = 0.5f;
+                _pig!.ReceiveDamage(Sharp(2), 4f);   // 4.0 in, 2.0 out
+                Check("live-armor-half-wound-opens", _pig.WatchedAttributes.GetInt("thbleed", 0) == 1);
+                _armorFactor = 1f;                   // bleed ticks must not be re-reduced
+                _sapi.Event.RegisterCallback(_ => RunLiveArmorTick(), 4000);
+            }
+            catch (Exception e) { Crash(e); }
+        }
+
+        private void RunLiveArmorTick()
+        {
+            try
+            {
+                var cfg = HuntingModSystem.Cfg;
+                // One pierce wound, tier 2, weight 1, half of it absorbed: 0.5 * (1 + 0.25*2) = 0.75.
+                float expected = WoundMath.TotalPerTick(cfg.BleedStaticPerTick, cfg.BleedPctMaxHealthPerTick,
+                    _maxHealth, 0.75f, 1, cfg.BleedComboMultiplier, cfg.BleedMaxWounds);
+                Check("live-armor-halves-tick-damage", Near(_pig!.WatchedAttributes.GetFloat("thbleeddmg", -1f), expected));
+                _sapi.Event.RegisterCallback(_ => RunLiveSit(), 700);
+            }
+            catch (Exception e) { Crash(e); }
+        }
+
+        /// <summary>
+        /// SITTING STILL, driven end to end without a client: the sit flag goes straight onto the
+        /// pig's ServerControls, which is the same state the "Sit down" key produces on a real
+        /// player (EntityControls.FloorSitting -> AttemptToggleAction, which simply sets the flag
+        /// when nothing handles the action). The SECOND pig is the control - same wound, same
+        /// moment, never sits - so "the wound closed early" cannot be the ordinary wound timer
+        /// running out. With a 15s wound and the shipped 5s/half/half rule, the seated pig's
+        /// clock is spent 5s at normal speed and the remaining 10s at double, closing at about
+        /// t=10; the control still has 4s left when both are checked at t=11.5.
+        /// </summary>
+        private void RunLiveSit()
+        {
+            try
+            {
+                var cfg = HuntingModSystem.Cfg;
+                cfg.BleedWoundSeconds = 15f;
+                cfg.BleedSittingHelps = true;
+                cfg.BleedSitSecondsRequired = 5f;
+                cfg.BleedSitDamageMult = 0.5f;
+                cfg.BleedSitDurationMult = 0.5f;
+
+                Reset();
+                BleedSystem.ClearWounds(_attacker!);
+                var hbCtl = _attacker!.GetBehavior<EntityBehaviorHealth>();
+                if (hbCtl != null) hbCtl.Health = hbCtl.MaxHealth;
+
+                _pig!.ReceiveDamage(Sharp(2), 1.5f);
+                _attacker.ReceiveDamage(Sharp(2), 1.5f);
+                Check("live-sit-both-wounded", _pig.WatchedAttributes.GetInt("thbleed", 0) == 1
+                    && _attacker.WatchedAttributes.GetInt("thbleed", 0) == 1);
+
+                ((EntityAgent)_pig).ServerControls.FloorSitting = true;
+                Check("live-sit-flag-visible-server-side",
+                    HuntingModSystem.IsSeated(_pig) && !HuntingModSystem.IsSeated(_attacker));
+
+                float full = WoundMath.TotalPerTick(cfg.BleedStaticPerTick, cfg.BleedPctMaxHealthPerTick,
+                    _maxHealth, 1.5f, 1, cfg.BleedComboMultiplier, cfg.BleedMaxWounds);
+
+                _sapi.Event.RegisterCallback(_ =>
+                {
+                    try
+                    {
+                        // Four seconds down: still short of the five it takes, so the tick that
+                        // just landed has to be full strength.
+                        Check("live-sit-not-yet-helping",
+                            Near(_pig.WatchedAttributes.GetFloat("thbleeddmg", -1f), full));
+
+                        _sapi.Event.RegisterCallback(_2 =>
+                        {
+                            try
+                            {
+                                Check("live-sit-halves-damage",
+                                    Near(_pig.WatchedAttributes.GetFloat("thbleeddmg", -1f), full * 0.5f));
+
+                                _sapi.Event.RegisterCallback(_3 =>
+                                {
+                                    try
+                                    {
+                                        Check("live-sit-closes-early", _pig.WatchedAttributes.GetInt("thbleed", 0) == 0);
+                                        Check("live-sit-control-still-bleeding", _attacker.WatchedAttributes.GetInt("thbleed", 0) == 1);
+                                        ((EntityAgent)_pig).ServerControls.FloorSitting = false;
+                                        Check("live-sit-standing-up-reads-through", !HuntingModSystem.IsSeated(_pig));
+                                        Done();
+                                    }
+                                    catch (Exception e) { Crash(e); }
+                                }, 3500);
+                            }
+                            catch (Exception e) { Crash(e); }
+                        }, 4000);
+                    }
+                    catch (Exception e) { Crash(e); }
+                }, 4000);
             }
             catch (Exception e) { Crash(e); }
         }

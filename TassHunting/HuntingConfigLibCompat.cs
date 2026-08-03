@@ -158,6 +158,21 @@ namespace TassHunting
                 Checkbox("Players can bleed (PvP + animal bites)", () => cfg.BleedAffectsPlayers, v => cfg.BleedAffectsPlayers = v);
                 Checkbox("Bandages stop bleeding", () => cfg.BleedStoppedByHealingItems, v => cfg.BleedStoppedByHealingItems = v);
                 Help("Finishing a bandage or a poultice closes every open wound on whoever it was used on, yourself or an animal you patched up. Off = you wait the wounds out.");
+                Checkbox("Sitting still helps", () => cfg.BleedSittingHelps, v => cfg.BleedSittingHelps = v);
+                Help("Sit down and hold it. After the seconds below, the bleeding does half damage and the wounds close in half the time, for as long as you stay down. Stand up and it stops at once and the count starts over, so hopping up and down gains you nothing. An arrow still in you has to come out first.");
+                SliderFloat("Sit this long first (sec)", () => cfg.BleedSitSecondsRequired, v => cfg.BleedSitSecondsRequired = v, 0f, 30f);
+                SliderFloat("Bleed damage while sitting", () => cfg.BleedSitDamageMult, v => cfg.BleedSitDamageMult = v, 0f, 1f);
+                Help("0.5 = half damage. 0 = the bleeding does nothing while you sit.");
+                SliderFloat("Wound time while sitting", () => cfg.BleedSitDurationMult, v => cfg.BleedSitDurationMult = v, 0.05f, 1f);
+                Help("0.5 = wounds close in half the time. 0.25 = a quarter.");
+                SliderFloat("Rust attacks wound size", () => cfg.BleedRustAttackWoundMult, v => cfg.BleedRustAttackWoundMult = v, 0f, 2f);
+                Help("How badly drifters, locusts and other rust beings cut you. 0 = they never make you bleed. Only their sharp ones ever did: corrupt, nightmare and double-headed drifters, bronze and sawblade locusts.");
+                SliderFloat("Animal attacks wound size", () => cfg.BleedCreatureAttackWoundMult, v => cfg.BleedCreatureAttackWoundMult = v, 0f, 2f);
+                Help("The same for wolves, bears, hyenas and foxes. 0 = animal bites never make you bleed. Your own weapons are not affected by either of these.");
+                SliderFloat("Armor shrinks the wound", () => cfg.BleedArmorMitigation, v => cfg.BleedArmorMitigation = v, 0f, 1f);
+                Help("The wound is only as big as the part of the hit your armor let through. 1 = full effect, 0 = armor makes no difference to bleeding. Armor never helps with a wound that is already open - that is what bandages are for.");
+                SliderFloat("Armor stops the cut above", () => cfg.BleedArmorNoWoundAbsorb, v => cfg.BleedArmorNoWoundAbsorb = v, 0.1f, 1f);
+                Help("Armor that soaks at least this share of a blow turns the edge and you do not bleed at all. 0.85 = it has to stop 85 percent. 1 = never. The game rolls one armor piece per hit, so a blow that finds a gap can still cut you.");
                 EndServer(serverDecides);
             }
             if (ImGui.CollapsingHeader("Archery"))
