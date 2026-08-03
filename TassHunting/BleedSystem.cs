@@ -352,6 +352,22 @@ namespace TassHunting
                 st.Ledger.Add(strength, now + (long)(cfg.BleedWoundSeconds * 1000f), pinId, cfg.BleedMaxWounds);
                 Publish(victim, st.Ledger, now);
             }
+
+            // Stamp WHO opened this wound onto the victim, durably (a UID string that survives the
+            // attacker logging off or dying first). A bleed tick is anonymous - it carries no
+            // attacker - so a bleed-out death is causeless to the engine and any "who killed them"
+            // read at death would miss the bleeder. This is the ONE moment the attacker's identity
+            // exists, so another mod (e.g. TassFactions bounties) can credit a bleed-out kill by
+            // reading this stamp while "thbleed" is still non-zero. Players only; cleared when the
+            // bleeding stops (PublishNone). GetCauseEntity is the shooter for a projectile, so an
+            // arrow bleed is credited to the player, not the arrow.
+            if (victim is EntityPlayer && src.GetCauseEntity() is EntityPlayer bleeder && !string.IsNullOrEmpty(bleeder.PlayerUID))
+            {
+                var wa = victim.WatchedAttributes;
+                wa.SetString("tasshunt:bleedByUid", bleeder.PlayerUID);
+                wa.SetString("tasshunt:bleedByName", bleeder.Player?.PlayerName ?? bleeder.GetName());
+                wa.SetLong("tasshunt:bleedByMs", now);
+            }
         }
 
         /// <summary>
@@ -393,6 +409,15 @@ namespace TassHunting
             if (ent.WatchedAttributes.GetInt("thbleed", 0) != 0) ent.WatchedAttributes.SetInt("thbleed", 0);
             if (ent is EntityPlayer && ent.WatchedAttributes.GetInt("thbleedsecs", 0) != 0)
                 ent.WatchedAttributes.SetInt("thbleedsecs", 0);
+            // Bleeding stopped: drop the "who bled me" stamp so a later unrelated death can't be
+            // mis-credited to the old bleeder (a reader also gates on thbleed>0, but clearing keeps
+            // the attribute honest).
+            if (ent.WatchedAttributes.HasAttribute("tasshunt:bleedByUid"))
+            {
+                ent.WatchedAttributes.RemoveAttribute("tasshunt:bleedByUid");
+                ent.WatchedAttributes.RemoveAttribute("tasshunt:bleedByName");
+                ent.WatchedAttributes.RemoveAttribute("tasshunt:bleedByMs");
+            }
         }
 
         /// <summary>
