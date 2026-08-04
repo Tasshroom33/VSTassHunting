@@ -4,6 +4,12 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.12 (2026-08-03)
+Groundwork for Tass Factions bounties. When a player wounds another player, the
+victim now remembers who bled them, so if they later bleed out, Tass Factions
+credits the right hunter for a bounty instead of counting it as a nobody kill.
+Nothing changes if you are not running Tass Factions bounties.
+
 ## 0.14.11 (2026-08-03)
 Armor now matters to bleeding. A wound is only as big as the part of the hit
 your armor let through, and armor that stops most of a blow turns the edge so
