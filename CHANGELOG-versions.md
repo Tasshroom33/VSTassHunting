@@ -4,6 +4,17 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.14 (2026-08-18)
+On multiplayer servers the gameplay settings now come from the server: every
+player who joins plays by the server's config instead of their own config
+file quietly deciding part of the rules on their screen. This fixes players
+being unable to loot animal corpses on servers where the owner turned the
+auto harvest off (reported by earwiq) - the other players' own game was
+still hiding the loot window using its default settings. Look-and-feel
+settings (bleeding box corner, blood looks and colors, the power shot click)
+stay each player's own. Also, harvest time 0 in the config now means vanilla
+speed - it used to mean near-instant, which nobody setting 0 wanted.
+
 ## 0.14.13 (2026-08-18)
 Fixes the stuck bleeding after leaving a world mid-bleed (reported by
 Sanches31). Before this, if you exited a world while bleeding, you came back

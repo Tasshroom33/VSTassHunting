@@ -28,6 +28,10 @@
       <HintPath>$(VsInstall)/Mods/VSEssentials.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="protobuf-net">
+      <HintPath>$(VsInstall)/Lib/protobuf-net.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <!-- The mod under test: resolved at runtime because the mod loader loads both dlls
          (same cross-mod pattern TassModFixesTweaks uses with Vigor.dll). Never copy it. -->
     <Reference Include="TassHunting">

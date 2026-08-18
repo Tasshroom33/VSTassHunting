@@ -36,7 +36,10 @@ namespace TassHunting
         public bool FleeAwayFromHunterEnabled = true;
         // With Item Pickup Highlighter installed: only YOUR projectiles highlight
         // (enemy-thrown stones/arrows stay unmarked). Client-side.
-        public bool HighlightOnlyOwnProjectiles = true;
+        // [ClientPersonal] marks a field as the player's own look-and-feel choice:
+        // on a multiplayer client the server's config replaces everything else at
+        // join (see HuntingConfigSync). Unmarked = the server rules it.
+        [ClientPersonal] public bool HighlightOnlyOwnProjectiles = true;
 
         // Extended pickup for LANDED arrows/spears (vanilla collect range is a
         // touch-range 1.5 blocks, decompile-verified). 0 = vanilla only.
@@ -73,7 +76,9 @@ namespace TassHunting
         public float PackMaxFollowTimeSec = 240f;
 
         // ---- HARVEST OVERHAUL (playtest 2026-07-19, see HarvestOverhaul.cs) ----
-        // Knife harvest hold time multiplier (0.5 = half of vanilla).
+        // Knife harvest hold time multiplier (0.5 = half of vanilla; 0 = leave
+        // vanilla timing alone, matching the mod's "0 = off" convention - field
+        // report 2026-08-10 set 0.00 expecting vanilla and got a twentieth).
         public float HarvestTimeMult = 0.5f;
         // Finished harvest spills loot on the ground and poofs the corpse â€”
         // the carcass window never opens.
@@ -90,7 +95,7 @@ namespace TassHunting
         // Damage multiplier for a power shot. 1.25 = 25% more.
         public float PowerShotDamageMult = 1.25f;
         // Quiet click for the shooter the moment the extra hold pays off.
-        public bool PowerShotDrawCue = true;
+        [ClientPersonal] public bool PowerShotDrawCue = true;
 
         // ---- STICKY PROJECTILES (see StickyProjectiles.cs) ----
         // Master: arrows/spears ride the animal they hit instead of vanishing.
@@ -247,15 +252,15 @@ namespace TassHunting
         // CLIENT: the on-screen bleeding box - blood-drop icon, open wound count and the
         // countdown to it closing, in the same shape as the XSkills effect box. Deliberately
         // just that: no hover description panel (user call 2026-07-29, it read as clutter).
-        public bool BleedHudEnabled = true;
+        [ClientPersonal] public bool BleedHudEnabled = true;
         // Corner the box sits in. One of: LeftTop, LeftMiddle, LeftBottom, RightTop,
         // RightMiddle, RightBottom, CenterTop, CenterBottom. Left middle by user call
         // 2026-07-29 - note that is also where the XSkills effect frame sits, so anyone running
         // both and finding them stacked can move this.
-        public string BleedHudPosition = "LeftMiddle";
+        [ClientPersonal] public string BleedHudPosition = "LeftMiddle";
         // Nudge the box in pixels from that corner (json-only).
-        public int BleedHudOffsetX = 0;
-        public int BleedHudOffsetY = 0;
+        [ClientPersonal] public int BleedHudOffsetX = 0;
+        [ClientPersonal] public int BleedHudOffsetY = 0;
         // WHO SHOWS RED BLOOD (user 2026-07-23): animals and players show blood as
         // they always have; RUST CREATURES are the only new distinction, gated by
         // one plain checkbox (default OFF - red blood off a rust being reads
@@ -268,12 +273,12 @@ namespace TassHunting
         //   as an animal (shows blood) until its name is added - it never breaks,
         //   it just is not recognized as rust yet. That is the accepted tradeoff
         //   for a name-the-entity classifier (see HuntingModSystem.IsRustCreature).
-        public bool BloodEffectsForRustCreatures = false;
+        [ClientPersonal] public bool BloodEffectsForRustCreatures = false;
 
         // ---- BLOOD VISUALS (see BloodVisuals.cs). In-house blood system:
         //      a spot ledger + water diffusion; the current build renders it
         //      client-locally (the sync layer is parked, see BloodVisuals). ----
-        public bool BloodVisualsEnabled = true;
+        [ClientPersonal] public bool BloodVisualsEnabled = true;
         // How long the spot RECORD is kept, seconds. The visible blood lifetime
         // is BloodTrails.Lifetime (per-drop) - this just needs to outlast it so
         // the record isn't culled before its particles finish. Match the max
@@ -289,9 +294,9 @@ namespace TassHunting
         // json-only 0.6.7 (user: reads as redundant next to drip rate).
         public float BloodSpotMinSpacingBlocks = 0.8f;
         public int BloodMaxSpots = 4096;          // server ledger cap, oldest pruned
-        public float BloodRenderDistanceBlocks = 64f;
-        public int BloodMaxRenderedSpots = 1200;  // client per-tick render budget
-        public bool WaterBloodEnabled = true;     // blood in water diffuses as tiles
+        [ClientPersonal] public float BloodRenderDistanceBlocks = 64f;
+        [ClientPersonal] public int BloodMaxRenderedSpots = 1200;  // client per-tick render budget
+        [ClientPersonal] public bool WaterBloodEnabled = true;     // blood in water diffuses as tiles
 
         // ---- CORPSE BLOOD (0.11.0, user 2026-07-22: "darken, hold, then fade
         //      BUT if its a corpse then the blood spreads out wider" +
@@ -300,10 +305,10 @@ namespace TassHunting
         //      radius is multiplied by CorpseSpreadMult so a kill leaves a wide
         //      spreading pool, not a tight dot. Toggle off to suppress death
         //      pools entirely (bleed trails while alive are unaffected). ----
-        public bool CorpseBloodEnabled = true;    // client: render the death pool spread
-        public float CorpseSpreadMult = 2.5f;     // client: death pool radius x this (1 = same as a trail spot)
-        public float CorpsePoolLifetimeSeconds = 120f; // client: how long the death pool lingers before it dries away (its OWN duration, not the trail's)
-        public bool BloodDiagnostics = false;          // client: log what each corpse pool emits (count/size/lifetime), for tuning
+        [ClientPersonal] public bool CorpseBloodEnabled = true;    // client: render the death pool spread
+        [ClientPersonal] public float CorpseSpreadMult = 2.5f;     // client: death pool radius x this (1 = same as a trail spot)
+        [ClientPersonal] public float CorpsePoolLifetimeSeconds = 120f; // client: how long the death pool lingers before it dries away (its OWN duration, not the trail's)
+        [ClientPersonal] public bool BloodDiagnostics = false;          // client: log what each corpse pool emits (count/size/lifetime), for tuning
 
         // ---- BLOOD LOOK (0.8.0 - USER-SPEC PANEL: four sections, ONE standard
         //      particle vocabulary per category, everything else json-only.
@@ -312,7 +317,7 @@ namespace TassHunting
         // (line drops, pools, hit marks). SPLATTER = airborne juice (spurt
         // pulses on the shot / DoT beat, plus falling droplets).
         // Defaults are the user's own field-tuned 2026-07-22 values.
-        public BloodParticleLook BloodTrails = new BloodParticleLook
+        [ClientPersonal] public BloodParticleLook BloodTrails = new BloodParticleLook
         {
             Enabled = true,
             SizeMin = 0.598f, SizeMax = 1.048f,
@@ -323,7 +328,7 @@ namespace TassHunting
         // Splatter is the SAME blood as trails - same lifetime; it just starts
         // higher and more explosive (bigger spread/launch, more particles).
         // Lifetime matched to BloodTrails per the user (all blood lasts alike).
-        public BloodParticleLook BloodSplatter = new BloodParticleLook
+        [ClientPersonal] public BloodParticleLook BloodSplatter = new BloodParticleLook
         {
             Enabled = true,
             SizeMin = 0.503f, SizeMax = 1.0f,
@@ -332,27 +337,27 @@ namespace TassHunting
             LifetimeMin = 45f, LifetimeMax = 60f  // == trails; all blood lasts alike
         };
         // Water Effect
-        public bool TintSurroundingWater = true;  // client: render the blood-in-water murk
+        [ClientPersonal] public bool TintSurroundingWater = true;  // client: render the blood-in-water murk
         // Rain clear speed 0..2 (affects newly deposited blood, trails and
         // splatter marks alike): 0 = rain never clears blood, 1 = rain cuts
         // lifetime in half, 2 = to a third.
-        public float RainClearSpeed = 1f;
+        [ClientPersonal] public float RainClearSpeed = 1f;
         // Bleed Damage section extra
-        public bool SpawnSplatterOnDamage = true; // splatter on qualifying hits + DoT ticks
+        [ClientPersonal] public bool SpawnSplatterOnDamage = true; // splatter on qualifying hits + DoT ticks
 
         // json-only dials (deliberately NOT in the panel per the 0.8.0 spec)
-        public string BloodColorHex = "#74080C";        // FRESH blood (bright)
+        [ClientPersonal] public string BloodColorHex = "#74080C";        // FRESH blood (bright)
         // AGED blood (dark, dried): ground spots lerp from fresh -> aged over
         // their lifetime (field 2026-07-22). Set equal to BloodColorHex to
         // disable the age darkening.
-        public string BloodColorAgedHex = "#3A0406";
+        [ClientPersonal] public string BloodColorAgedHex = "#3A0406";
         public float BloodOnHitMinDamage = 0.5f;
         public float BloodTrailScale = 1f;              // server: trail/hit deposit amount
         public float RunningBloodMult = 1.5f;           // server: sprint bleed boost
         public float WaterBloodDecayPerSecond = 0.12f;  // server: water field fade
         public float WaterBloodSpreadPerSecond = 0.02f; // server: water field spread
-        public float WaterBloodMaxOpacity = 0.50f;      // client: water blood particle opacity (0.50 = 50%). Direct %, tune from panel.
-        public float WaterClotAmount = 1f;              // client: how many murk puffs per beat (sediment recipe fixes their size)
+        [ClientPersonal] public float WaterBloodMaxOpacity = 0.50f;      // client: water blood particle opacity (0.50 = 50%). Direct %, tune from panel.
+        [ClientPersonal] public float WaterClotAmount = 1f;              // client: how many murk puffs per beat (sediment recipe fixes their size)
 
         // ---- WOUNDED SLOWDOWN (see WoundedSlowdown.cs): a per-tier health
         //      table that slows creature movement in ALL AI states ----
@@ -364,6 +369,18 @@ namespace TassHunting
             new WoundedSlowTier { HealthPctMax = 40f, SlowPct = 20f },
             new WoundedSlowTier { HealthPctMax = 50f, SlowPct = 10f },
         };
+
+        /// <summary>Every hand-edited-value rule in one place, applied after EVERY
+        /// load path: file load, ConfigLib restore/defaults, and the server sync
+        /// (HuntingConfigSync.BuildSessionConfig).</summary>
+        public void Sanitize()
+        {
+            // 0 (or less) = leave vanilla harvest timing alone. Same "0 = off"
+            // convention as the rest of the config; before this, 0.00 clamped to
+            // 0.05 and gave a twentieth of vanilla (field report 2026-08-10).
+            if (HarvestTimeMult <= 0f) HarvestTimeMult = 1f;
+            else HarvestTimeMult = Vintagestory.API.MathTools.GameMath.Clamp(HarvestTimeMult, 0.05f, 10f);
+        }
     }
 
     public class HuntingModSystem : ModSystem
@@ -517,7 +534,7 @@ namespace TassHunting
                 var loaded = api.LoadModConfig<HuntingConfig>("TassHunting.json")
                           ?? api.LoadModConfig<HuntingConfig>("TasshroomHunting.json");
                 if (loaded != null) Cfg = loaded;
-                Cfg.HarvestTimeMult = Vintagestory.API.MathTools.GameMath.Clamp(Cfg.HarvestTimeMult, 0.05f, 10f);
+                Cfg.Sanitize();
                 api.StoreModConfig(Cfg, "TassHunting.json");
             }
             catch (Exception ex) { api.Logger.Warning("[TassHunting] config load failed: {0}", ex.Message); }
@@ -581,10 +598,46 @@ namespace TassHunting
         // Read them in game with /tasspickup.
         private int pickupCollected, pickupPartial, pickupNoRoom;
 
+        /// <summary>Client side: the server's config json as received this session
+        /// (null in single player and before the packet). ConfigLib restore/defaults
+        /// re-apply through this so a panel action cannot desync gameplay from the
+        /// server mid-session.</summary>
+        public static string LastServerConfigJson;
+
+        /// <summary>Re-derive the session config from a fresh local base: on a remote
+        /// server the stored server config rules the gameplay fields again; otherwise
+        /// the local base stands (sanitized).</summary>
+        public static HuntingConfig ReapplyServerRuled(HuntingConfig localBase)
+        {
+            if (string.IsNullOrEmpty(LastServerConfigJson)) { localBase?.Sanitize(); return localBase; }
+            return HuntingConfigSync.BuildSessionConfig(LastServerConfigJson, localBase);
+        }
+
         public override void StartServerSide(ICoreServerAPI api)
         {
             sapi = api;
             StickyProjectiles.StartServer(api);
+
+            // CONFIG SYNC (field report earwiq 2026-08-10, see HuntingConfigSync):
+            // the server's config is the world's config. Sent at join AND at
+            // now-playing - the handler is idempotent and the double-send costs one
+            // small string, cheaper than betting on either event's channel timing.
+            try
+            {
+                var channel = api.Network.RegisterChannel(HuntingConfigSync.ChannelName)
+                    .RegisterMessageType<HuntingConfigSyncPacket>();
+                void Send(IServerPlayer plr)
+                {
+                    try
+                    {
+                        channel.SendPacket(new HuntingConfigSyncPacket { ConfigJson = HuntingConfigSync.Serialize(Cfg) }, plr);
+                    }
+                    catch (Exception ex) { api.Logger.Warning("[TassHunting] config sync send failed: {0}", ex.Message); }
+                }
+                api.Event.PlayerJoin += Send;
+                api.Event.PlayerNowPlaying += Send;
+            }
+            catch (Exception ex) { api.Logger.Warning("[TassHunting] config sync channel failed: {0}", ex.Message); }
             if (Cfg.ProjectilePickupRadius > 0f)
                 pickupTickId = api.Event.RegisterGameTickListener(PickupTick, 400);
 
@@ -783,6 +836,30 @@ namespace TassHunting
 
         public override void StartClientSide(Vintagestory.API.Client.ICoreClientAPI api)
         {
+            // CONFIG SYNC receive: on a remote server the world's gameplay settings
+            // replace this client's local ones the moment the server's packet lands;
+            // the [ClientPersonal] look-and-feel fields stay this player's own. In
+            // single player client and server share the one static Cfg already - skip,
+            // so the panel's live edits are never re-pinned to a stale join snapshot.
+            LastServerConfigJson = null; // fresh world: no snapshot from the last one
+            try
+            {
+                api.Network.RegisterChannel(HuntingConfigSync.ChannelName)
+                    .RegisterMessageType<HuntingConfigSyncPacket>()
+                    .SetMessageHandler<HuntingConfigSyncPacket>(pkt =>
+                    {
+                        try
+                        {
+                            if (api.IsSinglePlayer || string.IsNullOrEmpty(pkt?.ConfigJson)) return;
+                            LastServerConfigJson = pkt.ConfigJson;
+                            Cfg = HuntingConfigSync.BuildSessionConfig(pkt.ConfigJson, Cfg);
+                            api.Logger.Notification("[TassHunting] gameplay settings synced from the server; look-and-feel settings stay yours.");
+                        }
+                        catch (Exception ex) { api.Logger.Warning("[TassHunting] config sync apply failed: {0}", ex.Message); }
+                    });
+            }
+            catch (Exception ex) { api.Logger.Warning("[TassHunting] config sync channel failed: {0}", ex.Message); }
+
             if (api.ModLoader.IsModEnabled("itempickuphighlighter"))
             {
                 // Call-site try/catch too (compat sweep 2026-07-22), mirroring the

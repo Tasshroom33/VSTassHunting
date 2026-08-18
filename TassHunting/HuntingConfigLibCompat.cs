@@ -44,29 +44,34 @@ namespace TassHunting
             if (cfg == null) return;
 
             if (buttons.Save) capi.StoreModConfig(cfg, "TassHunting.json");
+            // Restore/Defaults go through ReapplyServerRuled: on a remote server the
+            // synced server config keeps ruling the gameplay fields (only the
+            // look-and-feel fields actually reset), so a panel button cannot desync
+            // this client from the world it is playing on. In single player
+            // LastServerConfigJson is null and these behave exactly as before.
             if (buttons.Restore)
             {
                 var loaded = capi.LoadModConfig<HuntingConfig>("TassHunting.json");
-                if (loaded != null) HuntingModSystem.Cfg = loaded; // nothing caches Cfg - swap is safe
+                if (loaded != null) HuntingModSystem.Cfg = HuntingModSystem.ReapplyServerRuled(loaded); // nothing caches Cfg - swap is safe
                 return;
             }
             if (buttons.Defaults)
             {
-                HuntingModSystem.Cfg = new HuntingConfig();
+                HuntingModSystem.Cfg = HuntingModSystem.ReapplyServerRuled(new HuntingConfig());
                 return;
             }
 
-            // ENFORCEMENT (0.11.15): on a multiplayer server, the GAMEPLAY/BALANCE
-            // settings are read server-side only (BleedSystem, StickyProjectiles,
-            // ArcheryTweaks, HarvestOverhaul, the AI patches) - a client's copy is
-            // ignored. There is no config sync, so the client just should not think
-            // they control those. We GREY OUT (BeginDisabled) every server-decided
-            // section when not in single player, so it is obvious what the server
-            // owns. The VISUAL sections (blood look, colors, water tint, corpse
-            // decal) are genuinely client-side and stay fully editable.
+            // ENFORCEMENT: on a multiplayer server the GAMEPLAY/BALANCE settings are
+            // the SERVER'S - since the config sync (earwiq report 2026-08-10) the
+            // server's values land in Cfg at join, so the greyed-out sections below
+            // now SHOW the world's real settings instead of this client's ignored
+            // local copy. (The 0.11.15 grey-out assumed clients never read gameplay
+            // fields; the harvest fields ARE read client-side, which is exactly why
+            // the sync exists.) The VISUAL sections (blood look, colors, water tint,
+            // corpse decal, the bleeding box) are [ClientPersonal] and stay editable.
             bool serverDecides = !capi.IsSinglePlayer; // true on a multiplayer client
             if (serverDecides)
-                ImGui.TextWrapped("You are on a server. Greyed-out settings are decided by the server's own config - your changes to them do nothing here. The look-and-feel settings below are yours to change.");
+                ImGui.TextWrapped("You are on a server. Greyed-out settings show the server's own values, received when you joined - the server decides them. The look-and-feel settings are yours to change.");
 
             // ---- BLOOD (0.8.0): exactly the user-spec four sections with the
             //      ONE standard particle vocabulary. Everything else json-only.
@@ -235,7 +240,7 @@ namespace TassHunting
             {
                 BeginServer(serverDecides);
                 SliderFloat("Harvest time (x vanilla)", () => cfg.HarvestTimeMult, v => cfg.HarvestTimeMult = v, 0.05f, 2f);
-                Help("0.5 = knife work takes half as long.");
+                Help("0.5 = knife work takes half as long, 1 = vanilla. In the config file, 0 also means vanilla.");
                 Checkbox("Loot drops on the ground", () => cfg.HarvestAutoDrop, v => cfg.HarvestAutoDrop = v);
                 Checkbox("Remove empty corpses", () => cfg.EmptyCorpseAutoRemove, v => cfg.EmptyCorpseAutoRemove = v);
                 SliderFloat("Remove after (sec)", () => cfg.EmptyCorpseRemoveSeconds, v => cfg.EmptyCorpseRemoveSeconds = v, 1f, 120f);
