@@ -267,6 +267,13 @@ namespace TassHunting
         {
             sapi = api;
             api.Event.RegisterGameTickListener(Tick, 1000);
+            // Entities ENTERING the world can only carry stale bleed state - scrub it (see
+            // OnEntityEnteredWorld). Both events are needed: chunk entities re-enter through
+            // OnEntityLoaded, a rejoining player's entity re-enters through SpawnEntity with a
+            // FRESH entity id (decompile-verified ServerMain.SpawnEntity_internal), so it only
+            // ever fires OnEntitySpawn.
+            api.Event.OnEntityLoaded += OnEntityEnteredWorld;
+            api.Event.OnEntitySpawn += OnEntityEnteredWorld;
         }
 
         public override void Dispose()
@@ -402,6 +409,40 @@ namespace TassHunting
             if (wa.GetInt("thbleedsecs", 0) != secs) wa.SetInt("thbleedsecs", secs);
         }
 
+        /// <summary>
+        /// An entity entering the world has NO open wounds: the ledger is server-session
+        /// memory, and this session never wounded it. But the ledger's published mirror
+        /// ("thbleed" and friends) rides WatchedAttributes into the SAVE, so an entity that
+        /// was bleeding when its world was exited - or its chunk unloaded - comes back wearing
+        /// "still bleeding" state that nothing would ever clear: a bleed box that never counts
+        /// down, no damage, and (before ClearWounds published unconditionally) no bandage
+        /// could close it (field report 2026-08-18). Wiping on entry fixes worlds already
+        /// poisoned by older builds, not just future exits. Any ledger entry under this id
+        /// belongs to a previous session's dead object - drop that too.
+        /// </summary>
+        private static void OnEntityEnteredWorld(Entity ent)
+        {
+            var wa = ent?.WatchedAttributes;
+            if (wa == null) return;
+            lock (Active)
+            {
+                if (Active.TryGetValue(ent.EntityId, out var st) && !ReferenceEquals(st.Ent, ent))
+                    Active.Remove(ent.EntityId);
+            }
+            if (wa.GetInt("thbleed", 0) != 0) wa.SetInt("thbleed", 0);
+            if (wa.GetInt("thbleedsecs", 0) != 0) wa.SetInt("thbleedsecs", 0);
+            // The tick counter and per-tick damage are only meaningful mid-session; removal
+            // is synced (SyncedTreeAttribute.RemoveAttribute marks the tree dirty).
+            if (wa.HasAttribute("thbleedtick")) wa.RemoveAttribute("thbleedtick");
+            if (wa.HasAttribute("thbleeddmg")) wa.RemoveAttribute("thbleeddmg");
+            if (wa.HasAttribute("tasshunt:bleedByUid"))
+            {
+                wa.RemoveAttribute("tasshunt:bleedByUid");
+                wa.RemoveAttribute("tasshunt:bleedByName");
+                wa.RemoveAttribute("tasshunt:bleedByMs");
+            }
+        }
+
         /// <summary>Zero the published state for an entity that has stopped bleeding.</summary>
         private static void PublishNone(Entity ent)
         {
@@ -435,7 +476,10 @@ namespace TassHunting
                 if (had) st.Ledger.Clear();
                 Active.Remove(victim.EntityId);
             }
-            if (had) PublishNone(victim); // engine calls stay outside the lock
+            // Publish unconditionally (engine calls stay outside the lock): a save that
+            // carried stale "still bleeding" attributes into this session has no ledger
+            // entry, but the dressing must still wipe the phantom the player is looking at.
+            PublishNone(victim);
             return had;
         }
 
@@ -505,7 +549,14 @@ namespace TassHunting
                 foreach (var kv in Active)
                 {
                     var st = kv.Value;
-                    if (st.Ent == null || !st.Ent.Alive || st.Ledger.Count == 0)
+                    // Despawned covers a chunk that unloaded and a player who logged off
+                    // mid-bleed (decompile-verified: every DespawnEntity path sets it): the
+                    // object in our dict is detached from the world - its serialized copy is
+                    // already frozen - so ticking damage into it does nothing but waste work.
+                    // Its stale saved attributes are scrubbed by OnEntityEnteredWorld when it
+                    // comes back.
+                    if (st.Ent == null || !st.Ent.Alive || st.Ledger.Count == 0
+                        || st.Ent.State == EnumEntityState.Despawned)
                     {
                         try { PublishNone(st.Ent); } catch { }
                         (retire = retire ?? new List<long>()).Add(kv.Key); continue;
