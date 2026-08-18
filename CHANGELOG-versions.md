@@ -4,6 +4,16 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.13 (2026-08-18)
+Fixes the stuck bleeding after leaving a world mid-bleed (reported by
+Sanches31). Before this, if you exited a world while bleeding, you came back
+with a bleed that never counted down, dealt no damage, and no bandage or
+poultice could stop - because the "you are bleeding" marker was saved with
+your character but the actual wounds were not. Now everything bleeding-related
+is wiped clean the moment you or any animal re-enters the world, and a bandage
+also clears a stuck marker from a world saved before this fix. Rejoining a
+multiplayer server had the same problem and is fixed the same way.
+
 ## 0.14.12 (2026-08-03)
 Groundwork for Tass Factions bounties. When a player wounds another player, the
 victim now remembers who bled them, so if they later bleed out, Tass Factions
