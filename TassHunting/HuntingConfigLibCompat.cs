@@ -143,7 +143,7 @@ namespace TassHunting
                 Checkbox("Show bleeding box", () => cfg.BleedHudEnabled, v => cfg.BleedHudEnabled = v);
                 Help("A small panel on screen while YOU are bleeding: a blood drop, how many wounds are open and how long until they close.");
                 Combo("Bleeding box corner", BleedHudPositions, () => cfg.BleedHudPosition, v => cfg.BleedHudPosition = v);
-                Help("Where that panel sits. Left middle by default. If you run XSkills its effects panel sits there too, so move this if they stack up.");
+                Help("Where that panel sits. Left middle by default, set a little below the middle so it stays clear of the XSkills effects panel.");
                 BeginServer(serverDecides);
                 Checkbox("Enable bleed damage", () => cfg.BleedEnabled, v => cfg.BleedEnabled = v);
                 Help("Sharp hits open wounds: arrows, thrown spears, spear stabs, knife/sword/axe slashes. Blunt never bleeds. Better metal = stronger wound; every extra wound multiplies the whole bleed. An arrow left in the animal keeps its wound open.");

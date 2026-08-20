@@ -4,6 +4,12 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.15 (2026-08-19)
+The bleeding box's default spot moved 50 pixels down. It used to sit exactly
+where the XSkills effects panel sits, so with both mods the two panels could
+stack on top of each other and the bleeding box looked like it never showed
+up. Your own position and offset settings still apply on top of the new spot.
+
 ## 0.14.14 (2026-08-18)
 On multiplayer servers the gameplay settings now come from the server: every
 player who joins plays by the server's config instead of their own config

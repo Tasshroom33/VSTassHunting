@@ -13,8 +13,11 @@
 //     GuiElementDynamicText beside it reading "Name(stacks) 12.4s".
 // This file is that recipe with one effect in it, and no XLib dependency: the
 // data comes off our own watched attributes so it works with or without
-// XSkills installed. Ours defaults to the RIGHT-middle of the screen precisely
-// because the XSkills frame lives at the left-middle - the two never overlap.
+// XSkills installed. The default corner is LEFT-middle (user call 2026-07-29),
+// which is also where the XSkills effect frame sits - so the left-middle
+// anchor deliberately hangs 50px BELOW the true middle (user call 2026-08-19,
+// after a field report of the box not showing: the two panels stacked on the
+// same spot). A player's own BleedHudOffsetY still applies on top.
 // (XSkills also opens a description panel on hover. Deliberately not copied -
 // user call 2026-07-29: the big description box reads as clutter.)
 //
@@ -87,6 +90,12 @@ namespace TassHunting
         private const int RowHeight = 32;
         // Sit a little off the screen edge rather than flush against it.
         private const int EdgeInset = 8;
+        // The XSkills effect frame occupies the left-middle spot (both panels are
+        // built to the same recipe), so OUR left-middle anchor sits this far below
+        // the true middle - the two can never stack. Applies to the anchor itself,
+        // not the config offset default, so it reaches every existing install whose
+        // saved BleedHudOffsetY is an explicit 0.
+        private const int XSkillsClearanceY = 50;
 
         private GuiElementDynamicText rowText;
 
@@ -195,6 +204,7 @@ namespace TassHunting
         {
             if (a == EnumDialogArea.LeftTop || a == EnumDialogArea.RightTop || a == EnumDialogArea.CenterTop) return EdgeInset;
             if (a == EnumDialogArea.LeftBottom || a == EnumDialogArea.RightBottom || a == EnumDialogArea.CenterBottom) return -EdgeInset;
+            if (a == EnumDialogArea.LeftMiddle) return XSkillsClearanceY; // clear of the XSkills frame
             return 0;
         }
 

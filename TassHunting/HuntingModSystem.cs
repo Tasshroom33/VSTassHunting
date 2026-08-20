@@ -255,8 +255,9 @@ namespace TassHunting
         [ClientPersonal] public bool BleedHudEnabled = true;
         // Corner the box sits in. One of: LeftTop, LeftMiddle, LeftBottom, RightTop,
         // RightMiddle, RightBottom, CenterTop, CenterBottom. Left middle by user call
-        // 2026-07-29 - note that is also where the XSkills effect frame sits, so anyone running
-        // both and finding them stacked can move this.
+        // 2026-07-29. The XSkills effect frame sits at left middle too, so the
+        // LeftMiddle anchor hangs 50px below the true middle (user call 2026-08-19)
+        // and the two never stack; BleedHudOffsetY still applies on top.
         [ClientPersonal] public string BleedHudPosition = "LeftMiddle";
         // Nudge the box in pixels from that corner (json-only).
         [ClientPersonal] public int BleedHudOffsetX = 0;
