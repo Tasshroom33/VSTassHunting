@@ -577,7 +577,7 @@ namespace TassHuntingCompatHarness
                                         Check("live-sit-control-still-bleeding", _attacker.WatchedAttributes.GetInt("thbleed", 0) == 1);
                                         ((EntityAgent)_pig).ServerControls.FloorSitting = false;
                                         Check("live-sit-standing-up-reads-through", !HuntingModSystem.IsSeated(_pig));
-                                        Done();
+                                        RunLivePlayerPublish();
                                     }
                                     catch (Exception e) { Crash(e); }
                                 }, 3500);
@@ -587,6 +587,76 @@ namespace TassHuntingCompatHarness
                     }
                     catch (Exception e) { Crash(e); }
                 }, 4000);
+            }
+            catch (Exception e) { Crash(e); }
+        }
+
+        /// <summary>
+        /// The PLAYER publish path - what the bleeding box actually reads (field report
+        /// 2026-08-19: box not showing). Every other leg wounds pigs; players have their
+        /// own branches (BleedAffectsPlayers gate, the "thbleedsecs" countdown that only
+        /// players get, the bleed-cause stamp). Fabricated offline player, the 0.13.5
+        /// harness trick: PlayerUID is just a watched attribute, entity-identity checks
+        /// work headless; despawned right after use because the engine spams caught NREs
+        /// for its missing IPlayer. Its SpawnEntity also runs the 0.14.13 join scrub
+        /// first, so this is the field chain in order: enter world -> scrub -> wound ->
+        /// publish.
+        /// </summary>
+        private void RunLivePlayerPublish()
+        {
+            try
+            {
+                var cfg = HuntingModSystem.Cfg;
+                cfg.BleedAffectsPlayers = true;
+                cfg.BleedWoundSeconds = 60f;
+
+                var spawn = _sapi.World.DefaultSpawnPosition;
+                var ptype = System.Linq.Enumerable.FirstOrDefault(_sapi.World.EntityTypes,
+                    t => t?.Code?.Path == "player");
+                Check("live-player-type-found", ptype != null);
+                if (ptype == null) { Done(); return; }
+                Entity fake = _sapi.World.ClassRegistry.CreateEntity(ptype);
+                fake.WatchedAttributes.SetString("playerUID", "bleedtest-fake-player");
+                fake.ServerPos.SetPos(spawn.X + 8, spawn.Y + 1, spawn.Z);
+                fake.Pos.SetFrom(fake.ServerPos);
+                _sapi.World.SpawnEntity(fake);
+
+                _sapi.Event.RegisterCallback(_ =>
+                {
+                    try
+                    {
+                        // Straight into the mod's own hit funnel entry (the exact call the
+                        // damage postfix makes) - a fabricated player cannot take real
+                        // nonzero damage headless: EntityPlayer.OnHurt does
+                        // World.PlayerByUid(uid).LanguageCode for the damage log and NREs
+                        // on the null IPlayer (decompile EntityPlayer.cs:1280). The full
+                        // engine damage path on a REAL player is the hud smoke's job.
+                        BleedSystem.OnSharpHit(fake, Sharp(2), 1.5f, 1.5f);
+                        _sapi.Event.RegisterCallback(_2 =>
+                        {
+                            try
+                            {
+                                // What the box reads, present and sane after the join scrub.
+                                Check("live-player-wound-publishes", fake.WatchedAttributes.GetInt("thbleed", 0) == 1);
+                                Check("live-player-countdown-publishes", fake.WatchedAttributes.GetInt("thbleedsecs", 0) > 0);
+                                // And a dressing zeroes both, so the box closes.
+                                BleedSystem.OnHealItemApplied(fake, new DamageSource
+                                {
+                                    Source = EnumDamageSource.Internal,
+                                    Type = EnumDamageType.Heal,
+                                    Duration = TimeSpan.FromSeconds(10),
+                                    TicksPerDuration = 10
+                                });
+                                Check("live-player-dressing-clears", fake.WatchedAttributes.GetInt("thbleed", 0) == 0
+                                    && fake.WatchedAttributes.GetInt("thbleedsecs", 0) == 0);
+                                try { fake.Die(EnumDespawnReason.Removed); } catch { }
+                                Done();
+                            }
+                            catch (Exception e) { Crash(e); }
+                        }, 1200);
+                    }
+                    catch (Exception e) { Crash(e); }
+                }, 800);
             }
             catch (Exception e) { Crash(e); }
         }
