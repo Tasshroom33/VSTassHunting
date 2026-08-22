@@ -246,6 +246,8 @@ namespace TassHuntingCompatHarness
                     && (hud.Label.EndsWith("s") || hud.Label.EndsWith("m") || hud.Label.EndsWith("h")));
                 _capi.Logger.Notification("[hudtest] label='{0}' wounds={1} secs={2}", hud.Label, wounds, secs);
 
+                CheckPosition(hud);
+
                 _grabber?.RequestShot("box");
 
                 // Second look once the countdown has visibly moved and a bleed tick has landed,
@@ -269,6 +271,46 @@ namespace TassHuntingCompatHarness
                 _capi.Logger.Error("[hudtest] wounded checks failed: {0}", e);
                 Check("wounded-no-exception", false);
                 Done();
+            }
+        }
+
+        /// <summary>
+        /// WHERE THE BOX ACTUALLY IS, measured off its composed bounds rather than trusted
+        /// from the config (the render-vs-math rule: read the real rect). 0.14.15 drops the
+        /// LeftMiddle anchor 50 unscaled px so the box stops sharing the XSkills effect
+        /// frame's spot; the engine scales that by GUIScale, so the expected drop is
+        /// 50 x GUIScale. The second check is the one that speaks to the field report: the
+        /// box's TOP edge must now clear the screen's middle line entirely, which is where
+        /// the XSkills frame centres itself - measured against the same parent bounds the
+        /// layout used, so a windowed vs fullscreen client cannot skew it.
+        /// </summary>
+        private void CheckPosition(BleedHud hud)
+        {
+            try
+            {
+                var bounds = hud.SingleComposer?.Bounds;
+                double parentH = bounds?.ParentBounds?.OuterHeight ?? 0;
+                if (bounds == null || parentH <= 0)
+                {
+                    Check("box-position-measurable", false);
+                    return;
+                }
+                double scale = Vintagestory.API.Config.RuntimeEnv.GUIScale;
+                double screenMiddleY = parentH / 2.0;
+                double boxTopY = bounds.absY;
+                double boxCentreY = boxTopY + bounds.OuterHeight / 2.0;
+                double drop = boxCentreY - screenMiddleY;
+                double expected = 50.0 * scale;
+                _capi.Logger.Notification(
+                    "[hudtest] box rect: top={0:0.0} h={1:0.0} centre={2:0.0} | screen h={3:0.0} middle={4:0.0} | drop={5:0.0} expected={6:0.0} (guiscale {7:0.00})",
+                    boxTopY, bounds.OuterHeight, boxCentreY, parentH, screenMiddleY, drop, expected, scale);
+                Check("box-dropped-50px-scaled", Math.Abs(drop - expected) < 8.0);
+                Check("box-clears-screen-middle", boxTopY > screenMiddleY);
+            }
+            catch (Exception e)
+            {
+                _capi.Logger.Error("[hudtest] position check failed: {0}", e);
+                Check("box-position-no-exception", false);
             }
         }
 

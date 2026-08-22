@@ -17,7 +17,7 @@ $vs      = "C:\Users\8byteTass\AppData\Roaming\Vintagestory1.22.5"
 $srvExe  = "$vs\VintagestoryServer.exe"
 $cliExe  = "$vs\Vintagestory.exe"
 $realProfile = "C:\Users\8byteTass\AppData\Roaming\VintagestoryData"
-$scratch = "C:\Users\8BYTET~1\AppData\Local\Temp\claude\j--Root-Games-VintageStoryCustomMods\5815748a-8a5e-40fd-8cb9-7bda87a18674\scratchpad"
+$scratch = "C:\Users\8BYTET~1\AppData\Local\Temp\claude\j--Root-Games-VintageStoryCustomMods\66ddbc7c-5322-446f-8d07-4f62b9575744\scratchpad"
 $port    = 42489   # distinct from live 42420 and every other harness port
 
 if (Get-Process -Name "Vintagestory" -ErrorAction SilentlyContinue) {

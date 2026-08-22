@@ -29,6 +29,7 @@ namespace TassHuntingCompatHarness
     {
         private ICoreServerAPI _sapi = null!;
         private bool _fired;
+        private long _parkId;
 
         public override bool ShouldLoad(EnumAppSide forSide) => forSide == EnumAppSide.Server;
 
@@ -83,6 +84,29 @@ namespace TassHuntingCompatHarness
                         bh.SetHarvested(player);
                         _sapi.Logger.Notification("[harvsync] server: pig dead={0} harvested={1} lootslots={2}",
                             !pig.Alive, bh.IsHarvested, bh.Inventory?.Count ?? -1);
+
+                        // PARK THE CORPSE AT THE PLAYER. Vanilla's OnInteract refuses
+                        // beyond ~6 blocks, and a freshly joined player keeps moving
+                        // (falling to ground, settling) for seconds after the pig is
+                        // placed - the first green run failed the window check with the
+                        // sync itself passing, exactly the ambiguity this removes. Held
+                        // for the whole check window so reach can never be the variable.
+                        _parkId = _sapi.Event.RegisterGameTickListener(__ =>
+                        {
+                            try
+                            {
+                                var pe = player.Entity;
+                                if (pe == null || pig.Alive) return;
+                                pig.ServerPos.SetPos(pe.Pos.X + 1.0, pe.Pos.Y, pe.Pos.Z);
+                                pig.Pos.SetFrom(pig.ServerPos);
+                            }
+                            catch { }
+                        }, 250);
+                        _sapi.Event.RegisterCallback(__ =>
+                        {
+                            try { if (_parkId != 0) _sapi.Event.UnregisterGameTickListener(_parkId); } catch { }
+                            _parkId = 0;
+                        }, 25000);
                     }, 1500);
                 }, 1200);
             }
@@ -155,14 +179,25 @@ namespace TassHuntingCompatHarness
                 _capi.Logger.Notification("[harvsync] client cfg: mult={0} autodrop={1}",
                     HuntingModSystem.Cfg.HarvestTimeMult, HuntingModSystem.Cfg.HarvestAutoDrop);
 
+                // Nearest dead pig, not merely the first the query returns - a wild pig
+                // wandering the test world must never be the one under test.
                 var pig = _capi.World.GetEntitiesAround(playerEnt.Pos.XYZ, 12f, 12f,
-                        e => e?.Code?.Path != null && e.Code.Path.StartsWith("pig-"))
-                    .FirstOrDefault(e => !e.Alive);
+                        e => e?.Code?.Path != null && e.Code.Path.StartsWith("pig-") && !e.Alive)
+                    .OrderBy(e => e.Pos.XYZ.SquareDistanceTo(playerEnt.Pos.XYZ))
+                    .FirstOrDefault();
                 Check("corpse-found", pig != null);
                 if (pig == null) { Done(); return; }
                 var bh = pig.GetBehavior<EntityBehaviorHarvestable>();
                 Check("corpse-harvested-synced", bh != null && bh.IsHarvested);
                 if (bh == null) { Done(); return; }
+
+                // REACH, measured with vanilla's own formula (OnInteract refuses past
+                // 5 + 1 client fudge). Its own named check: a corpse the player cannot
+                // reach must never be mistaken for the mod suppressing the window.
+                double reach = pig.Pos.XYZ.DistanceTo(playerEnt.Pos.XYZ.Add(playerEnt.LocalEyePos));
+                _capi.Logger.Notification("[harvsync] corpse at {0}, player at {1}, reach {2:0.00} (vanilla limit 6)",
+                    pig.Pos.XYZ, playerEnt.Pos.XYZ, reach);
+                Check("corpse-in-reach", reach <= 6.0);
 
                 // THE RIGHT-CLICK, exactly as the engine delivers it. On the broken
                 // build the client's own suppression patch eats this and no window
