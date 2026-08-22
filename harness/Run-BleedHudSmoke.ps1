@@ -10,6 +10,11 @@
 #  - whitelist: localhost connections bypass it.
 #  - single-instance hijack: a running client would swallow our -c and yank the user's own game
 #    onto this server, so we refuse to run when one is open.
+#
+# -ModZip <path to tasshunting release zip>: test THAT ARTIFACT instead of the built tree.
+#   Builds are not byte-reproducible here (no Deterministic pin), so a hash cannot prove a
+#   packaged zip carries a source change - running the zip can, and that is what ships.
+param([string]$ModZip = "")
 $ErrorActionPreference = "Stop"
 
 $root    = "J:\Root\Games\VintageStoryCustomMods\TassHunting"
@@ -45,9 +50,14 @@ New-Item -ItemType Directory -Force $sdata,$cdata,$shots | Out-Null
 # Both sides get both mods: the harness is Universal now (it has a client half).
 foreach ($d in @($sdata,$cdata)) {
     New-Item -ItemType Directory -Force "$d\Mods\tasshuntingcompatharness" | Out-Null
-    Copy-Item $huntOut "$d\Mods\tasshunting" -Recurse
+    if ($ModZip -ne "") {
+        Expand-Archive -Path $ModZip -DestinationPath "$d\Mods\tasshunting" -Force
+    } else {
+        Copy-Item $huntOut "$d\Mods\tasshunting" -Recurse
+    }
     Copy-Item "$harnessOut\TassHuntingCompatHarness.dll","$harnessOut\modinfo.json" "$d\Mods\tasshuntingcompatharness\"
 }
+if ($ModZip -ne "") { Write-Host "MOD UNDER TEST: $ModZip" } else { Write-Host "MOD UNDER TEST: built working tree" }
 
 # Isolated client profile: borrow the cached session, then point modPaths at THIS profile only so
 # the client's mod set matches the server's.
