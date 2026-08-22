@@ -229,6 +229,27 @@ namespace TassHunting
             return moved;
         }
 
+        /// <summary>
+        /// Re-set every unpinned wound to close at the SAME moment, scaled by how many are open
+        /// (2026-08-22): baseMs x multiplier^(count-1). Each new wound therefore lengthens the
+        /// whole set rather than only carrying its own clock, which is what "more wounds bleed
+        /// longer" has to mean when wounds are interchangeable. Called on every open and on
+        /// every unpin, so the set always agrees with its own size. A pinned wound has no
+        /// closing time to set - the arrow has to come out first.
+        /// </summary>
+        public void RefreshExpiry(long nowMs, long baseMs, float multiplier)
+        {
+            int open = _wounds.Count;
+            if (open <= 0) return;
+            float mult = Math.Max(1f, multiplier);
+            long span = (long)(baseMs * Math.Pow(mult, open - 1));
+            for (int i = 0; i < _wounds.Count; i++)
+            {
+                if (_wounds[i].PinProjectileId != 0) continue;
+                _wounds[i].ExpiresAtMs = nowMs + span;
+            }
+        }
+
         /// <summary>Drop expired unpinned wounds. Returns true if anything closed.</summary>
         public bool ExpireStep(long nowMs)
         {
@@ -322,8 +343,20 @@ namespace TassHunting
                 bool slashTool = tool == EnumTool.Knife || tool == EnumTool.Sword || tool == EnumTool.Axe
                               || tool == EnumTool.Sickle || tool == EnumTool.Scythe;
                 if (!typedSharp && !pierceTool && !slashTool) return;
-                bool pierce = pierceTool || (!slashTool && src.Type == EnumDamageType.PiercingAttack);
-                weight = pierce ? cfg.BleedSpearStabWoundWeight : cfg.BleedSlashWoundWeight;
+                // A CLAW, BITE OR STING now has its own weight (2026-08-22). It used to borrow
+                // the player's knife or spear number, which welded the two halves of the balance
+                // together - doubling weapon weights for hunting also doubled every wolf bite.
+                // Wielding nothing sharp is what tells them apart: a creature carries no tool and
+                // its damage TYPE alone made the hit sharp.
+                if (!pierceTool && !slashTool)
+                {
+                    weight = cfg.BleedCreatureWoundWeight;
+                }
+                else
+                {
+                    bool pierce = pierceTool || (!slashTool && src.Type == EnumDamageType.PiercingAttack);
+                    weight = pierce ? cfg.BleedSpearStabWoundWeight : cfg.BleedSlashWoundWeight;
+                }
             }
 
             // ---- WHO SWUNG: one multiplier per attacker class, 0 = that class never opens a
@@ -347,8 +380,18 @@ namespace TassHunting
             weight *= 1f - Math.Max(0f, Math.Min(1f, cfg.BleedArmorMitigation)) * absorbed;
             if (weight <= 0f) return;
 
+            // ---- HOW MANY WOUNDS THIS HIT OPENS. A player's weapon always opens exactly one;
+            // a creature rolls the odds of its own size rung, so a fox draws blood about half
+            // the time and a polar bear opens two wounds half the time. Rolled OUTSIDE the lock.
+            var rng = victim.World.Rand;
+            int woundCount = RollWoundCount(src.GetCauseEntity(), cfg,
+                (float)rng.NextDouble(), (float)rng.NextDouble());
+            if (woundCount <= 0) return;   // it broke skin but never opened
+
             float strength = WoundMath.Strength(weight, src.DamageTier, cfg.BleedTierStep);
             long now = victim.World.ElapsedMilliseconds;
+            // The clock belongs to the BODY that is bleeding, not to what hit it.
+            long clockMs = (long)(WoundSecondsFor(victim, cfg) * 1000f);
             lock (Active)
             {
                 if (!Active.TryGetValue(victim.EntityId, out var st))
@@ -356,7 +399,10 @@ namespace TassHunting
                     st = new State { Ent = victim, NextTickMs = now + (long)(cfg.BleedTickSeconds * 1000f) };
                     Active[victim.EntityId] = st;
                 }
-                st.Ledger.Add(strength, now + (long)(cfg.BleedWoundSeconds * 1000f), pinId, cfg.BleedMaxWounds);
+                for (int i = 0; i < woundCount; i++)
+                    st.Ledger.Add(strength, now + clockMs, pinId, cfg.BleedMaxWounds);
+                // Every open wound now runs to the same, longer moment - see RefreshExpiry.
+                st.Ledger.RefreshExpiry(now, clockMs, cfg.BleedLengthMultiplier);
                 Publish(victim, st.Ledger, now);
             }
 
@@ -375,6 +421,69 @@ namespace TassHunting
                 wa.SetString("tasshunt:bleedByName", bleeder.Player?.PlayerName ?? bleeder.GetName());
                 wa.SetLong("tasshunt:bleedByMs", now);
             }
+        }
+
+        /// <summary>A creature's own max health, the key the whole size ladder turns on.
+        /// 0 when it has no health behavior, which reads as the smallest rung.</summary>
+        public static float MaxHealthOf(Entity ent) => ent?.GetBehavior<EntityBehaviorHealth>()?.MaxHealth ?? 0f;
+
+        /// <summary>
+        /// The rung a body sits on. MaxHealth is the inclusive upper bound; a rung of 0 or less
+        /// is the open-topped last one. An empty ladder returns null and the caller falls back
+        /// to the single BleedWoundSeconds, so a hand-cleared table degrades to the pre-2026-08-22
+        /// behaviour rather than to no bleeding.
+        /// </summary>
+        public static BleedSizeTier TierFor(BleedSizeTier[] tiers, float maxHealth)
+        {
+            if (tiers == null || tiers.Length == 0) return null;
+            for (int i = 0; i < tiers.Length; i++)
+            {
+                var t = tiers[i];
+                if (t == null) continue;
+                if (t.MaxHealth <= 0f || maxHealth <= t.MaxHealth) return t;
+            }
+            return tiers[tiers.Length - 1];
+        }
+
+        /// <summary>
+        /// How long a wound stays open on THIS body. Players are one size and take a flat
+        /// number; rust clots on its own ladder (all six drifter tiers weigh the same 140kg, so
+        /// only health can tell them apart); everything else rides the size ladder.
+        /// </summary>
+        public static float WoundSecondsFor(Entity victim, HuntingConfig cfg)
+        {
+            if (cfg == null) return 45f;
+            if (victim is EntityPlayer) return cfg.BleedPlayerWoundSeconds;
+            float hp = MaxHealthOf(victim);
+            if (HuntingModSystem.IsRustCreature(victim) && cfg.BleedRustTiers != null)
+            {
+                for (int i = 0; i < cfg.BleedRustTiers.Length; i++)
+                {
+                    var r = cfg.BleedRustTiers[i];
+                    if (r == null) continue;
+                    if (r.MaxHealth <= 0f || hp <= r.MaxHealth) return r.Seconds;
+                }
+            }
+            var tier = TierFor(cfg.BleedSizeTiers, hp);
+            return tier != null ? tier.Seconds : cfg.BleedWoundSeconds;
+        }
+
+        /// <summary>
+        /// How many wounds this hit opens: 0, 1 or 2. A PLAYER's weapon always opens exactly one
+        /// - a hunter's arrow failing to bleed a deer at random reads as the mod being broken,
+        /// with no attacker size on screen to explain it. A creature rolls its rung's odds, so
+        /// size shows up as how OFTEN it draws blood rather than how much each wound hurts.
+        /// A hit with no attacker at all (a trap, a fall onto spikes) always wounds.
+        /// </summary>
+        public static int RollWoundCount(Entity attacker, HuntingConfig cfg, float roll1, float roll2)
+        {
+            if (cfg == null) return 1;
+            if (attacker == null || attacker is EntityPlayer) return 1;
+            var tier = TierFor(cfg.BleedSizeTiers, MaxHealthOf(attacker));
+            if (tier == null) return 1;
+            int n = roll1 < tier.Odds ? 1 : 0;
+            if (n > 0 && roll2 < tier.SecondOdds) n = 2;
+            return n;
         }
 
         /// <summary>
@@ -517,10 +626,16 @@ namespace TassHunting
             var cfg = HuntingModSystem.Cfg;
             if (cfg == null || target == null) return;
             long now = target.World?.ElapsedMilliseconds ?? 0;
+            long clockMs = (long)(WoundSecondsFor(target, cfg) * 1000f);
             lock (Active)
             {
                 if (Active.TryGetValue(target.EntityId, out var st))
-                    st.Ledger.SyncPins(stuckProjectileIds, now + (long)(cfg.BleedWoundSeconds * 1000f));
+                {
+                    st.Ledger.SyncPins(stuckProjectileIds, now + clockMs);
+                    // An arrow tearing out leaves the set the size it is; re-scale so the freed
+                    // wound closes on the same schedule as its neighbours.
+                    st.Ledger.RefreshExpiry(now, clockMs, cfg.BleedLengthMultiplier);
+                }
             }
         }
 
@@ -564,7 +679,8 @@ namespace TassHunting
 
                     // Belt for arrows that hit but never stuck (and so never got a release recount):
                     // a pin whose projectile entity no longer exists unpins into a normal wound.
-                    st.Ledger.SyncPins(CollectLiveProjectiles(st), now + (long)(cfg.BleedWoundSeconds * 1000f));
+                    st.Ledger.SyncPins(CollectLiveProjectiles(st),
+                        now + (long)(WoundSecondsFor(st.Ent, cfg) * 1000f));
 
                     // SITTING STILL: after an unbroken BleedSitSecondsRequired seated, the bleed
                     // damage and the wound clock both run at their sit multipliers for as long as
@@ -644,6 +760,20 @@ namespace TassHunting
         public static int StacksOn(long entityId)
         {
             lock (Active) return Active.TryGetValue(entityId, out var st) ? st.Ledger.Count : 0;
+        }
+
+        /// <summary>
+        /// Seconds until this entity's wounds close, for anything that needs to SEE the clock
+        /// the size ladder handed out - the harness, and any diagnostic. -1 while an arrow pins
+        /// one open, 0 when nothing is bleeding. Players publish the same number as
+        /// "thbleedsecs"; animals never did, which is why this exists.
+        /// </summary>
+        public static int SecondsLeftOn(Entity ent)
+        {
+            if (ent?.World == null) return 0;
+            lock (Active)
+                return Active.TryGetValue(ent.EntityId, out var st)
+                    ? st.Ledger.SecondsLeft(ent.World.ElapsedMilliseconds) : 0;
         }
     }
 

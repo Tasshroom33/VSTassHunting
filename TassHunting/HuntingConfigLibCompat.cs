@@ -150,7 +150,12 @@ namespace TassHunting
                 SliderFloat("Damage per wound per tick", () => cfg.BleedStaticPerTick, v => cfg.BleedStaticPerTick = v, 0f, 2f);
                 SliderFloat("Extra damage, % of max HP", () => cfg.BleedPctMaxHealthPerTick, v => cfg.BleedPctMaxHealthPerTick = v, 0f, 10f);
                 SliderFloat("Tick every (sec)", () => cfg.BleedTickSeconds, v => cfg.BleedTickSeconds = v, 1f, 60f);
-                SliderFloat("Wound closes after (sec)", () => cfg.BleedWoundSeconds, v => cfg.BleedWoundSeconds = v, 5f, 300f);
+                SliderFloat("Longer per extra wound", () => cfg.BleedLengthMultiplier, v => cfg.BleedLengthMultiplier = v, 1f, 2f);
+                Help("Every extra open wound makes the whole bleed last this much longer. 1.25 = a quarter longer each time. It multiplies with the damage payoff below, so raising both climbs fast.");
+                SliderFloat("Your wounds close after (sec)", () => cfg.BleedPlayerWoundSeconds, v => cfg.BleedPlayerWoundSeconds = v, 5f, 300f);
+                Help("How long YOUR wounds stay open. Animals and rust use their own times, set by how much health they have - see BleedSizeTiers and BleedRustTiers in the config file.");
+                SliderFloat("Fallback wound time (sec)", () => cfg.BleedWoundSeconds, v => cfg.BleedWoundSeconds = v, 5f, 300f);
+                Help("Only used for something the size list cannot place. Normally nothing.");
                 SliderFloat("Smallest hit that wounds", () => cfg.BleedMinDamage, v => cfg.BleedMinDamage = v, 0f, 5f);
                 SliderFloat("Bonus per metal tier", () => cfg.BleedTierStep, v => cfg.BleedTierStep = v, 0f, 1f);
                 Help("Wound strength = 1 + this x tier. At 0.25: flint 1.25x, copper 1.5x, bronze 1.75x, iron 2x, steel 2.25x.");
@@ -160,6 +165,8 @@ namespace TassHunting
                 SliderFloat("Thrown spear wound size", () => cfg.BleedThrownSpearWoundWeight, v => cfg.BleedThrownSpearWoundWeight = v, 0f, 3f);
                 SliderFloat("Spear stab wound size", () => cfg.BleedSpearStabWoundWeight, v => cfg.BleedSpearStabWoundWeight = v, 0f, 3f);
                 SliderFloat("Slash wound size (knife, sword, axe)", () => cfg.BleedSlashWoundWeight, v => cfg.BleedSlashWoundWeight = v, 0f, 3f);
+                SliderFloat("Claw and bite wound size", () => cfg.BleedCreatureWoundWeight, v => cfg.BleedCreatureWoundWeight = v, 0f, 3f);
+                Help("What an animal's claws or teeth are worth. Separate from your weapons above, so tuning how well your knife bleeds an animal never changes how hard a wolf bleeds you.");
                 Checkbox("Players can bleed (PvP + animal bites)", () => cfg.BleedAffectsPlayers, v => cfg.BleedAffectsPlayers = v);
                 Checkbox("Bandages stop bleeding", () => cfg.BleedStoppedByHealingItems, v => cfg.BleedStoppedByHealingItems = v);
                 Help("Finishing a bandage or a poultice closes every open wound on whoever it was used on, yourself or an animal you patched up. Off = you wait the wounds out.");

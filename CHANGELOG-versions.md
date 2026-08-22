@@ -4,6 +4,22 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.16 (2026-08-22)
+Bleeding reworked around the size of whatever is bleeding. A single wound now
+hurts about a third as much as it used to but stays open far longer, and each
+extra wound both hurts more and drags the whole bleed out - so one bite is
+something you notice and bandage, while being swarmed is what kills you. How
+long a wound stays open depends on the body: small animals 12 seconds, up to 80
+for a moose or a bear, players 30, and rust from 20 up to 45 for the nastiest
+drifters. How likely something is to make you bleed now depends on its size
+too - a fox draws blood about half the time, a wolf three times in four, and a
+bear always, sometimes twice from one swing. Blunt attacks still never cause
+bleeding. Your own weapons always draw blood, no luck involved, and they hit
+harder to make up for the gentler bleed - so hunting feels the same as before,
+except big game now bleeds out properly. Existing configs are upgraded
+automatically, which resets the bleed damage numbers to the new balance; blood
+looks, harvest and archery settings are left alone.
+
 ## 0.14.15 (2026-08-19)
 The bleeding box's default spot moved 50 pixels down. It used to sit exactly
 where the XSkills effects panel sits, so with both mods the two panels could

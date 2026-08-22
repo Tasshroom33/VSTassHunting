@@ -58,6 +58,33 @@ namespace TassHuntingCompatHarness
 
         private static bool Near(float a, float b) => Math.Abs(a - b) < 0.0005f;
 
+        /// <summary>
+        /// Pin the 2026-08-22 size ladder flat for the wound-MATH legs: one clock on every rung,
+        /// every hit wounds, no second wound, no length growth. Those legs test the damage
+        /// formula, armour and sitting - a 75% coin flip in the middle of them would make them
+        /// flaky rather than strict, and the odds and the ladder have their own suite
+        /// (Run-SizeLadderTest.ps1) that proves them against 10,000 real rolls.
+        /// </summary>
+        private static void PinLadder(float seconds)
+        {
+            var cfg = HuntingModSystem.Cfg;
+            if (cfg.BleedSizeTiers != null)
+                foreach (var t in cfg.BleedSizeTiers) { t.Seconds = seconds; t.Odds = 1f; t.SecondOdds = 0f; }
+            if (cfg.BleedRustTiers != null)
+                foreach (var r in cfg.BleedRustTiers) r.Seconds = seconds;
+            cfg.BleedPlayerWoundSeconds = seconds;
+            cfg.BleedLengthMultiplier = 1f;
+            cfg.BleedWoundSeconds = seconds;
+        }
+
+        /// <summary>One creature wound's strength at the given tier: the claw dial, not a weapon
+        /// weight, since every attacker in these legs swings with bare claws.</summary>
+        private static float ClawStrength(int tier)
+        {
+            var cfg = HuntingModSystem.Cfg;
+            return cfg.BleedCreatureWoundWeight * (1f + cfg.BleedTierStep * tier);
+        }
+
         // ---- Layer 1: pure formulas and ledger rules -----------------------------------------
 
         private void RunPure()
@@ -191,7 +218,7 @@ namespace TassHuntingCompatHarness
 
             // Short wound life so expiry is testable in-run; the mutation only affects this
             // throwaway test server's in-memory config.
-            HuntingModSystem.Cfg.BleedWoundSeconds = 6f;
+            PinLadder(6f);
 
             // Wire the fake armor in once, inert (factor 1) until the armor stage sets it.
             var hbSetup = _pig.GetBehavior<EntityBehaviorHealth>();
@@ -313,7 +340,7 @@ namespace TassHuntingCompatHarness
                 var cfg = HuntingModSystem.Cfg;
                 // Two pierce wounds, tier 2, weight 1: strength 1.5 each, sum 3, combo^1.
                 float expected = WoundMath.TotalPerTick(cfg.BleedStaticPerTick, cfg.BleedPctMaxHealthPerTick,
-                    _maxHealth, 3f, 2, cfg.BleedComboMultiplier, cfg.BleedMaxWounds);
+                    _maxHealth, ClawStrength(2) * 2f, 2, cfg.BleedComboMultiplier, cfg.BleedMaxWounds);
                 float reported = _pig!.WatchedAttributes.GetFloat("thbleeddmg", -1f);
                 Check("live-tick-damage-matches-formula", Near(reported, expected));
                 Check("live-tick-counter-moved", _pig.WatchedAttributes.GetInt("thbleedtick", 0) >= 1);
@@ -508,7 +535,7 @@ namespace TassHuntingCompatHarness
                 var cfg = HuntingModSystem.Cfg;
                 // One pierce wound, tier 2, weight 1, half of it absorbed: 0.5 * (1 + 0.25*2) = 0.75.
                 float expected = WoundMath.TotalPerTick(cfg.BleedStaticPerTick, cfg.BleedPctMaxHealthPerTick,
-                    _maxHealth, 0.75f, 1, cfg.BleedComboMultiplier, cfg.BleedMaxWounds);
+                    _maxHealth, ClawStrength(2) * 0.5f, 1, cfg.BleedComboMultiplier, cfg.BleedMaxWounds);
                 Check("live-armor-halves-tick-damage", Near(_pig!.WatchedAttributes.GetFloat("thbleeddmg", -1f), expected));
                 _sapi.Event.RegisterCallback(_ => RunLiveSit(), 700);
             }
@@ -530,7 +557,7 @@ namespace TassHuntingCompatHarness
             try
             {
                 var cfg = HuntingModSystem.Cfg;
-                cfg.BleedWoundSeconds = 15f;
+                PinLadder(15f);
                 cfg.BleedSittingHelps = true;
                 cfg.BleedSitSecondsRequired = 5f;
                 cfg.BleedSitDamageMult = 0.5f;
@@ -551,7 +578,7 @@ namespace TassHuntingCompatHarness
                     HuntingModSystem.IsSeated(_pig) && !HuntingModSystem.IsSeated(_attacker));
 
                 float full = WoundMath.TotalPerTick(cfg.BleedStaticPerTick, cfg.BleedPctMaxHealthPerTick,
-                    _maxHealth, 1.5f, 1, cfg.BleedComboMultiplier, cfg.BleedMaxWounds);
+                    _maxHealth, ClawStrength(2), 1, cfg.BleedComboMultiplier, cfg.BleedMaxWounds);
 
                 _sapi.Event.RegisterCallback(_ =>
                 {
@@ -608,7 +635,7 @@ namespace TassHuntingCompatHarness
             {
                 var cfg = HuntingModSystem.Cfg;
                 cfg.BleedAffectsPlayers = true;
-                cfg.BleedWoundSeconds = 60f;
+                PinLadder(60f);
 
                 var spawn = _sapi.World.DefaultSpawnPosition;
                 var ptype = System.Linq.Enumerable.FirstOrDefault(_sapi.World.EntityTypes,

@@ -30,9 +30,39 @@ namespace TassHunting
         public float LifetimeMin, LifetimeMax; // seconds
     }
 
+    /// <summary>
+    /// One rung of the bleed size ladder, keyed on MAX HEALTH (2026-08-22 rework).
+    /// Health, not weight: every creature has it, it varies per variant for animals AND rust
+    /// (all six drifter tiers weigh an identical 140kg, so weight cannot tell them apart), and
+    /// 324 of 820 entity types never set a weight at all. It also agrees with the damage side,
+    /// which is already a percentage of max health - so a body's clock and its bleed rate can
+    /// no longer disagree the way weight did (a 650kg moose carries 21 HP and was drawing a
+    /// bear-sized clock on a deer-sized health pool).
+    /// MaxHealth is the INCLUSIVE upper bound of the rung; 0 or less means "no upper bound",
+    /// which the last rung uses.
+    /// </summary>
+    public class BleedSizeTier
+    {
+        public float MaxHealth;
+        public float Seconds;     // how long a wound stays open on a body this size
+        public float Odds;        // chance a hit from this creature opens a wound at all
+        public float SecondOdds;  // chance the same hit opens a SECOND wound
+    }
+
+    /// <summary>A rust rung: rust bodies clot on their own schedule, so only the clock differs.
+    /// The ODDS still come from the size ladder, so a 54 HP double-headed drifter hits like the
+    /// extra-large rung it belongs to while still clotting on the rust clock.</summary>
+    public class BleedRustTier
+    {
+        public float MaxHealth;
+        public float Seconds;
+    }
+
     public class HuntingConfig
     {
-        public int Version = 1;
+        // A file written by an older build carries a lower number and gets migrated; a fresh
+        // config is born current, so a new install never logs an upgrade it did not need.
+        public int Version = CurrentVersion;
         public bool FleeAwayFromHunterEnabled = true;
         // With Item Pickup Highlighter installed: only YOUR projectiles highlight
         // (enemy-thrown stones/arrows stay unmarked). Client-side.
@@ -196,28 +226,65 @@ namespace TassHunting
         // gate. Balance: 0.05 flat + 0.5% max-HP per stack, 3s tick, 60s stick.
         public bool BleedEnabled = true;
         public float BleedTickSeconds = 3f;            // tick cadence
-        public float BleedStaticPerTick = 0.05f;       // flat hp per wound per tick
-        public float BleedPctMaxHealthPerTick = 0.5f;  // % of max hp per wound per tick
+        // 2026-08-22: both cut roughly in half. A single wound is now something you notice and
+        // dress rather than a burst of damage; the danger comes from stacking (see the two
+        // multipliers below) and from the wound running LONGER.
+        public float BleedStaticPerTick = 0.02f;       // flat hp per wound per tick
+        public float BleedPctMaxHealthPerTick = 0.25f; // % of max hp per wound per tick
         public bool BleedAffectsPlayers = true;        // PvP + creature bites bleed humans too
 
         // ---- WOUND MODEL (2026-07-27): sharp hits open wounds; tier + combo scale them ----
         // A hit below this final damage opens no wound (grazes, fully-absorbed hits).
         public float BleedMinDamage = 0.5f;
-        // How long a wound bleeds before closing. An arrow still embedded keeps its wound open
-        // (StickSeconds governs the arrow; on release the wound gets this window again).
+        // FALLBACK clock only, since 2026-08-22: the real clock comes from the size ladder
+        // below, keyed on the bleeding body's max health. This is what a body with no health
+        // behavior at all would get, and what the whole system falls back to if the ladder is
+        // emptied - so a hand-cleared table degrades to the old single-number behaviour instead
+        // of to no bleeding at all.
         public float BleedWoundSeconds = 45f;
+
+        // ---- THE SIZE LADDER (2026-08-22). One table, read from both ends: your rung sets how
+        // long YOU bleed, and how reliably you wound someone else when you attack. Small things
+        // still bleed you - they just often fail to (owner call: the rework makes bleeds
+        // survivable enough that a fox drawing blood half the time is fine). Player weapons
+        // never roll; a hunter's arrow always wounds (see BleedSystem.OnSharpHit).
+        public BleedSizeTier[] BleedSizeTiers = {
+            new BleedSizeTier { MaxHealth = 8f,  Seconds = 12f, Odds = 0.50f, SecondOdds = 0f },
+            new BleedSizeTier { MaxHealth = 25f, Seconds = 30f, Odds = 0.75f, SecondOdds = 0f },
+            new BleedSizeTier { MaxHealth = 50f, Seconds = 50f, Odds = 1.00f, SecondOdds = 0.25f },
+            new BleedSizeTier { MaxHealth = 0f,  Seconds = 80f, Odds = 1.00f, SecondOdds = 0.50f },
+        };
+        // Rust clocks. Vanilla's drifter ladder by health: normal 12, deep 16, tainted 22,
+        // corrupt 30, nightmare 40, double-headed 54. NOTE these are for rust YOU stab - normal,
+        // deep and tainted swing BLUNT and can never open a wound on you at all.
+        public BleedRustTier[] BleedRustTiers = {
+            new BleedRustTier { MaxHealth = 14f, Seconds = 20f },
+            new BleedRustTier { MaxHealth = 25f, Seconds = 30f },
+            new BleedRustTier { MaxHealth = 0f,  Seconds = 45f },
+        };
+        // Players are all one size, so they get a flat clock rather than a rung.
+        public float BleedPlayerWoundSeconds = 30f;
+        // Every extra open wound multiplies how long the whole set stays open. Pairs with
+        // BleedComboMultiplier below - the two COMPOUND, so 1.25 x 1.25 is 1.5625 per wound.
+        public float BleedLengthMultiplier = 1.25f;
         // Wound strength per damage tier of the hit: strength = weight * (1 + step * tier).
         // 0.25 -> flint 1.25x, copper 1.5x, bronze 1.75x, iron 2x, steel 2.25x.
         public float BleedTierStep = 0.25f;
         // Each additional open wound multiplies the WHOLE bleed by this (the combo payoff).
-        public float BleedComboMultiplier = 1.3f;
+        public float BleedComboMultiplier = 1.25f;
         // Hard cap on open wounds per animal; also caps the combo exponent.
         public int BleedMaxWounds = 10;
         // Wound weight by how the hit was delivered (rule by damage type + tool kind, not items).
-        public float BleedArrowWoundWeight = 1f;
-        public float BleedThrownSpearWoundWeight = 1.5f;
-        public float BleedSpearStabWoundWeight = 1f;
-        public float BleedSlashWoundWeight = 0.75f;
+        // DOUBLED 2026-08-22 to absorb the halved per-tick damage, so hunting keeps its bite.
+        // These are PLAYER WEAPONS ONLY now - claws and bites have their own dial below, so
+        // tuning the hunt can never buff every wolf on the server (it used to: a wolf's bite
+        // borrowed BleedSlashWoundWeight and a locust's sting borrowed the spear number).
+        public float BleedArrowWoundWeight = 2f;
+        public float BleedThrownSpearWoundWeight = 3f;
+        public float BleedSpearStabWoundWeight = 2f;
+        public float BleedSlashWoundWeight = 1.5f;
+        // What a claw, bite or sting is worth. Its own number since 2026-08-22.
+        public float BleedCreatureWoundWeight = 0.75f;
 
         // ---- SITTING, ARMOR AND WHO SWUNG (2026-08-03) ----
         // Sit still and, after an unbroken stretch, both the bleed damage and the wound
@@ -370,6 +437,39 @@ namespace TassHunting
             new WoundedSlowTier { HealthPctMax = 40f, SlowPct = 20f },
             new WoundedSlowTier { HealthPctMax = 50f, SlowPct = 10f },
         };
+
+        /// <summary>
+        /// THE CURRENT CONFIG GENERATION. Bumped when a rebalance makes the old values
+        /// incoherent rather than merely different, so Migrate can reset exactly those fields.
+        /// </summary>
+        public const int CurrentVersion = 2;
+
+        /// <summary>
+        /// Bring an older config up to the current generation. Returns what it did, or null.
+        ///
+        /// WHY THIS OVERWRITES TUNED VALUES: the 2026-08-22 bleed rework halved the per-tick
+        /// damage and doubled the weapon weights in the SAME pass, and added two multipliers
+        /// that compound. An existing file keeps its old 0.05/0.5 damage under the new
+        /// multipliers and the new length ladder, which is far harsher than either the old or
+        /// the new design - the one outcome nobody chose. So the interlocking balance fields
+        /// are reset together and the change is logged loudly. Fields outside that set (blood
+        /// look, harvest, archery, sticky arrows) are never touched.
+        /// </summary>
+        public string Migrate()
+        {
+            if (Version >= CurrentVersion) return null;
+            Version = CurrentVersion;
+            BleedStaticPerTick = 0.02f;
+            BleedPctMaxHealthPerTick = 0.25f;
+            BleedComboMultiplier = 1.25f;
+            BleedArrowWoundWeight = 2f;
+            BleedThrownSpearWoundWeight = 3f;
+            BleedSpearStabWoundWeight = 2f;
+            BleedSlashWoundWeight = 1.5f;
+            return "bleed rebalance: per-tick damage, combo and weapon weights reset to the new "
+                 + "defaults (they interlock with the new size ladder - old values under the new "
+                 + "multipliers would hit far harder than either design intended)";
+        }
 
         /// <summary>Every hand-edited-value rule in one place, applied after EVERY
         /// load path: file load, ConfigLib restore/defaults, and the server sync
@@ -535,6 +635,8 @@ namespace TassHunting
                 var loaded = api.LoadModConfig<HuntingConfig>("TassHunting.json")
                           ?? api.LoadModConfig<HuntingConfig>("TasshroomHunting.json");
                 if (loaded != null) Cfg = loaded;
+                string migrated = Cfg.Migrate();
+                if (migrated != null) api.Logger.Notification("[TassHunting] config upgraded - {0}", migrated);
                 Cfg.Sanitize();
                 api.StoreModConfig(Cfg, "TassHunting.json");
             }
