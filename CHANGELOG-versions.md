@@ -4,6 +4,13 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.31 (2026-08-28)
+Heavy steps can go much deeper now. The pitch floor drops from 0.4 to 0.2,
+so at the default settings a tyrannosaur steps at quarter pitch and the
+biggest animals bottom out at a fifth of the recording. The deepen slider
+also runs the right way now: higher means deeper (it was backwards). Near
+the bottom a running giant's steps stretch and overlap into a low rumble.
+
 ## 0.14.30 (2026-08-28)
 The sound settings got their own "Sounds" section in the config panel:
 behind-you steps on or off, what counts as a heavy step, and how much the

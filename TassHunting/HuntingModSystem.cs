@@ -429,10 +429,10 @@ namespace TassHunting
         // (the dino packs' scratchy scrape recordings) to a proper thud while wolves keep
         // their own quiet steps. e.g. { "*": "game:sounds/creature/shiver/thump*" }.
         public Dictionary<string, string> StepSoundOverride = new Dictionary<string, string>();
-        // Deepen overridden steps by body size: pitch = clamp(this / height^0.7, 0.4, 1).
-        // At 1.2 a 4-block-tall rex booms at ~0.45 pitch, a sauropod hits the floor, and
-        // wolf-sized stays unchanged. 0 = play the override sound at its native pitch.
-        public float StepSoundDeepen = 1.2f;
+        // Deepen overridden steps by body size: pitch = clamp(height^(-0.5 * this), 0.2, 1).
+        // Bigger number = deeper. At 2 a 4-block-tall rex plays at 0.25 pitch, a sauropod
+        // sits on the 0.2 floor, wolf-sized is never touched. 0 = native pitch.
+        public float StepSoundDeepen = 1.5f;
         [ClientPersonal] public bool BleedTickHurtFlash = true;
         [ClientPersonal] public bool BleedHudEnabled = true;
         // Corner the box sits in. One of: LeftTop, LeftMiddle, LeftBottom, RightTop,

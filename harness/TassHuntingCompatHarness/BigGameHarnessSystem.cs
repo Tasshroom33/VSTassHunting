@@ -235,10 +235,12 @@ namespace TassHuntingCompatHarness
                 }
                 return "no-step-sounds";
             }
-            // Deepen formula landmarks (pure): rex-height booms, sauropod floors, wolf unchanged.
-            Check("deepen-rex-height", Near(StepSounds.PitchMult(4f, 1.2f), 0.455f, 0.01f), $"{StepSounds.PitchMult(4f, 1.2f):0.000}");
-            Check("deepen-sauropod-floors", StepSounds.PitchMult(7f, 1.2f) == 0.4f);
-            Check("deepen-wolf-unchanged", StepSounds.PitchMult(0.9f, 1.2f) == 1f);
+            // Deepen formula landmarks (pure): slider up = deeper, rex near the floor at 2,
+            // sauropod floors, wolf-height never touched, 0 off.
+            Check("deepen-rex-at-2", Near(StepSounds.PitchMult(4f, 2f), 0.25f, 0.001f), $"{StepSounds.PitchMult(4f, 2f):0.000}");
+            Check("deepen-up-is-deeper", StepSounds.PitchMult(4f, 2f) < StepSounds.PitchMult(4f, 1f));
+            Check("deepen-sauropod-floors", StepSounds.PitchMult(7f, 2f) == 0.2f);
+            Check("deepen-wolf-unchanged", StepSounds.PitchMult(0.9f, 2f) == 1f);
             Check("deepen-zero-is-off", StepSounds.PitchMult(4f, 0f) == 1f);
 
             string before = WolfStepLoc();

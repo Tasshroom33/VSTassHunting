@@ -28,19 +28,23 @@ namespace TassHunting
     {
         /// <summary>
         /// SIZE-DEEPENED PITCH (owner 2026-08-28: "sounds higher pitch like horse gallop
-        /// than a large thump from an 8t animal"). One shared thump sample cannot carry
-        /// every body size at native pitch, so the pitch is scaled by body HEIGHT:
-        /// mult = clamp(deepen / height^0.7, 0.4, 1). At deepen 1.2: a 4-block rex plays
-        /// at ~0.45 (a boom), a 2-block anky ~0.74, a 7-block sauropod hits the 0.4 floor,
-        /// and anything wolf-sized computes above 1 and clamps to unchanged. Baked into
-        /// the entry's own pitch curve at rewrite time (a NEW NatFloat - the default curve
-        /// is a SHARED static instance and mutating it would poison every sound in the
-        /// game), so the animation player and the behind-you steps both deepen alike.
+        /// than a large thump from an 8t animal"; follow-up: "take the pitch as low as
+        /// possible"). One shared thump sample cannot carry every body size at native
+        /// pitch, so the pitch drops with body HEIGHT:
+        ///   mult = clamp(height ^ (-0.5 * deepen), 0.2, 1)
+        /// Slider UP = deeper (the first version had this backwards). At deepen 2: a
+        /// 4-block rex plays at 0.25, a 2-block anky at 0.5, a 7-block sauropod on the
+        /// 0.2 floor; height 1 and under is always untouched, 0 = off. Note pitch-down
+        /// also STRETCHES the sample, so near the floor a running giant's step tails
+        /// overlap into a rolling rumble - arguably what eight tons should do. Baked
+        /// into the entry's own pitch curve at rewrite time as a NEW NatFloat (the
+        /// default curve is a SHARED static instance - mutating it would poison every
+        /// sound in the game), so animation steps and behind-you steps deepen alike.
         /// </summary>
         public static float PitchMult(float bodyHeight, float deepen)
         {
-            if (deepen <= 0f || bodyHeight <= 0f) return 1f;
-            return GameMath.Clamp(deepen / (float)Math.Pow(bodyHeight, 0.7), 0.4f, 1f);
+            if (deepen <= 0f || bodyHeight <= 1f) return 1f;
+            return GameMath.Clamp((float)Math.Pow(bodyHeight, -0.5 * deepen), 0.2f, 1f);
         }
 
         public static void Apply(ICoreAPI api)

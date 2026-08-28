@@ -282,8 +282,8 @@ namespace TassHunting
                 SliderFloat("Counts as heavy above (step carry range)", () => cfg.BigStepsMinRange, v => cfg.BigStepsMinRange = v, 5f, 100f);
                 Help("Steps designed to carry at least this many blocks count as heavy - for the behind-you steps AND the sound swap below. Wolves carry ~20, the dinosaurs 49-67.");
                 BeginServer(serverDecides);
-                SliderFloat("Deepen heavy steps by body size", () => cfg.StepSoundDeepen, v => cfg.StepSoundDeepen = v, 0f, 4f);
-                Help("Swapped step sounds play deeper the bigger the animal - a tyrannosaur booms at less than half pitch, wolf-sized is untouched. 0 = play the sound as recorded. Needs world rejoin.");
+                SliderFloat("Deepen heavy steps by body size", () => cfg.StepSoundDeepen, v => cfg.StepSoundDeepen = v, 0f, 3f);
+                Help("Higher = deeper. Swapped step sounds drop in pitch with the animal's size - at 2 a tyrannosaur plays at quarter pitch and the biggest animals bottom out at a fifth. Wolf-sized is never touched. 0 = as recorded. Needs world rejoin.");
                 EndServer(serverDecides);
                 Help("Which sound the heavy steps use is the StepSoundOverride list in the config file (creature names to a sound path) - lists cannot be edited from this panel.");
             }
