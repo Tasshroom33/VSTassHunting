@@ -4,6 +4,17 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.23 (2026-08-28)
+Blood pools stop hovering. The pool under a kill used to spawn every drop at
+the height of the pool's center, so on a slope or a ledge the outer ring hung
+in mid air - and the pool never settled, by an old design choice made when
+pools were burying themselves. Now each drop finds the ground directly under
+itself like trail drops always did (a drop over a cliff edge is simply not
+born), and the pool slowly settles a quarter of its height into the ground
+over its lifetime - visible soak-in that can never end up buried, whatever
+size the pool is. Most noticeable under the biggest kills, which have the
+widest pools.
+
 ## 0.14.22 (2026-08-28)
 Big herbivores can now hold their ground. Two new creature lists in the
 config: retaliation animals remember who hurt them far longer (three minutes

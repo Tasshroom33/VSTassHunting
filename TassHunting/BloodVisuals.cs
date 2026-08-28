@@ -871,17 +871,25 @@ namespace TassHunting
                         groundProps.MaxSize = psize;
                         // HOLD size, then SHRINK to nothing at the end (pink-free).
                         groundProps.SizeEvolve = ShrinkAway(psize);
-                        // A POOL STAYS PUT (user 2026-07-22: "make it last the
-                        // configured time ABOVE ground"). The old downward sink
-                        // (-0.5*psize/life) started at the surface and drove the
-                        // pool UNDERGROUND within the first third of its life - it
-                        // was alive but buried = the "sinks too fast". Pool: NO
-                        // sink, sits flat on the ground its whole life. Trail
-                        // drops keep the gentle soak-in sink (small, reads right).
-                        float sinkY = isCorpsePool ? 0f : -(0.5f * psize) / dropLife;
+                        // POOLS SETTLE (owner 2026-08-28: "death corpse particles keep hovering
+                        // mid air - make them sink like the other particles"; supersedes the
+                        // 2026-07-22 stays-put order that answered pools burying themselves).
+                        // Trail drops sink half their height over their life; pool cubes are
+                        // 2-4x bigger, and at full trail rate they were the original buried-
+                        // alive bug - so pools take the same rule at HALF strength: a quarter
+                        // of their height over the whole lifetime. Visible slow settle, can
+                        // never end up underground whatever the particle size.
+                        float sinkY = (isCorpsePool ? -(0.25f * psize) : -(0.5f * psize)) / dropLife;
                         groundProps.MinVelocity.Set(0f, sinkY, 0f);
                         groundProps.AddVelocity.Set(0f, 0f, 0f);
-                        groundProps.MinPos.Set(s.X + Math.Sin(ang) * rad, s.Y + 0.02, s.Z + Math.Cos(ang) * rad);
+                        // PER-PARTICLE GROUND (same fix): the ring used to spawn every particle
+                        // at the CENTER's ground height, so on any slope or ledge the outer ring
+                        // hovered in air - dino kills have the widest pools and showed it worst.
+                        // Resolve the ground under each particle like the trail drops do, and a
+                        // particle with no ground under it (cliff edge) is simply not born.
+                        double ppx = s.X + Math.Sin(ang) * rad, ppz = s.Z + Math.Cos(ang) * rad;
+                        if (!ResolveGroundY(ppx, s.Y + 1.0, ppz, out double pgy)) continue;
+                        groundProps.MinPos.Set(ppx, pgy + 0.02, ppz);
                         groundProps.AddPos.Set(0, 0, 0);
                         capi.World.SpawnParticles(groundProps);
                     }
