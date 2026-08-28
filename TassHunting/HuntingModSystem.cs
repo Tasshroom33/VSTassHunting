@@ -153,6 +153,21 @@ namespace TassHunting
         public float RetaliationMaxFollowTimeSec = 120f;// how long it presses the chase (typical: 30)
         public float RetaliationMemorySeconds = 180f;   // how long it stays angry (typical: 60)
         public float TerritoryRadius = 12f;             // territorial only: guard radius around itself
+
+        // ---- FOOD CHAIN (2026-08-28, see FoodChain.cs) ----
+        // Extra prey per hunter: wildcard hunter code -> prey codes appended to every UNGATED
+        // seekentity (the proactive hunts - anger-gated retaliation lists stay curated) and to
+        // every meleeattack whitelist on that hunter, at load. Codes already present are left
+        // alone, so re-applying is harmless. Built for the bloodbath order: dino predators
+        // hunting livestock, tamed animals and rival predators. Empty = nothing changes.
+        public Dictionary<string, string[]> HuntAppend = new Dictionary<string, string[]>();
+        // A kill with no player behind it leaves BONES, not a corpse: the dead-decay behavior
+        // fires immediately (after the short delay below, so the death is visible), placing
+        // the creature's own configured decay block and despawning the body. A player kill is
+        // a direct killing blow OR bleeding out of player-inflicted wounds (the bleed system's
+        // who-bled-me stamp) - a hunter's bled-out quarry always keeps its corpse and loot.
+        public bool NonPlayerKillsLeaveBones = false;
+        public float NonPlayerKillBonesDelaySeconds = 4f;
         // Per-creature correction, because health measures SIZE, not armor (the engine has no
         // creature armor stat): wildcard entity codes to multipliers on the glance chance.
         // e.g. { "ankylosauria-*": 1.5, "macronaria-*": 0.6 } - plates up, soft hide down.
@@ -579,6 +594,8 @@ namespace TassHunting
             RetaliationMaxFollowTimeSec = Vintagestory.API.MathTools.GameMath.Clamp(RetaliationMaxFollowTimeSec, 0f, 3600f);
             RetaliationMemorySeconds = Vintagestory.API.MathTools.GameMath.Clamp(RetaliationMemorySeconds, 0f, 3600f);
             TerritoryRadius = Vintagestory.API.MathTools.GameMath.Clamp(TerritoryRadius, 0f, 60f);
+            if (HuntAppend == null) HuntAppend = new Dictionary<string, string[]>();
+            NonPlayerKillBonesDelaySeconds = Vintagestory.API.MathTools.GameMath.Clamp(NonPlayerKillBonesDelaySeconds, 1f, 300f);
         }
     }
 
@@ -792,6 +809,8 @@ namespace TassHunting
             catch (Exception ex) { api.Logger.Error("[TassHunting] creature damage apply failed: {0}", ex); }
             try { Territory.Apply(api); }
             catch (Exception ex) { api.Logger.Error("[TassHunting] territory apply failed: {0}", ex); }
+            try { FoodChain.Apply(api); }
+            catch (Exception ex) { api.Logger.Error("[TassHunting] food chain apply failed: {0}", ex); }
         }
 
         private ICoreServerAPI sapi;

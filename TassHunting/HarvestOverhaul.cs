@@ -136,9 +136,33 @@ namespace TassHunting
         public static void Postfix(EntityBehaviorDeadDecay __instance, DamageSource damageSourceForDeath)
         {
             var cfg = HuntingModSystem.Cfg;
-            if (!cfg.EmptyCorpseAutoRemove) return;
             var entity = __instance.entity;
             if (entity == null || entity.World.Side != EnumAppSide.Server) return;
+
+            // BONES, NOT CORPSES (owner order 2026-08-28, the bloodbath pass): a kill with no
+            // player behind it decays on the spot - the creature's own configured decay block
+            // (the dino packs' carcass bones) appears and the body despawns, so a world where
+            // everything fights everything doesn't carpet itself in free harvestable meat.
+            // "A player kill" is EITHER the direct killing blow OR bleeding out of
+            // player-inflicted wounds: bleed ticks are sourceless Internal damage, so without
+            // the who-bled-me stamp every bled-out quarry - the mod's core hunting loop -
+            // would turn to bones in front of its hunter.
+            if (cfg.NonPlayerKillsLeaveBones)
+            {
+                bool playerKill = damageSourceForDeath?.GetCauseEntity() is EntityPlayer
+                    || entity.WatchedAttributes.GetString("tasshunt:bleedByUid") != null;
+                if (!playerKill)
+                {
+                    int bonesMs = (int)(GameMath.Clamp(cfg.NonPlayerKillBonesDelaySeconds, 1f, 300f) * 1000f);
+                    entity.World.RegisterCallback(dt =>
+                    {
+                        try { if (!entity.Alive) __instance.DecayNow(); } catch { }
+                    }, bonesMs);
+                    return; // bones path: the empty-corpse logic below is for player kills
+                }
+            }
+
+            if (!cfg.EmptyCorpseAutoRemove) return;
 
             // Butchering (modid "butchering") owns the whole corpse lifecycle of any animal it marks
             // butcherable: empty-hand pickup -> skinning hook -> butcher table, and the pickup DESPAWNS

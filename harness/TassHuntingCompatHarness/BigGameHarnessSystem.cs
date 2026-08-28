@@ -82,7 +82,8 @@ namespace TassHuntingCompatHarness
                 PureChecks(cfg);
                 DamageMulChecks(cfg);
                 TerritoryChecks(cfg);
-                LiveGlance(cfg);
+                FoodChainChecks(cfg);
+                LiveGlance(cfg);   // async tail: ends with BonesChecks -> Done
             }
             catch (Exception e)
             {
@@ -163,6 +164,85 @@ namespace TassHuntingCompatHarness
             Check("dmgmul-wolf-halved", Near(wolfAfter, wolfBefore * 0.5f, 0.01f), $"{wolfBefore} -> {wolfAfter}");
             Check("dmgmul-control-hyena-untouched", hyenaAfter == hyenaBefore, $"hyena melee {hyenaBefore}");
             cfg.CreatureMeleeDamageMul.Clear();
+        }
+
+        /// <summary>
+        /// FoodChain.Apply (0.14.24): wolf given sheep as prey must carry it in its ungated
+        /// hunt seeks AND its melee whitelist; anger-gated tasks stay untouched; hyena control
+        /// unchanged; applying twice appends nothing new (idempotence).
+        /// </summary>
+        private void FoodChainChecks(HuntingConfig cfg)
+        {
+            int CountCode(string prefix, string taskCode, bool gatedWanted, string prey)
+            {
+                var et = _sapi.World.EntityTypes.FirstOrDefault(
+                    t => t?.Code?.Path != null && t.Code.Domain == "game" && t.Code.Path.StartsWith(prefix));
+                if (et?.Server?.BehaviorsAsJsonObj == null) return -1;
+                int n = 0;
+                foreach (var jo in et.Server.BehaviorsAsJsonObj)
+                {
+                    var tok = jo?.Token as Newtonsoft.Json.Linq.JObject;
+                    if (tok?["code"]?.ToString() != "taskai") continue;
+                    if (!(tok["aitasks"] is Newtonsoft.Json.Linq.JArray tasks)) continue;
+                    foreach (var jt in tasks)
+                    {
+                        if (!(jt is Newtonsoft.Json.Linq.JObject t) || t["code"]?.ToString() != taskCode) continue;
+                        bool gated = !string.IsNullOrEmpty(t["whenInEmotionState"]?.ToString());
+                        if (gated != gatedWanted) continue;
+                        if (t["entityCodes"] is Newtonsoft.Json.Linq.JArray codes)
+                            foreach (var c in codes) if (c?.ToString() == prey) n++;
+                    }
+                }
+                return n;
+            }
+
+            cfg.HuntAppend = new System.Collections.Generic.Dictionary<string, string[]>
+            {
+                { "wolf-*", new[] { "sheep-*" } }
+            };
+            FoodChain.Apply(_sapi);
+            int seekHits = CountCode("wolf-", "seekentity", false, "sheep-*");
+            int meleeHits = CountCode("wolf-", "meleeattack", false, "sheep-*") + CountCode("wolf-", "meleeattack", true, "sheep-*");
+            Check("chain-wolf-hunts-sheep", seekHits > 0, $"{seekHits} ungated seeks");
+            Check("chain-wolf-melee-can-bite-sheep", meleeHits > 0, $"{meleeHits} melee lists");
+            Check("chain-anger-lists-untouched", CountCode("wolf-", "seekentity", true, "sheep-*") == 0);
+            Check("chain-control-hyena-untouched", CountCode("hyena-", "seekentity", false, "sheep-*") == 0);
+            FoodChain.Apply(_sapi); // idempotence: same map again must append nothing
+            Check("chain-reapply-appends-nothing", CountCode("wolf-", "seekentity", false, "sheep-*") == seekHits);
+            cfg.HuntAppend.Clear();
+        }
+
+        /// <summary>
+        /// Bones (0.14.24), live, both directions: a sourceless kill with the switch on flags
+        /// the corpse for despawn (DecayNow ran); the same kill on a body carrying the
+        /// player-bleed stamp keeps its corpse. AllowDespawn is the observable: DecayNow's
+        /// first act is setting it true, and a kept corpse holds it false.
+        /// </summary>
+        private void BonesChecks(HuntingConfig cfg, Action done)
+        {
+            cfg.NonPlayerKillsLeaveBones = true;
+            cfg.NonPlayerKillBonesDelaySeconds = 1f;
+            var wildKill = SpawnPig();
+            var hunterKill = SpawnPig();
+            if (wildKill == null || hunterKill == null) { Check("bones-pigs-spawned", false); done(); return; }
+            hunterKill.WatchedAttributes.SetString("tasshunt:bleedByUid", "harness-player");
+            wildKill.ReceiveDamage(Sharp(), 9999f);
+            hunterKill.ReceiveDamage(Sharp(), 9999f);
+            _sapi.Event.RegisterCallback(_ =>
+            {
+                try
+                {
+                    Check("bones-wild-kill-decays",
+                        !wildKill.Alive && ((Vintagestory.API.Common.EntityAgent)wildKill).AllowDespawn,
+                        $"alive={wildKill.Alive}");
+                    Check("bones-bled-out-quarry-keeps-corpse",
+                        !hunterKill.Alive && !((Vintagestory.API.Common.EntityAgent)hunterKill).AllowDespawn,
+                        $"alive={hunterKill.Alive}");
+                }
+                catch (Exception e) { _sapi.Logger.Error("[biggame] EXCEPTION: {0}", e); }
+                cfg.NonPlayerKillsLeaveBones = false;
+                done();
+            }, 2500);
         }
 
         /// <summary>
@@ -345,7 +425,7 @@ namespace TassHuntingCompatHarness
                                 withCeiling > 0f && without / withCeiling > 3.0f && without / withCeiling < 4.6f,
                                 $"ratio {(withCeiling > 0f ? without / withCeiling : -1f):0.00}");
                             pig.Die(EnumDespawnReason.Removed);
-                            Done();
+                            BonesChecks(cfg, Done);
                         }
                         catch (Exception e) { _sapi.Logger.Error("[biggame] EXCEPTION: {0}", e); Done(); }
                     }, 4500);

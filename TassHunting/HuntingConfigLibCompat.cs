@@ -275,6 +275,15 @@ namespace TassHunting
                 EndServer(serverDecides);
             }
 
+            if (ImGui.CollapsingHeader("Nature red in tooth"))
+            {
+                BeginServer(serverDecides);
+                Checkbox("Animal kills leave bones, not corpses", () => cfg.NonPlayerKillsLeaveBones, v => cfg.NonPlayerKillsLeaveBones = v);
+                Help("When something dies with no player behind the kill, the body decays on the spot into its bones block instead of lying there harvestable. Your own kills - including animals that bleed out of your wounds - always keep their corpse and loot.");
+                SliderFloat("Bones appear after (sec)", () => cfg.NonPlayerKillBonesDelaySeconds, v => cfg.NonPlayerKillBonesDelaySeconds = v, 1f, 60f);
+                EndServer(serverDecides);
+            }
+
             if (ImGui.CollapsingHeader("Harvest and pickup"))
             {
                 BeginServer(serverDecides);

@@ -4,6 +4,19 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.24 (2026-08-28)
+The food chain opens up, and the wilds clean up after themselves. A new
+config list lets a server hand any hunter extra prey - name a creature and
+what it may now hunt, and those targets are added to its hunting and biting
+lists when the world loads. Tamed animals are fair game the moment their
+species is listed: a predator does not check for a lead rope. Nothing
+changes for servers that leave the list empty. And with the new bones switch
+on, any kill with no player behind it decays where it fell into the
+creature's bones instead of lying there as free harvestable meat - so a
+world full of fighting animals does not carpet itself in corpses. Your own
+kills always keep their corpse and loot, including animals that bleed out
+of your wounds after a long chase.
+
 ## 0.14.23 (2026-08-28)
 Blood pools stop hovering. The pool under a kill used to spawn every drop at
 the height of the pool's center, so on a slope or a ledge the outer ring hung
