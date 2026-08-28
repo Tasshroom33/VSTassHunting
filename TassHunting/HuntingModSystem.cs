@@ -134,6 +134,12 @@ namespace TassHunting
         public float GlanceSharpnessBase = 4f;
         public float GlanceSharpnessStep = 0.12f;
         public float GlanceSharpnessFloor = 0.35f;
+        // CREATURE MELEE DAMAGE (2026-08-28, see CreatureDamageMul.cs): wildcard entity codes
+        // to multipliers on their melee bite, applied to the meleeattack tasks at load. Built
+        // for modded law-breakers (the dino survey found two species biting at double their
+        // roster's own damage-vs-health curve); empty by default, first matching entry wins.
+        // e.g. { "*-lajasvenator-*": 0.35 } - health, speed and everything else untouched.
+        public Dictionary<string, float> CreatureMeleeDamageMul = new Dictionary<string, float>();
         // Per-creature correction, because health measures SIZE, not armor (the engine has no
         // creature armor stat): wildcard entity codes to multipliers on the glance chance.
         // e.g. { "ankylosauria-*": 1.5, "macronaria-*": 0.6 } - plates up, soft hide down.
@@ -553,6 +559,7 @@ namespace TassHunting
             if (GlanceSharpnessBase < 0f) GlanceSharpnessBase = 0f;
             if (GlanceSharpnessStep < 0f) GlanceSharpnessStep = 0f;
             GlanceSharpnessFloor = Vintagestory.API.MathTools.GameMath.Clamp(GlanceSharpnessFloor, 0f, 1f);
+            if (CreatureMeleeDamageMul == null) CreatureMeleeDamageMul = new Dictionary<string, float>();
         }
     }
 
@@ -762,6 +769,8 @@ namespace TassHunting
             catch (Exception ex) { api.Logger.Error("[TassHunting] PredatorAI apply failed: {0}", ex); }
             try { PredatorAI.ApplySpeed(api); }
             catch (Exception ex) { api.Logger.Error("[TassHunting] predator speed apply failed: {0}", ex); }
+            try { CreatureDamageMul.Apply(api); }
+            catch (Exception ex) { api.Logger.Error("[TassHunting] creature damage apply failed: {0}", ex); }
         }
 
         private ICoreServerAPI sapi;

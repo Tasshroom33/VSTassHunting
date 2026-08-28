@@ -4,6 +4,17 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.21 (2026-08-28)
+Server owners can now tune any creature's bite from the config file. A new
+list maps creature names (wildcards allowed) to a damage multiplier, applied
+to their melee attacks when the world loads - health, speed, drops and
+everything else stay exactly as the creature's own mod shipped them. Built
+for modded creatures that hit far above their weight: in the dinosaur packs,
+two small pack hunters bit at double the damage the rest of their own roster
+follows for their size, hard enough to down an unarmored player in two
+touches. A name in the list that matches nothing logs a warning instead of
+silently doing nothing.
+
 ## 0.14.20 (2026-08-28)
 The red bleed blink is back. Bleeding creatures flash red on every bleed tick
 again, the same tint and half-second fade as a normal hit - but purely as a

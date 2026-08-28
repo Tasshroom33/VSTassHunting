@@ -80,6 +80,7 @@ namespace TassHuntingCompatHarness
                 cfg.BleedSizeTiers = new[] { new BleedSizeTier { MaxHealth = 0f, Seconds = 45f, Odds = 1f, SecondOdds = 0f } };
 
                 PureChecks(cfg);
+                DamageMulChecks(cfg);
                 LiveGlance(cfg);
             }
             catch (Exception e)
@@ -124,6 +125,43 @@ namespace TassHuntingCompatHarness
             // Combined: steel spear vs the mapped anky = 0.708 * 0.64 = 0.453.
             float steelAnky = HideGlance.Chance(400f, 45f, 200f, 0.5f, 1.5f * steel, 0.8f, false);
             Check("sharp-steel-vs-anky-45pct", Near(steelAnky, 0.453f, 0.01f), $"{steelAnky:0.000}");
+        }
+
+        /// <summary>
+        /// CreatureMeleeDamageMul (0.14.21), engine-only, both directions on the type JSON:
+        /// the vanilla wolf's melee halves under a wolf-* pattern, the hyena (control) stays
+        /// byte-identical, and a pattern matching nothing must not throw (it warns).
+        /// </summary>
+        private void DamageMulChecks(HuntingConfig cfg)
+        {
+            float Melee(string prefix)
+            {
+                var et = _sapi.World.EntityTypes.FirstOrDefault(
+                    t => t?.Code?.Path != null && t.Code.Domain == "game" && t.Code.Path.StartsWith(prefix));
+                if (et?.Server?.BehaviorsAsJsonObj == null) return -1f;
+                foreach (var jo in et.Server.BehaviorsAsJsonObj)
+                {
+                    var tok = jo?.Token as Newtonsoft.Json.Linq.JObject;
+                    if (tok?["code"]?.ToString() != "taskai") continue;
+                    if (!(tok["aitasks"] is Newtonsoft.Json.Linq.JArray aitasks)) continue;
+                    foreach (var jt in aitasks)
+                        if (jt is Newtonsoft.Json.Linq.JObject task && task["code"]?.ToString() == "meleeattack" && task["damage"] != null)
+                            return (float)task["damage"].ToObject(typeof(float));
+                }
+                return -1f;
+            }
+
+            float wolfBefore = Melee("wolf-"), hyenaBefore = Melee("hyena-");
+            Check("dmgmul-wolf-baseline-found", wolfBefore > 0f, $"wolf melee {wolfBefore}");
+            cfg.CreatureMeleeDamageMul = new System.Collections.Generic.Dictionary<string, float>
+            {
+                { "wolf-*", 0.5f }, { "no-such-creature-*", 0.5f }
+            };
+            CreatureDamageMul.Apply(_sapi);
+            float wolfAfter = Melee("wolf-"), hyenaAfter = Melee("hyena-");
+            Check("dmgmul-wolf-halved", Near(wolfAfter, wolfBefore * 0.5f, 0.01f), $"{wolfBefore} -> {wolfAfter}");
+            Check("dmgmul-control-hyena-untouched", hyenaAfter == hyenaBefore, $"hyena melee {hyenaBefore}");
+            cfg.CreatureMeleeDamageMul.Clear();
         }
 
         // A sourceless piercing hit, the RejoinHarness pattern: no attacker entity needed,
