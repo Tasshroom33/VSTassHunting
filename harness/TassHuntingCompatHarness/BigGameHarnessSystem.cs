@@ -81,6 +81,7 @@ namespace TassHuntingCompatHarness
 
                 PureChecks(cfg);
                 DamageMulChecks(cfg);
+                TerritoryChecks(cfg);
                 LiveGlance(cfg);
             }
             catch (Exception e)
@@ -162,6 +163,83 @@ namespace TassHuntingCompatHarness
             Check("dmgmul-wolf-halved", Near(wolfAfter, wolfBefore * 0.5f, 0.01f), $"{wolfBefore} -> {wolfAfter}");
             Check("dmgmul-control-hyena-untouched", hyenaAfter == hyenaBefore, $"hyena melee {hyenaBefore}");
             cfg.CreatureMeleeDamageMul.Clear();
+        }
+
+        /// <summary>
+        /// Territory.Apply (0.14.22), engine-only on the type JSON, both directions: a vanilla
+        /// bear made territorial must end up with the player in its aggressivearoundentities
+        /// trigger list, a raised guard radius, raised anger memory, and a raised anger-chase;
+        /// the wolf (control, not in either list) must stay byte-identical on those fields.
+        /// </summary>
+        private void TerritoryChecks(HuntingConfig cfg)
+        {
+            Newtonsoft.Json.Linq.JObject Behavior(string prefix, string code)
+            {
+                var et = _sapi.World.EntityTypes.FirstOrDefault(
+                    t => t?.Code?.Path != null && t.Code.Domain == "game" && t.Code.Path.StartsWith(prefix));
+                if (et?.Server?.BehaviorsAsJsonObj == null) return null;
+                foreach (var jo in et.Server.BehaviorsAsJsonObj)
+                {
+                    var tok = jo?.Token as Newtonsoft.Json.Linq.JObject;
+                    if (tok?["code"]?.ToString() == code) return tok;
+                }
+                return null;
+            }
+            float StateVal(Newtonsoft.Json.Linq.JObject emo, string state, string field)
+            {
+                if (!(emo?["states"] is Newtonsoft.Json.Linq.JArray states)) return -1f;
+                foreach (var st in states)
+                    if (st is Newtonsoft.Json.Linq.JObject s && s["code"]?.ToString() == state && s[field] != null)
+                        return (float)s[field].ToObject(typeof(float));
+                return -1f;
+            }
+            bool StateHasPlayer(Newtonsoft.Json.Linq.JObject emo, string state)
+            {
+                if (!(emo?["states"] is Newtonsoft.Json.Linq.JArray states)) return false;
+                foreach (var st in states)
+                    if (st is Newtonsoft.Json.Linq.JObject s && s["code"]?.ToString() == state
+                        && s["entityCodes"] is Newtonsoft.Json.Linq.JArray codes)
+                        foreach (var c in codes) if (c?.ToString() == "player") return true;
+                return false;
+            }
+            float SeekRange(string prefix)
+            {
+                var taskai = Behavior(prefix, "taskai");
+                if (!(taskai?["aitasks"] is Newtonsoft.Json.Linq.JArray tasks)) return -1f;
+                foreach (var jt in tasks)
+                    if (jt is Newtonsoft.Json.Linq.JObject t && t["code"]?.ToString() == "seekentity"
+                        && (t["whenInEmotionState"]?.ToString() ?? "").Contains("aggressiveondamage")
+                        && t["seekingRange"] != null)
+                        return (float)t["seekingRange"].ToObject(typeof(float));
+                return -1f;
+            }
+
+            float wolfSeekBefore = SeekRange("wolf-");
+            var bearEmoBefore = Behavior("bear-", "emotionstates");
+            Check("terr-bear-has-emotions", bearEmoBefore != null);
+            Check("terr-bear-no-player-guard-before", !StateHasPlayer(bearEmoBefore, "aggressivearoundentities"));
+
+            cfg.RetaliationCodes = new[] { "no-such-thing-*" };
+            cfg.TerritorialCodes = new[] { "bear-*" };
+            cfg.RetaliationSeekRange = 40f;
+            cfg.RetaliationMaxFollowTimeSec = 120f;
+            cfg.RetaliationMemorySeconds = 180f;
+            cfg.TerritoryRadius = 25f;
+            Territory.Apply(_sapi);
+
+            var bearEmo = Behavior("bear-", "emotionstates");
+            Check("terr-bear-guards-players", StateHasPlayer(bearEmo, "aggressivearoundentities"));
+            float radius = StateVal(bearEmo, "aggressivearoundentities", "notifyRange");
+            Check("terr-bear-guard-radius-25", radius >= 25f, $"notifyRange {radius}");
+            float mem = StateVal(bearEmo, "aggressiveondamage", "duration");
+            Check("terr-bear-memory-180", mem >= 180f, $"duration {mem}");
+            float bearSeek = SeekRange("bear-");
+            Check("terr-bear-chase-40", bearSeek >= 40f, $"seekingRange {bearSeek}");
+            float wolfSeekAfter = SeekRange("wolf-");
+            Check("terr-control-wolf-untouched", wolfSeekAfter == wolfSeekBefore, $"wolf seek {wolfSeekBefore}");
+            Check("terr-wolf-no-player-guard", !StateHasPlayer(Behavior("wolf-", "emotionstates"), "aggressivearoundentities"));
+            cfg.RetaliationCodes = new string[0];
+            cfg.TerritorialCodes = new string[0];
         }
 
         // A sourceless piercing hit, the RejoinHarness pattern: no attacker entity needed,

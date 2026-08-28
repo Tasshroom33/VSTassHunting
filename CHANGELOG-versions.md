@@ -4,6 +4,21 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.22 (2026-08-28)
+Big herbivores can now hold their ground. Two new creature lists in the
+config: retaliation animals remember who hurt them far longer (three minutes
+of anger instead of one), chase them twice as far (40 blocks instead of 20)
+and press the chase for two minutes instead of thirty seconds - so wounding a
+triceratops and stepping back no longer resets it to grazing. Territorial
+animals go further: they start the fight themselves when a player walks into
+their space, using the same instinct they already had for defending their
+young - now the territory is around the animal itself, since most spawn
+without young. They keep re-arming as long as you stand inside the radius and
+only calm down after you have truly left. Everything is sliders and
+config-file lists; both lists ship empty, so nothing changes until a server
+names its creatures. Only works on worlds where creature hostility is set to
+aggressive (the normal setting) - passive worlds stay passive.
+
 ## 0.14.21 (2026-08-28)
 Server owners can now tune any creature's bite from the config file. A new
 list maps creature names (wildcards allowed) to a damage multiplier, applied

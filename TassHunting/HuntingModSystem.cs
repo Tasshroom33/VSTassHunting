@@ -140,6 +140,19 @@ namespace TassHunting
         // roster's own damage-vs-health curve); empty by default, first matching entry wins.
         // e.g. { "*-lajasvenator-*": 0.35 } - health, speed and everything else untouched.
         public Dictionary<string, float> CreatureMeleeDamageMul = new Dictionary<string, float>();
+
+        // ---- RETALIATION + TERRITORY (2026-08-28, see Territory.cs) ----
+        // Creatures in RetaliationCodes remember being hurt: anger memory, chase range and
+        // chase persistence raised to the numbers below (values only ever go up). Creatures
+        // in TerritorialCodes ADDITIONALLY start the fight themselves when a player enters
+        // TerritoryRadius - they hold ground, and only cool down after the player is truly
+        // gone for the memory duration. Both lists wildcards, both empty by default.
+        public string[] RetaliationCodes = new string[0];
+        public string[] TerritorialCodes = new string[0];
+        public float RetaliationSeekRange = 40f;        // anger-chase radius (typical shipped value: 20)
+        public float RetaliationMaxFollowTimeSec = 120f;// how long it presses the chase (typical: 30)
+        public float RetaliationMemorySeconds = 180f;   // how long it stays angry (typical: 60)
+        public float TerritoryRadius = 12f;             // territorial only: guard radius around itself
         // Per-creature correction, because health measures SIZE, not armor (the engine has no
         // creature armor stat): wildcard entity codes to multipliers on the glance chance.
         // e.g. { "ankylosauria-*": 1.5, "macronaria-*": 0.6 } - plates up, soft hide down.
@@ -560,6 +573,12 @@ namespace TassHunting
             if (GlanceSharpnessStep < 0f) GlanceSharpnessStep = 0f;
             GlanceSharpnessFloor = Vintagestory.API.MathTools.GameMath.Clamp(GlanceSharpnessFloor, 0f, 1f);
             if (CreatureMeleeDamageMul == null) CreatureMeleeDamageMul = new Dictionary<string, float>();
+            if (RetaliationCodes == null) RetaliationCodes = new string[0];
+            if (TerritorialCodes == null) TerritorialCodes = new string[0];
+            RetaliationSeekRange = Vintagestory.API.MathTools.GameMath.Clamp(RetaliationSeekRange, 0f, 200f);
+            RetaliationMaxFollowTimeSec = Vintagestory.API.MathTools.GameMath.Clamp(RetaliationMaxFollowTimeSec, 0f, 3600f);
+            RetaliationMemorySeconds = Vintagestory.API.MathTools.GameMath.Clamp(RetaliationMemorySeconds, 0f, 3600f);
+            TerritoryRadius = Vintagestory.API.MathTools.GameMath.Clamp(TerritoryRadius, 0f, 60f);
         }
     }
 
@@ -771,6 +790,8 @@ namespace TassHunting
             catch (Exception ex) { api.Logger.Error("[TassHunting] predator speed apply failed: {0}", ex); }
             try { CreatureDamageMul.Apply(api); }
             catch (Exception ex) { api.Logger.Error("[TassHunting] creature damage apply failed: {0}", ex); }
+            try { Territory.Apply(api); }
+            catch (Exception ex) { api.Logger.Error("[TassHunting] territory apply failed: {0}", ex); }
         }
 
         private ICoreServerAPI sapi;

@@ -228,6 +228,11 @@ namespace TassHunting
                 Checkbox("Wounded animals slow down", () => cfg.WoundedSlowdownEnabled, v => cfg.WoundedSlowdownEnabled = v);
                 Checkbox("Some animals stay wild", () => cfg.StayWildEnabled, v => cfg.StayWildEnabled = v);
                 Help("The creatures listed under StayWildCodes in the config file can never be tamed, petted, roped or ridden, whatever else you install. Names them by code, so it is a config-file list. Needs world rejoin.");
+                SliderFloat("Angry animals chase this far (blocks)", () => cfg.RetaliationSeekRange, v => cfg.RetaliationSeekRange = v, 10f, 200f);
+                SliderFloat("Angry animals press the chase (sec)", () => cfg.RetaliationMaxFollowTimeSec, v => cfg.RetaliationMaxFollowTimeSec = v, 10f, 600f);
+                SliderFloat("Anger lasts (sec)", () => cfg.RetaliationMemorySeconds, v => cfg.RetaliationMemorySeconds = v, 10f, 600f);
+                SliderFloat("Territory radius (blocks)", () => cfg.TerritoryRadius, v => cfg.TerritoryRadius = v, 4f, 60f);
+                Help("For the creatures named in RetaliationCodes / TerritorialCodes in the config file: how far they hunt whoever hurt them, how long they keep it up, how long they stay angry, and (territorial ones) how close a player can get before they start the fight themselves. Needs world rejoin.");
                 EndServer(serverDecides);
             }
 
