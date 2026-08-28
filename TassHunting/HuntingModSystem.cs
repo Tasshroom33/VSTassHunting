@@ -105,6 +105,22 @@ namespace TassHunting
         public float PackAggroSeekRange = 25f;   // vanilla 15
         public float PackMaxFollowTimeSec = 240f;
 
+        // ---- STAY WILD (see StayWild.cs) ----
+        // Named creatures can never be tamed, petted, roped, owned or ridden - the
+        // domestication behaviors are taken off their entity types at load, so a companion
+        // mod installed later cannot hand them back. Off by default: it changes creatures
+        // this mod otherwise has no opinion about.
+        public bool StayWildEnabled = false;
+        // Which creatures. Wildcards, matched against the full entity code AND the bare
+        // path, so "tyrannosauridae:*" and "tyrannosauridae-*" both name that family.
+        // Empty = nothing (the switch needs somebody to point at).
+        public string[] StayWildCodes = new string[0];
+        // Which behaviors count as domestication. Defaults cover vanilla riding and leashing
+        // plus the two Jaunt/PetAI behaviors the dino packs add when those mods are present.
+        // "ownable" is deliberately NOT here: on its own it only verifies an existing
+        // ownership record, and removing it would orphan animals somebody already owns.
+        public string[] StayWildBehaviors = { "rideable", "gait", "tameable", "receivecommand", "pettable", "ropetieable" };
+
         // ---- HARVEST OVERHAUL (playtest 2026-07-19, see HarvestOverhaul.cs) ----
         // Knife harvest hold time multiplier (0.5 = half of vanilla; 0 = leave
         // vanilla timing alone, matching the mod's "0 = off" convention - field
@@ -481,6 +497,11 @@ namespace TassHunting
             // 0.05 and gave a twentieth of vanilla (field report 2026-08-10).
             if (HarvestTimeMult <= 0f) HarvestTimeMult = 1f;
             else HarvestTimeMult = Vintagestory.API.MathTools.GameMath.Clamp(HarvestTimeMult, 0.05f, 10f);
+
+            // Hand-deleted lists come back as null through the deserializer; stay-wild reads
+            // both every load path (file, ConfigLib restore, server sync), so normalize here.
+            if (StayWildCodes == null) StayWildCodes = new string[0];
+            if (StayWildBehaviors == null) StayWildBehaviors = new string[0];
         }
     }
 
@@ -681,6 +702,10 @@ namespace TassHunting
         {
             try { ArcheryTweaks.Apply(api); }
             catch (Exception ex) { api.Logger.Error("[TassHunting] archery tweaks failed: {0}", ex); }
+            // Stay-wild runs BOTH sides: the domestication behaviors live in the client
+            // behavior list too, and that copy is what would draw a rider and take controls.
+            try { StayWild.Apply(api); }
+            catch (Exception ex) { api.Logger.Error("[TassHunting] stay-wild apply failed: {0}", ex); }
             if (api.Side != EnumAppSide.Server) return;
             try { PredatorAI.ApplyServer(api); }
             catch (Exception ex) { api.Logger.Error("[TassHunting] PredatorAI apply failed: {0}", ex); }

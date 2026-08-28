@@ -224,6 +224,8 @@ namespace TassHunting
                 Checkbox("Tougher predators", () => cfg.PredatorOverhaulEnabled, v => cfg.PredatorOverhaulEnabled = v);
                 Help("Bears charge from further and never give up; wolves pack up. Needs world rejoin.");
                 Checkbox("Wounded animals slow down", () => cfg.WoundedSlowdownEnabled, v => cfg.WoundedSlowdownEnabled = v);
+                Checkbox("Some animals stay wild", () => cfg.StayWildEnabled, v => cfg.StayWildEnabled = v);
+                Help("The creatures listed under StayWildCodes in the config file can never be tamed, petted, roped or ridden, whatever else you install. Names them by code, so it is a config-file list. Needs world rejoin.");
                 EndServer(serverDecides);
             }
 

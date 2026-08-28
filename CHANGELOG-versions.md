@@ -4,6 +4,15 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.17 (2026-08-28)
+Some animals can now be kept wild for good. Name creatures in the new stay-wild
+list and nobody can ever tame, pet, rope or ride them - not even after
+installing a mod that would normally allow it, because the taming is taken off
+the creature itself when the world loads rather than blocked when somebody
+tries. Built for dinosaur packs, where the intent is that you fear them instead
+of saddling them. Off by default and it only touches creatures you name, so
+your chickens, goats and riding elk are untouched.
+
 ## 0.14.16 (2026-08-22)
 Bleeding reworked around the size of whatever is bleeding. A single wound now
 hurts about a third as much as it used to but stays open far longer, and each
