@@ -140,6 +140,8 @@ namespace TassHunting
                 // "Spawn splatter on damage" and the bleeding box are the CLIENT-side
                 // dials here (they drive what you see); the rest is server-decided damage.
                 Checkbox("Spawn splatter on damage", () => cfg.SpawnSplatterOnDamage, v => cfg.SpawnSplatterOnDamage = v);
+                Checkbox("Hear heavy steps behind you", () => cfg.BigStepsBehindYou, v => cfg.BigStepsBehindYou = v);
+                Help("The game only plays footsteps for creatures on your screen. This keeps the heavy ones - anything whose steps are loud enough to carry - stomping audibly when they are behind you, using their own sounds.");
                 Checkbox("Red flash on bleed damage", () => cfg.BleedTickHurtFlash, v => cfg.BleedTickHurtFlash = v);
                 Help("Bleeding creatures blink red on every bleed tick, like a normal hit does. Purely a look - it never makes them immune the way a real hit's flash does.");
                 Checkbox("Show bleeding box", () => cfg.BleedHudEnabled, v => cfg.BleedHudEnabled = v);

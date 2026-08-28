@@ -4,6 +4,17 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.27 (2026-08-28)
+You can hear the big ones behind you now. The game only animates creatures
+that are on your screen, and footsteps are played by the animation - so the
+moment you turned away from a dinosaur, its steps went silent, which is
+exactly backwards for the one sound your life depends on. Heavy creatures -
+anything whose steps are loud enough to carry a long way - now keep stomping
+audibly while off your screen, using their own step sounds, their own walking
+or running pace, and their own loudness. On-screen animals are untouched
+(the real animation still plays their steps), small animals were always
+quiet enough that nothing changes, and there is a switch per player.
+
 ## 0.14.26 (2026-08-28)
 Predators get full again. Two bugs had turned them into serial killers: the
 extra prey from the food chain was riding a hunting instinct that never gets

@@ -417,6 +417,12 @@ namespace TassHunting
         // it animates the same RenderColor fade the engine uses for real hits, WITHOUT
         // arming the 500ms invulnerability window (see BloodVisuals: the vanilla flash and
         // the i-frames are one clock; ours is only the light half of it).
+        // Off-screen footsteps for big creatures (0.14.27, see BigSteps.cs): the engine only
+        // animates what you render, and steps are animation-frame sounds - so anything behind
+        // you went silent. Creatures whose step sounds reach BigStepsMinRange keep stepping
+        // audibly while unrendered, using their own sounds and cadence.
+        [ClientPersonal] public bool BigStepsBehindYou = true;
+        [ClientPersonal] public float BigStepsMinRange = 30f;
         [ClientPersonal] public bool BleedTickHurtFlash = true;
         [ClientPersonal] public bool BleedHudEnabled = true;
         // Corner the box sits in. One of: LeftTop, LeftMiddle, LeftBottom, RightTop,
