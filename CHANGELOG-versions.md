@@ -4,6 +4,13 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.32 (2026-08-28)
+Swapped step sounds got a volume slider. Deep pitch softens a sound's
+attack, and a replacement recording can be quieter than the file the
+creature's volumes were tuned for, so heavy steps could come out light.
+The new slider turns the swapped steps up on top of each animal's own
+tuning to put the punch back.
+
 ## 0.14.31 (2026-08-28)
 Heavy steps can go much deeper now. The pitch floor drops from 0.4 to 0.2,
 so at the default settings a tyrannosaur steps at quarter pitch and the

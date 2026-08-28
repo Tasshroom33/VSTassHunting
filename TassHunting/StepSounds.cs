@@ -89,6 +89,16 @@ namespace TassHunting
                             snd.Attributes.Pitch = NatFloat.create(EnumDistribution.UNIFORM,
                                 (old?.avg ?? 1f) * pitchMult, old?.var ?? 0.02f);
                         }
+                        // PUNCH (owner 2026-08-28, "sounds very light"): pitch-down stretches
+                        // the attack transient, and a replacement recording may be quieter at
+                        // source than the file the pack's volume was tuned for - so overridden
+                        // steps get their own volume multiplier to hit as hard as they should.
+                        if (Math.Abs(cfg.StepSoundVolumeMult - 1f) > 0.001f)
+                        {
+                            var oldv = snd.Attributes.Volume;
+                            snd.Attributes.Volume = NatFloat.create(EnumDistribution.UNIFORM,
+                                (oldv?.avg ?? 1f) * cfg.StepSoundVolumeMult, oldv?.var ?? 0.02f);
+                        }
                         entries++; touched = true;
                     }
                 }

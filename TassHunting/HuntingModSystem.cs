@@ -433,6 +433,10 @@ namespace TassHunting
         // Bigger number = deeper. At 2 a 4-block-tall rex plays at 0.25 pitch, a sauropod
         // sits on the 0.2 floor, wolf-sized is never touched. 0 = native pitch.
         public float StepSoundDeepen = 1.5f;
+        // Volume multiplier for overridden steps. Pitch-down softens a sample's attack and a
+        // replacement recording may be quieter at source than the pack's tuning assumed;
+        // this puts the punch back. 1 = the pack's own step volumes.
+        public float StepSoundVolumeMult = 1f;
         [ClientPersonal] public bool BleedTickHurtFlash = true;
         [ClientPersonal] public bool BleedHudEnabled = true;
         // Corner the box sits in. One of: LeftTop, LeftMiddle, LeftBottom, RightTop,
@@ -615,6 +619,7 @@ namespace TassHunting
             if (CreatureMeleeDamageMul == null) CreatureMeleeDamageMul = new Dictionary<string, float>();
             if (StepSoundOverride == null) StepSoundOverride = new Dictionary<string, string>();
             StepSoundDeepen = Vintagestory.API.MathTools.GameMath.Clamp(StepSoundDeepen, 0f, 4f);
+            StepSoundVolumeMult = Vintagestory.API.MathTools.GameMath.Clamp(StepSoundVolumeMult, 0.1f, 4f);
             if (RetaliationCodes == null) RetaliationCodes = new string[0];
             if (TerritorialCodes == null) TerritorialCodes = new string[0];
             RetaliationSeekRange = Vintagestory.API.MathTools.GameMath.Clamp(RetaliationSeekRange, 0f, 200f);
