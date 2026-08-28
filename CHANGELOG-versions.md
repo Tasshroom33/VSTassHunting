@@ -4,6 +4,14 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.29 (2026-08-28)
+Big steps got their bass. The swapped thump was playing at its recorded
+pitch, which made an eight ton animal sound like a horse at a canter. The
+step pitch now drops with body size: a full grown tyrannosaur booms at less
+than half pitch, the biggest sauropods bottom out even deeper, mid-size
+animals sit in between, and anything wolf-sized is untouched. One slider
+controls how strong the effect is, 0 turns it off.
+
 ## 0.14.28 (2026-08-28)
 Heavy footsteps can be given a better sound. A new config list swaps the
 step sound of heavy walkers for any sound you name, keeping each animal's

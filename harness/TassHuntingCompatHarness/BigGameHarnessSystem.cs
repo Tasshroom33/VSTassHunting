@@ -235,6 +235,12 @@ namespace TassHuntingCompatHarness
                 }
                 return "no-step-sounds";
             }
+            // Deepen formula landmarks (pure): rex-height booms, sauropod floors, wolf unchanged.
+            Check("deepen-rex-height", Near(StepSounds.PitchMult(4f, 1.2f), 0.455f, 0.01f), $"{StepSounds.PitchMult(4f, 1.2f):0.000}");
+            Check("deepen-sauropod-floors", StepSounds.PitchMult(7f, 1.2f) == 0.4f);
+            Check("deepen-wolf-unchanged", StepSounds.PitchMult(0.9f, 1.2f) == 1f);
+            Check("deepen-zero-is-off", StepSounds.PitchMult(4f, 0f) == 1f);
+
             string before = WolfStepLoc();
             if (before == "no-client-anims" || before == "no-step-sounds")
             {

@@ -1,5 +1,6 @@
 using System;
 using Vintagestory.API.Common;
+using Vintagestory.API.MathTools;
 using Vintagestory.API.Util;
 
 namespace TassHunting
@@ -25,6 +26,23 @@ namespace TassHunting
     /// </summary>
     public static class StepSounds
     {
+        /// <summary>
+        /// SIZE-DEEPENED PITCH (owner 2026-08-28: "sounds higher pitch like horse gallop
+        /// than a large thump from an 8t animal"). One shared thump sample cannot carry
+        /// every body size at native pitch, so the pitch is scaled by body HEIGHT:
+        /// mult = clamp(deepen / height^0.7, 0.4, 1). At deepen 1.2: a 4-block rex plays
+        /// at ~0.45 (a boom), a 2-block anky ~0.74, a 7-block sauropod hits the 0.4 floor,
+        /// and anything wolf-sized computes above 1 and clamps to unchanged. Baked into
+        /// the entry's own pitch curve at rewrite time (a NEW NatFloat - the default curve
+        /// is a SHARED static instance and mutating it would poison every sound in the
+        /// game), so the animation player and the behind-you steps both deepen alike.
+        /// </summary>
+        public static float PitchMult(float bodyHeight, float deepen)
+        {
+            if (deepen <= 0f || bodyHeight <= 0f) return 1f;
+            return GameMath.Clamp(deepen / (float)Math.Pow(bodyHeight, 0.7), 0.4f, 1f);
+        }
+
         public static void Apply(ICoreAPI api)
         {
             var cfg = HuntingModSystem.Cfg;
@@ -48,6 +66,7 @@ namespace TassHunting
                 }
                 if (loc == null) continue;
 
+                float pitchMult = PitchMult(et.CollisionBoxSize?.Y ?? 0f, cfg.StepSoundDeepen);
                 bool touched = false;
                 foreach (var meta in anims)
                 {
@@ -60,6 +79,12 @@ namespace TassHunting
                         if (!sloc.Path.Contains("step")) continue;          // steps only
                         if (snd.Attributes.Range < minRange) continue;      // heavy steps only
                         snd.Attributes.Location = new AssetLocation(loc);
+                        if (pitchMult < 0.999f)
+                        {
+                            var old = snd.Attributes.Pitch;
+                            snd.Attributes.Pitch = NatFloat.create(EnumDistribution.UNIFORM,
+                                (old?.avg ?? 1f) * pitchMult, old?.var ?? 0.02f);
+                        }
                         entries++; touched = true;
                     }
                 }

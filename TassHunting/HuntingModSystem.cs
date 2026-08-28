@@ -429,6 +429,10 @@ namespace TassHunting
         // (the dino packs' scratchy scrape recordings) to a proper thud while wolves keep
         // their own quiet steps. e.g. { "*": "game:sounds/creature/shiver/thump*" }.
         public Dictionary<string, string> StepSoundOverride = new Dictionary<string, string>();
+        // Deepen overridden steps by body size: pitch = clamp(this / height^0.7, 0.4, 1).
+        // At 1.2 a 4-block-tall rex booms at ~0.45 pitch, a sauropod hits the floor, and
+        // wolf-sized stays unchanged. 0 = play the override sound at its native pitch.
+        public float StepSoundDeepen = 1.2f;
         [ClientPersonal] public bool BleedTickHurtFlash = true;
         [ClientPersonal] public bool BleedHudEnabled = true;
         // Corner the box sits in. One of: LeftTop, LeftMiddle, LeftBottom, RightTop,
@@ -610,6 +614,7 @@ namespace TassHunting
             GlanceSharpnessFloor = Vintagestory.API.MathTools.GameMath.Clamp(GlanceSharpnessFloor, 0f, 1f);
             if (CreatureMeleeDamageMul == null) CreatureMeleeDamageMul = new Dictionary<string, float>();
             if (StepSoundOverride == null) StepSoundOverride = new Dictionary<string, string>();
+            StepSoundDeepen = Vintagestory.API.MathTools.GameMath.Clamp(StepSoundDeepen, 0f, 4f);
             if (RetaliationCodes == null) RetaliationCodes = new string[0];
             if (TerritorialCodes == null) TerritorialCodes = new string[0];
             RetaliationSeekRange = Vintagestory.API.MathTools.GameMath.Clamp(RetaliationSeekRange, 0f, 200f);
