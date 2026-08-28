@@ -140,6 +140,8 @@ namespace TassHunting
                 // "Spawn splatter on damage" and the bleeding box are the CLIENT-side
                 // dials here (they drive what you see); the rest is server-decided damage.
                 Checkbox("Spawn splatter on damage", () => cfg.SpawnSplatterOnDamage, v => cfg.SpawnSplatterOnDamage = v);
+                Checkbox("Red flash on bleed damage", () => cfg.BleedTickHurtFlash, v => cfg.BleedTickHurtFlash = v);
+                Help("Bleeding creatures blink red on every bleed tick, like a normal hit does. Purely a look - it never makes them immune the way a real hit's flash does.");
                 Checkbox("Show bleeding box", () => cfg.BleedHudEnabled, v => cfg.BleedHudEnabled = v);
                 Help("A small panel on screen while YOU are bleeding: a blood drop, how many wounds are open and how long until they close.");
                 Combo("Bleeding box corner", BleedHudPositions, () => cfg.BleedHudPosition, v => cfg.BleedHudPosition = v);

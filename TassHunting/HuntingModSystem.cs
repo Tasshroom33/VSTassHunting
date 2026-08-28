@@ -370,6 +370,11 @@ namespace TassHunting
         // CLIENT: the on-screen bleeding box - blood-drop icon, open wound count and the
         // countdown to it closing, in the same shape as the XSkills effect box. Deliberately
         // just that: no hover description panel (user call 2026-07-29, it read as clutter).
+        // The red hurt flash on every bleed tick (0.14.20). Purely client-side cosmetic -
+        // it animates the same RenderColor fade the engine uses for real hits, WITHOUT
+        // arming the 500ms invulnerability window (see BloodVisuals: the vanilla flash and
+        // the i-frames are one clock; ours is only the light half of it).
+        [ClientPersonal] public bool BleedTickHurtFlash = true;
         [ClientPersonal] public bool BleedHudEnabled = true;
         // Corner the box sits in. One of: LeftTop, LeftMiddle, LeftBottom, RightTop,
         // RightMiddle, RightBottom, CenterTop, CenterBottom. Left middle by user call

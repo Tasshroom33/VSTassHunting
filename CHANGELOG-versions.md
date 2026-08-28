@@ -4,6 +4,15 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.20 (2026-08-28)
+The red bleed blink is back. Bleeding creatures flash red on every bleed tick
+again, the same tint and half-second fade as a normal hit - but purely as a
+light: unlike the old days, the flash never makes the animal briefly immune
+to your next hit, so a bleeding target stays fully hittable and two hunters
+never rob each other's arrows through it. If a real hit lands mid-blink, the
+normal hit flash takes over cleanly. Its own switch in the config panel,
+per player, on by default.
+
 ## 0.14.19 (2026-08-28)
 Sharper metal bites deeper. The chance that thick hide turns an arrow or spear
 now falls as the weapon's damage rises: flint is the baseline and everything

@@ -64,6 +64,10 @@ namespace TassHunting
 
         /// <summary>Per-entity observation state (hurt counter, trail anchor,
         /// corpse bleed window).</summary>
+        // Entity.HurtColor is PROTECTED, so mirror its value (Entity.cs:91, 1.22.5:
+        // ToRgba(255,255,100,100)) - the exact tint the engine flashes on a real hit.
+        private static readonly int VanillaHurtColor = ColorUtil.ToRgba(255, 255, 100, 100);
+
         private class Track
         {
             public int LastHurtCounter;
@@ -74,6 +78,8 @@ namespace TassHunting
             public double LastX, LastY, LastZ;
             public bool DeathHandled;
             public long LastSeenMs;
+            public long FlashUntilMs;  // red bleed blink (0.14.20): fading until this moment
+            public bool Flashing;      // we own RenderColor right now and must restore it
         }
 
         private readonly Dictionary<int, Spot> spots = new Dictionary<int, Spot>();
@@ -293,6 +299,36 @@ namespace TassHunting
                         float bdmg = ent.WatchedAttributes.GetFloat("thbleeddmg", 0f);
                         float inten = Math.Min(4f, 1.0f + bdmg * 0.3f) * trailScale;
                         DepositLocal(ent.Pos.X, WoundY(ent), ent.Pos.Z, KindHit, inten, 0.5f * trailScale, null, now, 1, Math.Max(1, stacks));
+                    }
+                    // RED BLEED BLINK (owner request 2026-08-28, "i miss the old red blink"):
+                    // arm a client-local 500ms fade on every bleed tick.
+                    if (cfg.BleedTickHurtFlash && ent.Alive) tr.FlashUntilMs = now + 500;
+                }
+
+                // Drive the blink. Engine fact (decompile 1.22.5, Entity.OnGameTick client
+                // branch): the vanilla red flash IS the invulnerability timer rendered -
+                // RenderColor = ColorOverlay(HurtColor, white, 1 - remaining/500) - and the
+                // engine only WRITES RenderColor while that timer's remaining time is
+                // changing. Our bleed tick never arms the timer (TicksPerDuration=2, the fix
+                // that keeps bleeding animals hittable), so outside a real hit the slot is
+                // ours to animate: same color, same 500ms fade, zero gameplay immunity. A
+                // real hit arms the engine timer, and then the engine owns the tint - we
+                // drop our flash without writing so the two never fight over the slot.
+                if (tr.FlashUntilMs > 0)
+                {
+                    if (ent.IsActivityRunning("invulnerable"))
+                    {
+                        tr.FlashUntilMs = 0; tr.Flashing = false; // engine flash wins
+                    }
+                    else if (!ent.Alive || now >= tr.FlashUntilMs)
+                    {
+                        tr.FlashUntilMs = 0;
+                        if (tr.Flashing) { ent.RenderColor = ColorUtil.ColorOverlay(VanillaHurtColor, -1, 1f); tr.Flashing = false; }
+                    }
+                    else
+                    {
+                        ent.RenderColor = ColorUtil.ColorOverlay(VanillaHurtColor, -1, 1f - (tr.FlashUntilMs - now) / 500f);
+                        tr.Flashing = true;
                     }
                 }
 
