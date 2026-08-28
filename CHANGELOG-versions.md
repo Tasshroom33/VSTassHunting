@@ -4,6 +4,16 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.28 (2026-08-28)
+Heavy footsteps can be given a better sound. A new config list swaps the
+step sound of heavy walkers for any sound you name, keeping each animal's
+own step timing, loudness and pitch variation. Made for creature mods that
+shipped scratchy scrape recordings for their biggest stompers: point the
+list at a proper thud and every heavy step uses it, on screen and behind
+you. Steps quieter than the heavy line (normal wolves and smaller) always
+keep their own sounds, and other animation sounds like roars or eating are
+never touched.
+
 ## 0.14.27 (2026-08-28)
 You can hear the big ones behind you now. The game only animates creatures
 that are on your screen, and footsteps are played by the animation - so the

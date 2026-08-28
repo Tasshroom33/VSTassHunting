@@ -423,6 +423,12 @@ namespace TassHunting
         // audibly while unrendered, using their own sounds and cadence.
         [ClientPersonal] public bool BigStepsBehindYou = true;
         [ClientPersonal] public float BigStepsMinRange = 30f;
+        // Replace heavy step SOUNDS at load (0.14.28, see StepSounds.cs): wildcard entity
+        // codes to a sound location. Only entries whose path contains "step" AND whose range
+        // reaches BigStepsMinRange are re-pointed, so a catch-all "*" swaps big stompers
+        // (the dino packs' scratchy scrape recordings) to a proper thud while wolves keep
+        // their own quiet steps. e.g. { "*": "game:sounds/creature/shiver/thump*" }.
+        public Dictionary<string, string> StepSoundOverride = new Dictionary<string, string>();
         [ClientPersonal] public bool BleedTickHurtFlash = true;
         [ClientPersonal] public bool BleedHudEnabled = true;
         // Corner the box sits in. One of: LeftTop, LeftMiddle, LeftBottom, RightTop,
@@ -603,6 +609,7 @@ namespace TassHunting
             if (GlanceSharpnessStep < 0f) GlanceSharpnessStep = 0f;
             GlanceSharpnessFloor = Vintagestory.API.MathTools.GameMath.Clamp(GlanceSharpnessFloor, 0f, 1f);
             if (CreatureMeleeDamageMul == null) CreatureMeleeDamageMul = new Dictionary<string, float>();
+            if (StepSoundOverride == null) StepSoundOverride = new Dictionary<string, string>();
             if (RetaliationCodes == null) RetaliationCodes = new string[0];
             if (TerritorialCodes == null) TerritorialCodes = new string[0];
             RetaliationSeekRange = Vintagestory.API.MathTools.GameMath.Clamp(RetaliationSeekRange, 0f, 200f);
@@ -812,6 +819,10 @@ namespace TassHunting
         {
             try { ArcheryTweaks.Apply(api); }
             catch (Exception ex) { api.Logger.Error("[TassHunting] archery tweaks failed: {0}", ex); }
+            // Both sides: single player plays from its own copy, dedicated clients receive
+            // the server's entity types - either way the rewrite is where the sounds live.
+            try { StepSounds.Apply(api); }
+            catch (Exception ex) { api.Logger.Error("[TassHunting] step sounds apply failed: {0}", ex); }
             // Stay-wild runs BOTH sides: the domestication behaviors live in the client
             // behavior list too, and that copy is what would draw a rider and take controls.
             try { StayWild.Apply(api); }

@@ -216,6 +216,41 @@ namespace TassHuntingCompatHarness
             FoodChain.Apply(_sapi); // idempotence: same map again must append nothing
             Check("chain-reapply-appends-nothing", CountCode("wolf-", "seekentity", "governed", "sheep-*") == governedHits);
             cfg.HuntAppend.Clear();
+
+            // StepSounds (0.14.28): with the heavy threshold lowered, a wolf's step entries
+            // re-point to the thump set; hyena (not in the map) keeps its own. Uses the
+            // server's parsed client-animation metadata - the copy joining clients receive.
+            string WolfStepLoc()
+            {
+                var et = _sapi.World.EntityTypes.FirstOrDefault(
+                    t => t?.Code?.Path != null && t.Code.Domain == "game" && t.Code.Path.StartsWith("wolf-"));
+                var anims = et?.Client?.Animations;
+                if (anims == null) return "no-client-anims";
+                foreach (var meta in anims)
+                {
+                    if (meta?.AnimationSounds == null) continue;
+                    foreach (var s in meta.AnimationSounds)
+                        if (s?.Attributes.Location?.Path != null && (s.Attributes.Location.Path.Contains("step") || s.Attributes.Location.Path.Contains("thump")))
+                            return s.Attributes.Location.ToShortString();
+                }
+                return "no-step-sounds";
+            }
+            string before = WolfStepLoc();
+            if (before == "no-client-anims" || before == "no-step-sounds")
+            {
+                Check("stepsounds-skipped", true, $"wolf has {before} server-side - eyes/ears verdict only");
+            }
+            else
+            {
+                float savedRange = cfg.BigStepsMinRange;
+                cfg.BigStepsMinRange = 5f; // wolf steps are range 12-22; drop the heavy line for the test
+                cfg.StepSoundOverride = new System.Collections.Generic.Dictionary<string, string>
+                { { "wolf-*", "game:sounds/creature/shiver/thump*" } };
+                StepSounds.Apply(_sapi);
+                Check("stepsounds-wolf-repointed", WolfStepLoc().Contains("thump"), $"{before} -> {WolfStepLoc()}");
+                cfg.StepSoundOverride.Clear();
+                cfg.BigStepsMinRange = savedRange;
+            }
         }
 
         /// <summary>
