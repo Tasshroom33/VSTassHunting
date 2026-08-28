@@ -592,6 +592,10 @@ namespace TassHunting
                 wa.RemoveAttribute("tasshunt:bleedByName");
                 wa.RemoveAttribute("tasshunt:bleedByMs");
             }
+            // The player-credit stamp persists with the save but its clock does not: a new
+            // session's ElapsedMilliseconds starts over, so any stamp from a previous session
+            // is meaningless - drop it on entry like the bleed mirror above.
+            if (ent.Attributes.HasAttribute("tasshunt:phitMs")) ent.Attributes.RemoveAttribute("tasshunt:phitMs");
         }
 
         /// <summary>Zero the published state for an entity that has stopped bleeding.</summary>
@@ -799,6 +803,45 @@ namespace TassHunting
             return liveProjectiles;
         }
 
+        /// <summary>
+        /// PLAYER-CREDIT STAMP (0.14.25, field report "bones works but not well"): the bones
+        /// rule needs to know a PLAYER was in this fight, and the killing blow alone lies three
+        /// ways - an arrow whose FiredBy did not resolve server-side credits the ARROW (the
+        /// engine quirk StickyProjectiles documents), a predator that lands the last bite on
+        /// your 90%-worn-down quarry steals the kill, and a pit/fall death is sourceless. So
+        /// every player-attributed hit - melee, arrow (FiredBy or the synced firedBy fallback,
+        /// resolved to a real player so a bowtorn's bolts never count) - stamps the victim's
+        /// server-side attributes with the hit time. The bones rule then spares any corpse a
+        /// player hurt within its credit window. Bleed ticks are Internal and skipped here;
+        /// the who-bled-me stamp already carries that credit.
+        /// </summary>
+        public static void StampPlayerHit(Entity victim, DamageSource src, float damage)
+        {
+            if (victim?.World == null || victim.World.Side != EnumAppSide.Server) return;
+            if (victim is EntityPlayer || src == null || damage <= 0f) return;
+            if (src.Source == EnumDamageSource.Internal || src.Type == EnumDamageType.Heal) return;
+
+            bool byPlayer = src.GetCauseEntity() is EntityPlayer;
+            if (!byPlayer && src.SourceEntity is EntityProjectileBase proj)
+            {
+                long fid = proj.FiredBy?.EntityId ?? proj.WatchedAttributes.GetLong("firedBy", 0L);
+                byPlayer = fid != 0L && victim.World.GetEntityById(fid) is EntityPlayer;
+            }
+            if (!byPlayer) return;
+            victim.Attributes.SetLong("tasshunt:phitMs", victim.World.ElapsedMilliseconds);
+        }
+
+        /// <summary>Was this entity hurt by a player within the last windowSeconds? Stale or
+        /// future stamps (a previous session's clock) never count.</summary>
+        public static bool RecentPlayerHit(Entity ent, float windowSeconds)
+        {
+            if (ent?.World == null || windowSeconds <= 0f) return false;
+            long phit = ent.Attributes.GetLong("tasshunt:phitMs", 0L);
+            if (phit <= 0L) return false;
+            long now = ent.World.ElapsedMilliseconds;
+            return now >= phit && now - phit <= (long)(windowSeconds * 1000f);
+        }
+
         /// <summary>Active wound count (narrator/debug + blood visuals).</summary>
         public static int StacksOn(long entityId)
         {
@@ -836,6 +879,8 @@ namespace TassHunting
 
         public static void Postfix(EntityBehaviorHealth __instance, DamageSource damageSource, float damage, float __state)
         {
+            try { BleedSystem.StampPlayerHit(__instance.entity, damageSource, damage); }
+            catch (Exception) { /* credit is best-effort, never breaks damage */ }
             try { BleedSystem.OnSharpHit(__instance.entity, damageSource, damage, __state); }
             catch (Exception) { /* bleed must never break damage handling */ }
             // The same funnel carries healing: a finished bandage/poultice closes every wound.

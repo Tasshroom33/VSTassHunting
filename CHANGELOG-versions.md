@@ -4,6 +4,19 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.25 (2026-08-28)
+The bones rule learns whose kill it really was. It used to judge only by the
+killing blow, which robbed hunters three ways: an arrow kill could credit the
+arrow instead of the archer, a predator landing the last bite on an animal
+you had already worn down turned YOUR quarry to bones, and an animal driven
+into a pit died to the fall - nobody's kill. Now every hit you land marks
+the animal as yours for a while (two minutes by default, a slider), so if it
+dies within that window - whoever or whatever finishes it - the corpse and
+loot are yours. Bleeding out of your wounds still counts as always. With
+blood diagnostics on, every bones-or-corpse ruling is logged with its
+reasoning, so a wrongly vanished corpse becomes a log line instead of a
+mystery.
+
 ## 0.14.24 (2026-08-28)
 The food chain opens up, and the wilds clean up after themselves. A new
 config list lets a server hand any hunter extra prey - name a creature and

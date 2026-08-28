@@ -222,12 +222,21 @@ namespace TassHuntingCompatHarness
         {
             cfg.NonPlayerKillsLeaveBones = true;
             cfg.NonPlayerKillBonesDelaySeconds = 1f;
+            cfg.PlayerKillCreditSeconds = 120f;
             var wildKill = SpawnPig();
             var hunterKill = SpawnPig();
-            if (wildKill == null || hunterKill == null) { Check("bones-pigs-spawned", false); done(); return; }
+            var windowKill = SpawnPig();   // player hit it recently, something else finished it
+            var staleKill = SpawnPig();    // player hit it long ago - credit expired
+            if (wildKill == null || hunterKill == null || windowKill == null || staleKill == null)
+            { Check("bones-pigs-spawned", false); done(); return; }
+            long now = _sapi.World.ElapsedMilliseconds;
             hunterKill.WatchedAttributes.SetString("tasshunt:bleedByUid", "harness-player");
+            windowKill.Attributes.SetLong("tasshunt:phitMs", now - 5000);      // 5s ago: inside window
+            staleKill.Attributes.SetLong("tasshunt:phitMs", now - 999_000);    // ~17min ago: expired
             wildKill.ReceiveDamage(Sharp(), 9999f);
             hunterKill.ReceiveDamage(Sharp(), 9999f);
+            windowKill.ReceiveDamage(Sharp(), 9999f);
+            staleKill.ReceiveDamage(Sharp(), 9999f);
             _sapi.Event.RegisterCallback(_ =>
             {
                 try
@@ -238,6 +247,12 @@ namespace TassHuntingCompatHarness
                     Check("bones-bled-out-quarry-keeps-corpse",
                         !hunterKill.Alive && !((Vintagestory.API.Common.EntityAgent)hunterKill).AllowDespawn,
                         $"alive={hunterKill.Alive}");
+                    Check("bones-recent-player-hit-keeps-corpse",
+                        !windowKill.Alive && !((Vintagestory.API.Common.EntityAgent)windowKill).AllowDespawn,
+                        "kill-steal / pit credit inside the window");
+                    Check("bones-stale-credit-decays",
+                        !staleKill.Alive && ((Vintagestory.API.Common.EntityAgent)staleKill).AllowDespawn,
+                        "expired credit is no credit");
                 }
                 catch (Exception e) { _sapi.Logger.Error("[biggame] EXCEPTION: {0}", e); }
                 cfg.NonPlayerKillsLeaveBones = false;

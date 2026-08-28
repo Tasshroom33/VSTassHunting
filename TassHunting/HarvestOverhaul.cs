@@ -149,8 +149,26 @@ namespace TassHunting
             // would turn to bones in front of its hunter.
             if (cfg.NonPlayerKillsLeaveBones)
             {
+                // Player kill = any of three signals (field report 2026-08-28, "works but not
+                // well" - the killing blow alone missed arrow kills whose FiredBy never
+                // resolved, kill-steals on a player-worn-down quarry, and pit/fall kills):
+                //  1. the killing blow's cause is a player;
+                //  2. the bleed system's who-bled-me stamp (bleeding out of player wounds);
+                //  3. a player hurt this creature within the credit window (arrows resolved
+                //     through the synced firedBy fallback too - see StampPlayerHit).
                 bool playerKill = damageSourceForDeath?.GetCauseEntity() is EntityPlayer
-                    || entity.WatchedAttributes.GetString("tasshunt:bleedByUid") != null;
+                    || entity.WatchedAttributes.GetString("tasshunt:bleedByUid") != null
+                    || BleedSystem.RecentPlayerHit(entity, cfg.PlayerKillCreditSeconds);
+                if (cfg.BloodDiagnostics)
+                {
+                    long phit = entity.Attributes.GetLong("tasshunt:phitMs", 0L);
+                    entity.World.Logger.Notification(
+                        "[TassHunting] bones ruling on {0}: {1} (cause={2}, bleed-stamp={3}, last player hit {4})",
+                        entity.Code?.ToShortString(), playerKill ? "CORPSE (player credit)" : "BONES",
+                        damageSourceForDeath?.GetCauseEntity()?.Code?.ToShortString() ?? "none",
+                        entity.WatchedAttributes.GetString("tasshunt:bleedByUid") != null,
+                        phit > 0 ? ((entity.World.ElapsedMilliseconds - phit) / 1000f).ToString("0.0") + "s ago" : "never");
+                }
                 if (!playerKill)
                 {
                     int bonesMs = (int)(GameMath.Clamp(cfg.NonPlayerKillBonesDelaySeconds, 1f, 300f) * 1000f);

@@ -168,6 +168,11 @@ namespace TassHunting
         // who-bled-me stamp) - a hunter's bled-out quarry always keeps its corpse and loot.
         public bool NonPlayerKillsLeaveBones = false;
         public float NonPlayerKillBonesDelaySeconds = 4f;
+        // How long after a player's hit a creature's death still counts as that player's kill
+        // (0.14.25). Covers arrow kills whose shooter reference never resolved, a predator
+        // stealing the last bite on your worn-down quarry, and pit/fall kills after you drove
+        // the animal in. 0 = strict: only the killing blow and bleed-out count.
+        public float PlayerKillCreditSeconds = 120f;
         // Per-creature correction, because health measures SIZE, not armor (the engine has no
         // creature armor stat): wildcard entity codes to multipliers on the glance chance.
         // e.g. { "ankylosauria-*": 1.5, "macronaria-*": 0.6 } - plates up, soft hide down.
@@ -596,6 +601,7 @@ namespace TassHunting
             TerritoryRadius = Vintagestory.API.MathTools.GameMath.Clamp(TerritoryRadius, 0f, 60f);
             if (HuntAppend == null) HuntAppend = new Dictionary<string, string[]>();
             NonPlayerKillBonesDelaySeconds = Vintagestory.API.MathTools.GameMath.Clamp(NonPlayerKillBonesDelaySeconds, 1f, 300f);
+            PlayerKillCreditSeconds = Vintagestory.API.MathTools.GameMath.Clamp(PlayerKillCreditSeconds, 0f, 3600f);
         }
     }
 
