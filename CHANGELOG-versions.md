@@ -4,6 +4,16 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.33 (2026-08-28)
+New switch: tree leaves can be made walk-through (off by default). The
+branchy leaf clumps around trunks lose their solid box, the way most
+leaves already are, so nothing snags on tree tops anymore: big animals
+stop getting stuck on canopy when they chase you, and you cannot stand
+in or on a tree out of their reach - climbing a tree to wait out a
+predator goes away with it. Chopping, tree felling and drops stay as
+before. Which leaf blocks it covers is a config list; only real leaf
+blocks are ever touched, whatever the list says.
+
 ## 0.14.32 (2026-08-28)
 Swapped step sounds got a volume slider. Deep pitch softens a sound's
 attack, and a replacement recording can be quieter than the file the

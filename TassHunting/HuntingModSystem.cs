@@ -199,6 +199,20 @@ namespace TassHunting
         // ownership record, and removing it would orphan animals somebody already owns.
         public string[] StayWildBehaviors = { "rideable", "gait", "tameable", "receivecommand", "pettable", "ropetieable" };
 
+        // ---- LEAVES PASSTHROUGH (owner order 2026-08-28, see LeavesPassthrough.cs) ----
+        // Walk-through canopy: the named leaf blocks lose their collision box, exactly the
+        // way vanilla's normal leaves already ship ("collisionbox: null"). Big creatures
+        // stop snagging on branchy leaf clumps when they chase, and a leaf clump is no
+        // longer a spot to stand in (or on) out of their reach - tree-perching is gone for
+        // players, against everything, which is the deliberate other half of the fairness.
+        // Only collision changes: chopping, decay, felling and drops stay vanilla. Off by
+        // default: it changes vanilla traversal for everyone, so a server turns it on.
+        public bool LeavesPassthroughEnabled = false;
+        // Which blocks. Wildcards against full code and bare path. The default names
+        // vanilla's only two solid leaf types (leavesbranchy, leavesbranchystatic);
+        // whatever this catches, only Leaves-material blocks are ever touched.
+        public string[] LeavesPassthroughCodes = { "leavesbranchy*" };
+
         // ---- HARVEST OVERHAUL (playtest 2026-07-19, see HarvestOverhaul.cs) ----
         // Knife harvest hold time multiplier (0.5 = half of vanilla; 0 = leave
         // vanilla timing alone, matching the mod's "0 = off" convention - field
@@ -620,6 +634,7 @@ namespace TassHunting
             if (StepSoundOverride == null) StepSoundOverride = new Dictionary<string, string>();
             StepSoundDeepen = Vintagestory.API.MathTools.GameMath.Clamp(StepSoundDeepen, 0f, 4f);
             StepSoundVolumeMult = Vintagestory.API.MathTools.GameMath.Clamp(StepSoundVolumeMult, 0.1f, 4f);
+            if (LeavesPassthroughCodes == null) LeavesPassthroughCodes = new string[0];
             if (RetaliationCodes == null) RetaliationCodes = new string[0];
             if (TerritorialCodes == null) TerritorialCodes = new string[0];
             RetaliationSeekRange = Vintagestory.API.MathTools.GameMath.Clamp(RetaliationSeekRange, 0f, 200f);
@@ -837,6 +852,11 @@ namespace TassHunting
             // behavior list too, and that copy is what would draw a rider and take controls.
             try { StayWild.Apply(api); }
             catch (Exception ex) { api.Logger.Error("[TassHunting] stay-wild apply failed: {0}", ex); }
+            // Leaves passthrough runs BOTH sides: the server's collision drives creatures
+            // and pathfinding, the client's drives the player's own movement. Reset first -
+            // the saved-boxes store must not carry a previous world's Block objects.
+            try { LeavesPassthrough.Reset(api); LeavesPassthrough.Sync(api); }
+            catch (Exception ex) { api.Logger.Error("[TassHunting] leaves passthrough failed: {0}", ex); }
             if (api.Side != EnumAppSide.Server) return;
             try { PredatorAI.ApplyServer(api); }
             catch (Exception ex) { api.Logger.Error("[TassHunting] PredatorAI apply failed: {0}", ex); }
@@ -1119,6 +1139,12 @@ namespace TassHunting
                             LastServerConfigJson = pkt.ConfigJson;
                             Cfg = HuntingConfigSync.BuildSessionConfig(pkt.ConfigJson, Cfg);
                             api.Logger.Notification("[TassHunting] gameplay settings synced from the server; look-and-feel settings stay yours.");
+                            // The packet lands after AssetsFinalize, so the leaf collision
+                            // state chosen from the LOCAL file gets re-decided here by the
+                            // server's setting - opening or restoring as needed, so this
+                            // client's floor physics agree with the world it walks in.
+                            try { LeavesPassthrough.Sync(api); }
+                            catch (Exception ex2) { api.Logger.Warning("[TassHunting] leaves passthrough sync apply failed: {0}", ex2.Message); }
                         }
                         catch (Exception ex) { api.Logger.Warning("[TassHunting] config sync apply failed: {0}", ex.Message); }
                     });

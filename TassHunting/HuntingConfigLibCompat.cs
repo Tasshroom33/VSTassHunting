@@ -228,6 +228,8 @@ namespace TassHunting
                 Checkbox("Wounded animals slow down", () => cfg.WoundedSlowdownEnabled, v => cfg.WoundedSlowdownEnabled = v);
                 Checkbox("Some animals stay wild", () => cfg.StayWildEnabled, v => cfg.StayWildEnabled = v);
                 Help("The creatures listed under StayWildCodes in the config file can never be tamed, petted, roped or ridden, whatever else you install. Names them by code, so it is a config-file list. Needs world rejoin.");
+                Checkbox("Tree leaves are walk-through", () => cfg.LeavesPassthroughEnabled, v => cfg.LeavesPassthroughEnabled = v);
+                Help("Branchy tree leaves lose their solid box, the way most leaves already are - everything walks through every leaf block. Big animals stop snagging on tree tops when they chase, and nobody can stand in a tree out of their reach. Chopping and drops stay as before. Needs world rejoin.");
                 SliderFloat("Angry animals chase this far (blocks)", () => cfg.RetaliationSeekRange, v => cfg.RetaliationSeekRange = v, 10f, 200f);
                 SliderFloat("Angry animals press the chase (sec)", () => cfg.RetaliationMaxFollowTimeSec, v => cfg.RetaliationMaxFollowTimeSec = v, 10f, 600f);
                 SliderFloat("Anger lasts (sec)", () => cfg.RetaliationMemorySeconds, v => cfg.RetaliationMemorySeconds = v, 10f, 600f);
