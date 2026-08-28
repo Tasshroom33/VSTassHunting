@@ -173,6 +173,10 @@ namespace TassHunting
         // stealing the last bite on your worn-down quarry, and pit/fall kills after you drove
         // the animal in. 0 = strict: only the killing blow and bleed-out count.
         public float PlayerKillCreditSeconds = 120f;
+        // When a kill turns to bones, the killer counts as fed (its "saturated" state fires,
+        // pausing its hunt exactly as eating the carcass would have) - the carcass it would
+        // have eaten is the bones. Off = the old chain-killing behavior.
+        public bool BonesKillSatiates = true;
         // Per-creature correction, because health measures SIZE, not armor (the engine has no
         // creature armor stat): wildcard entity codes to multipliers on the glance chance.
         // e.g. { "ankylosauria-*": 1.5, "macronaria-*": 0.6 } - plates up, soft hide down.

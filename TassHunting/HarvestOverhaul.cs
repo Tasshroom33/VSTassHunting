@@ -171,6 +171,18 @@ namespace TassHunting
                 }
                 if (!playerKill)
                 {
+                    // THE KILL IS THE MEAL (0.14.26, field: predators "sniping everything").
+                    // Satiation normally fires when the killer EATS the carcass - and bones
+                    // deletes the carcass before it can, so nothing ever got full and the
+                    // hunt task never paused. Feed the killer at the moment of the ruling:
+                    // the bones ARE the eaten remains. A killer with no "saturated" state
+                    // (drifters) is unaffected - TryTriggerState finds nothing to arm.
+                    if (cfg.BonesKillSatiates && damageSourceForDeath?.GetCauseEntity() is EntityAgent killer
+                        && !(killer is EntityPlayer) && killer.Alive)
+                    {
+                        try { killer.GetBehavior<EntityBehaviorEmotionStates>()?.TryTriggerState("saturated", entity.EntityId); }
+                        catch { }
+                    }
                     int bonesMs = (int)(GameMath.Clamp(cfg.NonPlayerKillBonesDelaySeconds, 1f, 300f) * 1000f);
                     entity.World.RegisterCallback(dt =>
                     {

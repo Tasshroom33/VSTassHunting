@@ -173,7 +173,9 @@ namespace TassHuntingCompatHarness
         /// </summary>
         private void FoodChainChecks(HuntingConfig cfg)
         {
-            int CountCode(string prefix, string taskCode, bool gatedWanted, string prey)
+            // gate filter: "in" = has whenInEmotionState, "governed" = whenNot contains
+            // saturated, "ungoverned" = neither (the packs' never-full seeks)
+            int CountCode(string prefix, string taskCode, string gate, string prey)
             {
                 var et = _sapi.World.EntityTypes.FirstOrDefault(
                     t => t?.Code?.Path != null && t.Code.Domain == "game" && t.Code.Path.StartsWith(prefix));
@@ -187,8 +189,10 @@ namespace TassHuntingCompatHarness
                     foreach (var jt in tasks)
                     {
                         if (!(jt is Newtonsoft.Json.Linq.JObject t) || t["code"]?.ToString() != taskCode) continue;
-                        bool gated = !string.IsNullOrEmpty(t["whenInEmotionState"]?.ToString());
-                        if (gated != gatedWanted) continue;
+                        bool gatedIn = !string.IsNullOrEmpty(t["whenInEmotionState"]?.ToString());
+                        bool governed = (t["whenNotInEmotionState"]?.ToString() ?? "").Contains("saturated");
+                        string g = gatedIn ? "in" : governed ? "governed" : "ungoverned";
+                        if (g != gate && gate != "any") continue;
                         if (t["entityCodes"] is Newtonsoft.Json.Linq.JArray codes)
                             foreach (var c in codes) if (c?.ToString() == prey) n++;
                     }
@@ -201,14 +205,16 @@ namespace TassHuntingCompatHarness
                 { "wolf-*", new[] { "sheep-*" } }
             };
             FoodChain.Apply(_sapi);
-            int seekHits = CountCode("wolf-", "seekentity", false, "sheep-*");
-            int meleeHits = CountCode("wolf-", "meleeattack", false, "sheep-*") + CountCode("wolf-", "meleeattack", true, "sheep-*");
-            Check("chain-wolf-hunts-sheep", seekHits > 0, $"{seekHits} ungated seeks");
+            int governedHits = CountCode("wolf-", "seekentity", "governed", "sheep-*");
+            int meleeHits = CountCode("wolf-", "meleeattack", "any", "sheep-*");
+            Check("chain-wolf-hunts-sheep-when-hungry", governedHits > 0, $"{governedHits} saturation-gated hunts");
+            Check("chain-never-full-seeks-untouched", CountCode("wolf-", "seekentity", "ungoverned", "sheep-*") == 0,
+                "prey must ride the hunger-governed task only");
             Check("chain-wolf-melee-can-bite-sheep", meleeHits > 0, $"{meleeHits} melee lists");
-            Check("chain-anger-lists-untouched", CountCode("wolf-", "seekentity", true, "sheep-*") == 0);
-            Check("chain-control-hyena-untouched", CountCode("hyena-", "seekentity", false, "sheep-*") == 0);
+            Check("chain-anger-lists-untouched", CountCode("wolf-", "seekentity", "in", "sheep-*") == 0);
+            Check("chain-control-hyena-untouched", CountCode("hyena-", "seekentity", "any", "sheep-*") == 0);
             FoodChain.Apply(_sapi); // idempotence: same map again must append nothing
-            Check("chain-reapply-appends-nothing", CountCode("wolf-", "seekentity", false, "sheep-*") == seekHits);
+            Check("chain-reapply-appends-nothing", CountCode("wolf-", "seekentity", "governed", "sheep-*") == governedHits);
             cfg.HuntAppend.Clear();
         }
 
@@ -227,7 +233,19 @@ namespace TassHuntingCompatHarness
             var hunterKill = SpawnPig();
             var windowKill = SpawnPig();   // player hit it recently, something else finished it
             var staleKill = SpawnPig();    // player hit it long ago - credit expired
-            if (wildKill == null || hunterKill == null || windowKill == null || staleKill == null)
+            var mealKill = SpawnPig();     // killed BY a wolf: the kill must feed the killer
+            var wolfType = _sapi.World.EntityTypes.FirstOrDefault(
+                t => t?.Code?.Path != null && t.Code.Domain == "game" && t.Code.Path.StartsWith("wolf-") && t.Code.Path.Contains("male"));
+            Entity wolf = null;
+            if (wolfType != null)
+            {
+                wolf = _sapi.World.ClassRegistry.CreateEntity(wolfType);
+                var sp = _sapi.World.DefaultSpawnPosition;
+                wolf.ServerPos.SetPos(sp.X + 6, sp.Y + 1, sp.Z + 6);
+                wolf.Pos.SetFrom(wolf.ServerPos);
+                _sapi.World.SpawnEntity(wolf);
+            }
+            if (wildKill == null || hunterKill == null || windowKill == null || staleKill == null || mealKill == null || wolf == null)
             { Check("bones-pigs-spawned", false); done(); return; }
             long now = _sapi.World.ElapsedMilliseconds;
             hunterKill.WatchedAttributes.SetString("tasshunt:bleedByUid", "harness-player");
@@ -237,6 +255,23 @@ namespace TassHuntingCompatHarness
             hunterKill.ReceiveDamage(Sharp(), 9999f);
             windowKill.ReceiveDamage(Sharp(), 9999f);
             staleKill.ReceiveDamage(Sharp(), 9999f);
+            // wolf-attributed kill: the bones ruling must arm the wolf's "saturated" state
+            // (chance 1 on vanilla wolves - deterministic), because the carcass it would have
+            // eaten is gone. Checked synchronously: the postfix runs inside ReceiveDamage.
+            var emoBefore = wolf.GetBehavior<Vintagestory.GameContent.EntityBehaviorEmotionStates>();
+            Check("bones-killer-not-full-before", emoBefore != null && !emoBefore.IsInEmotionState("saturated"));
+            mealKill.ReceiveDamage(new DamageSource
+            {
+                Source = EnumDamageSource.Entity,
+                SourceEntity = wolf,
+                Type = EnumDamageType.PiercingAttack,
+                DamageTier = 0,
+                IgnoreInvFrames = true
+            }, 9999f);
+            Check("bones-kill-feeds-the-killer",
+                emoBefore != null && emoBefore.IsInEmotionState("saturated"),
+                "wolf saturated by its own kill turning to bones");
+            wolf.Die(EnumDespawnReason.Removed);
             _sapi.Event.RegisterCallback(_ =>
             {
                 try

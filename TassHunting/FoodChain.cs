@@ -47,6 +47,22 @@ namespace TassHunting
                 var taskai = FindServerBehavior(et, "taskai");
                 if (!(taskai?["aitasks"] is JArray tasks)) { matched[hitKey]++; continue; }
 
+                // HUNGER GOVERNOR (0.14.26 field fix, "sniping everything"): a hunter's real
+                // hunt task is the one gated whenNotInEmotionState "saturated" - eat, then
+                // stop hunting. The first release appended prey to EVERY ungated seek, which
+                // includes the packs' ungoverned player-seek, so the new menu rode a task
+                // that never gets full. Now: if the type HAS saturation-gated hunts, prey
+                // goes ONLY there; the ungated fallback exists for creatures with no hunger
+                // model at all.
+                bool hasGovernedHunt = false;
+                foreach (var jt in tasks)
+                {
+                    var t0 = jt as JObject;
+                    if (t0?["code"]?.ToString() != "seekentity") continue;
+                    if (!string.IsNullOrEmpty(t0["whenInEmotionState"]?.ToString())) continue;
+                    if ((t0["whenNotInEmotionState"]?.ToString() ?? "").Contains("saturated")) { hasGovernedHunt = true; break; }
+                }
+
                 bool touched = false;
                 foreach (var jt in tasks)
                 {
@@ -54,7 +70,8 @@ namespace TassHunting
                     if (task == null) continue;
                     string code = task["code"]?.ToString();
                     bool gated = !string.IsNullOrEmpty(task["whenInEmotionState"]?.ToString());
-                    bool isHuntSeek = code == "seekentity" && !gated;
+                    bool governed = (task["whenNotInEmotionState"]?.ToString() ?? "").Contains("saturated");
+                    bool isHuntSeek = code == "seekentity" && !gated && (!hasGovernedHunt || governed);
                     bool isMelee = code == "meleeattack";
                     if (!isHuntSeek && !isMelee) continue;
                     if (!(task["entityCodes"] is JArray codes)) continue;

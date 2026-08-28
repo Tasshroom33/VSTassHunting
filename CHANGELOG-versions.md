@@ -4,6 +4,18 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.26 (2026-08-28)
+Predators get full again. Two bugs had turned them into serial killers: the
+extra prey from the food chain was riding a hunting instinct that never gets
+hungry (the packs' own prey list rides one that pauses after eating), and
+the bones rule was deleting the very carcass whose eating makes a predator
+full - so nothing ever was, and the killing never paused. Now new prey goes
+on the same hunger-governed hunt as the creature's own prey list, and when a
+kill turns to bones the killer counts as fed on the spot - the bones are the
+meal it ate. A predator makes its kill, gets full, and lives beside its
+leftovers until hunger returns, exactly like its own kind of hunting always
+worked. Its own switch in the config for the fed-by-bones half.
+
 ## 0.14.25 (2026-08-28)
 The bones rule learns whose kill it really was. It used to judge only by the
 killing blow, which robbed hunters three ways: an arrow kill could credit the
