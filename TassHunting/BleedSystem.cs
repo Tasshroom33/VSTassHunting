@@ -69,6 +69,22 @@ namespace TassHunting
         }
 
         /// <summary>
+        /// The health the %-of-max-health term is allowed to see (owner design 2026-08-28):
+        /// effHP = C * tanh(HP/C). For HP well under C, tanh(x) ~ x and this IS the raw health -
+        /// vanilla's 15-66 range shifts by under a tenth - while a giant saturates toward C, so
+        /// time-to-bleed-out grows with size instead of cancelling out of the arithmetic (the
+        /// old rate was proportional to HP, making TTK constant: an 800 hp sauropod died to two
+        /// flint spears in the same 2.5 minutes as a wolf). The size LADDER (wound seconds,
+        /// odds) deliberately stays on raw health - only the damage rate levels off.
+        /// 0 ceiling = off.
+        /// </summary>
+        public static float EffectiveHealth(float maxHealth, float ceiling)
+        {
+            if (ceiling <= 0f || maxHealth <= 0f) return maxHealth;
+            return ceiling * (float)Math.Tanh(maxHealth / ceiling);
+        }
+
+        /// <summary>
         /// Damage per tick for a whole wound set. Hybrid base (flat + % of max health) keeps one
         /// curve honest for hares and bears; the combo power is the multiplicative payoff for
         /// landing MORE sharp hits, capped at comboCap wounds.
@@ -359,6 +375,26 @@ namespace TassHunting
                 }
             }
 
+            // ---- HIDE GLANCE (owner design 2026-08-28): a big enough body sometimes turns the
+            // edge - no wound, and for a projectile the SAME roll makes the stick gate refuse it
+            // (see HideGlance's header). Melee and creature bites roll here directly; hide
+            // protects from everyone. Zero for anything smaller than a bear.
+            float glanceChance = HideGlance.ChanceFor(victim, src.SourceEntity as EntityProjectileBase, cfg);
+            if (glanceChance > 0f)
+            {
+                bool glanced = src.SourceEntity is EntityProjectileBase gp
+                    ? HideGlance.RollOnce(gp.EntityId, glanceChance, victim.World)
+                    : victim.World.Rand.NextDouble() < glanceChance;
+                if (glanced)
+                {
+                    if (cfg.BloodDiagnostics)
+                        victim.World.Logger.Notification("[TassHunting] hide glance on {0} (chance {1:0.00}): no wound{2}",
+                            victim.Code?.ToShortString(), glanceChance,
+                            src.SourceEntity is EntityProjectileBase ? ", projectile will not stick" : "");
+                    return; // the hide turned the edge
+                }
+            }
+
             // ---- WHO SWUNG: one multiplier per attacker class, 0 = that class never opens a
             // wound. GetCauseEntity is the SHOOTER for a projectile (CauseEntity = FiredBy,
             // EntityProjectileBase.cs:332) and the attacker for melee, so a player's arrow is
@@ -469,9 +505,12 @@ namespace TassHunting
         }
 
         /// <summary>
-        /// How many wounds this hit opens: 0, 1 or 2. A PLAYER's weapon always opens exactly one
-        /// - a hunter's arrow failing to bleed a deer at random reads as the mod being broken,
-        /// with no attacker size on screen to explain it. A creature rolls its rung's odds, so
+        /// How many wounds this hit opens: 0, 1 or 2. A PLAYER's weapon that BITES always opens
+        /// exactly one - a hunter's arrow failing to bleed a deer at random reads as the mod
+        /// being broken, with no attacker size on screen to explain it. (Owner revision
+        /// 2026-08-28: the upstream hide-glance gate MAY refuse the whole hit, but only past
+        /// bear size, where the target on screen IS the explanation - and the arrow visibly
+        /// bounces instead of silently not bleeding.) A creature rolls its rung's odds, so
         /// size shows up as how OFTEN it draws blood rather than how much each wound hurts.
         /// A hit with no attacker at all (a trap, a fall onto spikes) always wounds.
         /// </summary>
@@ -714,7 +753,8 @@ namespace TassHunting
                     if (hb == null) { (retire = retire ?? new List<long>()).Add(kv.Key); continue; }
 
                     float total = WoundMath.TotalPerTick(cfg.BleedStaticPerTick, cfg.BleedPctMaxHealthPerTick,
-                        hb.MaxHealth, st.Ledger.StrengthSum, st.Ledger.Count, cfg.BleedComboMultiplier, cfg.BleedMaxWounds);
+                        WoundMath.EffectiveHealth(hb.MaxHealth, cfg.BleedHealthCeiling),
+                        st.Ledger.StrengthSum, st.Ledger.Count, cfg.BleedComboMultiplier, cfg.BleedMaxWounds);
                     if (sitHelps) total *= Math.Max(0f, cfg.BleedSitDamageMult);
 
                     // DEDICATED SPLATTER SIGNAL (0.9.3): the client keys DoT splatter off this

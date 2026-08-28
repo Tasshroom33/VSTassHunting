@@ -229,6 +229,23 @@ namespace TassHunting
                 EndServer(serverDecides);
             }
 
+            if (ImGui.CollapsingHeader("Big game"))
+            {
+                BeginServer(serverDecides);
+                SliderFloat("Bleed levels off above (health)", () => cfg.BleedHealthCeiling, v => cfg.BleedHealthCeiling = v, 0f, 500f);
+                Help("Bleed damage grows with an animal's health up to about here, then levels off - huge modded creatures bleed at a big-animal rate instead of dying to two spears like everything else. 0 = old behavior, bleed keeps growing with health forever.");
+                SliderFloat("Hide can turn a blade above (health)", () => cfg.GlanceStartHealth, v => cfg.GlanceStartHealth = v, 0f, 300f);
+                Help("Anything with more health than this has a chance that arrows and spears bounce off - no stick, no bleeding, the arrow drops at its feet. Below it a hit always bites. Default sits just under a bear.");
+                SliderFloat("Bounce chance grows over (health)", () => cfg.GlanceRampHealth, v => cfg.GlanceRampHealth = v, 10f, 1000f);
+                Help("How much health past the threshold it takes for the bounce chance to get close to its maximum.");
+                SliderFloat("Bounce chance, maximum", () => cfg.GlanceMaxChance, v => cfg.GlanceMaxChance = v, 0f, 1f);
+                SliderFloat("Bounce chance, hard cap", () => cfg.GlanceChanceCeiling, v => cfg.GlanceChanceCeiling = v, 0f, 1f);
+                Help("Absolute limit after the per-creature multipliers from the config file (GlanceToughness) - nothing is ever arrow-proof.");
+                Checkbox("Power shots punch through hide", () => cfg.PowerShotPunchesThrough, v => cfg.PowerShotPunchesThrough = v);
+                Help("A full heavy draw halves the bounce chance.");
+                EndServer(serverDecides);
+            }
+
             if (ImGui.CollapsingHeader("Stuck arrows and spears"))
             {
                 BeginServer(serverDecides);

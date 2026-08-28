@@ -87,7 +87,13 @@ namespace TassHunting
             if (p == null || shooter == null || p.World?.Side != EnumAppSide.Server) return;
 
             float mult = Consume(shooter.EntityId, p.World.ElapsedMilliseconds);
-            if (mult > 1f) p.Damage *= mult;
+            if (mult > 1f)
+            {
+                p.Damage *= mult;
+                // Big game (2026-08-28): mark the arrow so the hide-glance gate can honor
+                // PowerShotPunchesThrough - a full heavy draw halves the bounce chance.
+                p.WatchedAttributes.SetBool("tasshunt:powershot", true);
+            }
         }
 
         /// <summary>Client-side draw cue bookkeeping: true exactly when the threshold is crossed.</summary>

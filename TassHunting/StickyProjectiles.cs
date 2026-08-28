@@ -493,6 +493,21 @@ namespace TassHunting
             bool isArrow = path.Contains("arrow");
             if (!isArrow && !path.Contains("spear")) return true;
 
+            // HIDE GLANCE (owner design 2026-08-28): the bleed gate's roll for this same hit
+            // (one roll per projectile, whoever asks first - see HideGlance). Deflected =
+            // no durability hit, no break roll, no arrowhead, no stick: the projectile
+            // survives intact and ImpactOnEntity (our caller) zeroes its motion right after
+            // this returns, so it drops recoverable at the animal's feet.
+            float glance = HideGlance.ChanceFor(target, __instance, HuntingModSystem.Cfg);
+            if (glance > 0f && HideGlance.RollOnce(__instance.EntityId, glance, __instance.World))
+            {
+                if (HuntingModSystem.Cfg.BloodDiagnostics)
+                    __instance.World.Logger.Notification(
+                        "[TassHunting] {0} glanced off {1} (chance {2:0.00}) - drops recoverable, no stick",
+                        path, target.Code?.ToShortString(), glance);
+                return false; // skip vanilla die/drop AND our stick - the arrow just falls
+            }
+
             // Durability hit (unchanged - vanilla dealt gameplay damage already).
             bool brokeByDurability = false;
             if (__instance.DamageStackOnImpact && __instance.ProjectileStack != null)

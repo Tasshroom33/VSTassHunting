@@ -4,6 +4,22 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.18 (2026-08-28)
+Big game finally fights like big game. Bleeding used to grow with an animal's
+health, which quietly meant everything - a hare or an 800-health dinosaur -
+bled out in about the same two and a half minutes from the same two flint
+spears. Now bleed damage levels off past bear size, so a giant needs four to
+six wounds open at once instead of two, and the bigger it is the longer it
+takes to go down. On top of that, thick hide can turn a blade: anything
+bigger than a bear has a chance that an arrow or spear bounces off - it drops
+at the animal's feet, still yours to pick up, opens no wound and does not
+stick. A bear turns about one spear in twenty; the biggest beasts turn up to
+half, and a per-creature list in the config file lets armored hides turn more
+and soft giants fewer - though nothing can ever be made arrow-proof. The
+answer to thick hide is patience: a full power-shot draw punches through,
+halving the bounce chance. Everything wolf-sized and smaller is exactly as it
+was - hits always bite, and bleed numbers are untouched.
+
 ## 0.14.17 (2026-08-28)
 Some animals can now be kept wild for good. Name creatures in the new stay-wild
 list and nobody can ever tame, pet, rope or ride them - not even after

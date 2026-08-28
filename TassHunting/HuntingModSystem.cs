@@ -105,6 +105,32 @@ namespace TassHunting
         public float PackAggroSeekRange = 25f;   // vanilla 15
         public float PackMaxFollowTimeSec = 240f;
 
+        // ---- BIG GAME (owner design 2026-08-28, see HideGlance.cs) ----
+        // Bleed damage grows with an animal's max health up to about this value, then levels
+        // off (effHP = C * tanh(HP/C)). Below ~half the ceiling the curve IS the old straight
+        // line, so vanilla animals are untouched; a 400 hp modded giant bleeds at a big-animal
+        // rate instead of a monster rate. 0 = off (bleed keeps growing forever, old behavior).
+        public float BleedHealthCeiling = 100f;
+        // Past this much max health, hide has a chance to turn a blade: no stick, no wound.
+        // Default sits just under a bear (66) - every smaller vanilla animal always takes the
+        // hit, which keeps the 0.14.16 "player weapons always wound" promise where a random
+        // miss would read as a bug (owner revised the rule 2026-08-28: refusal is allowed
+        // exactly when the target's size explains it on screen).
+        public float GlanceStartHealth = 45f;
+        // How much health past the threshold it takes for the chance to approach its maximum.
+        public float GlanceRampHealth = 200f;
+        public float GlanceMaxChance = 0.5f;
+        // Absolute clamp applied AFTER the per-creature multiplier below: nothing is ever
+        // arrow-proof, whatever the config says - there is always a spear that bites.
+        public float GlanceChanceCeiling = 0.8f;
+        // A full heavy draw halves the glance chance - the patient shot beats thick hide.
+        public bool PowerShotPunchesThrough = true;
+        // Per-creature correction, because health measures SIZE, not armor (the engine has no
+        // creature armor stat): wildcard entity codes to multipliers on the glance chance.
+        // e.g. { "ankylosauria-*": 1.5, "macronaria-*": 0.6 } - plates up, soft hide down.
+        // First matching entry wins. Empty = the plain size curve.
+        public Dictionary<string, float> GlanceToughness = new Dictionary<string, float>();
+
         // ---- STAY WILD (see StayWild.cs) ----
         // Named creatures can never be tamed, petted, roped, owned or ridden - the
         // domestication behaviors are taken off their entity types at load, so a companion
@@ -502,6 +528,14 @@ namespace TassHunting
             // both every load path (file, ConfigLib restore, server sync), so normalize here.
             if (StayWildCodes == null) StayWildCodes = new string[0];
             if (StayWildBehaviors == null) StayWildBehaviors = new string[0];
+
+            // Big game: keep every glance number inside its meaningful range on all load paths.
+            if (BleedHealthCeiling < 0f) BleedHealthCeiling = 0f;
+            if (GlanceStartHealth < 0f) GlanceStartHealth = 0f;
+            GlanceRampHealth = Math.Max(1f, GlanceRampHealth);
+            GlanceMaxChance = Vintagestory.API.MathTools.GameMath.Clamp(GlanceMaxChance, 0f, 1f);
+            GlanceChanceCeiling = Vintagestory.API.MathTools.GameMath.Clamp(GlanceChanceCeiling, 0f, 1f);
+            if (GlanceToughness == null) GlanceToughness = new Dictionary<string, float>();
         }
     }
 
