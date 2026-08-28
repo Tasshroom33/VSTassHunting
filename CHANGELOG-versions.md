@@ -4,6 +4,12 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.30 (2026-08-28)
+The sound settings got their own "Sounds" section in the config panel:
+behind-you steps on or off, what counts as a heavy step, and how much the
+step pitch drops with body size. Which sound the heavy steps use stays a
+list in the config file, and the panel now says so.
+
 ## 0.14.29 (2026-08-28)
 Big steps got their bass. The swapped thump was playing at its recorded
 pitch, which made an eight ton animal sound like a horse at a canter. The

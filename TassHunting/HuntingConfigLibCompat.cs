@@ -140,8 +140,6 @@ namespace TassHunting
                 // "Spawn splatter on damage" and the bleeding box are the CLIENT-side
                 // dials here (they drive what you see); the rest is server-decided damage.
                 Checkbox("Spawn splatter on damage", () => cfg.SpawnSplatterOnDamage, v => cfg.SpawnSplatterOnDamage = v);
-                Checkbox("Hear heavy steps behind you", () => cfg.BigStepsBehindYou, v => cfg.BigStepsBehindYou = v);
-                Help("The game only plays footsteps for creatures on your screen. This keeps the heavy ones - anything whose steps are loud enough to carry - stomping audibly when they are behind you, using their own sounds.");
                 Checkbox("Red flash on bleed damage", () => cfg.BleedTickHurtFlash, v => cfg.BleedTickHurtFlash = v);
                 Help("Bleeding creatures blink red on every bleed tick, like a normal hit does. Purely a look - it never makes them immune the way a real hit's flash does.");
                 Checkbox("Show bleeding box", () => cfg.BleedHudEnabled, v => cfg.BleedHudEnabled = v);
@@ -275,6 +273,19 @@ namespace TassHunting
                 Checkbox("Pull arrows out of players", () => cfg.PlayerArrowTouchRetrieve, v => cfg.PlayerArrowTouchRetrieve = v);
                 Help("An arrow stuck in a player can be pulled out at touch range by its shooter or by the stuck player. Arrows in animals stay in until they release.");
                 EndServer(serverDecides);
+            }
+
+            if (ImGui.CollapsingHeader("Sounds"))
+            {
+                Checkbox("Hear heavy steps behind you", () => cfg.BigStepsBehindYou, v => cfg.BigStepsBehindYou = v);
+                Help("The game only plays footsteps for creatures on your screen. This keeps the heavy ones stomping audibly when they are behind you, using their own step sounds and pace.");
+                SliderFloat("Counts as heavy above (step carry range)", () => cfg.BigStepsMinRange, v => cfg.BigStepsMinRange = v, 5f, 100f);
+                Help("Steps designed to carry at least this many blocks count as heavy - for the behind-you steps AND the sound swap below. Wolves carry ~20, the dinosaurs 49-67.");
+                BeginServer(serverDecides);
+                SliderFloat("Deepen heavy steps by body size", () => cfg.StepSoundDeepen, v => cfg.StepSoundDeepen = v, 0f, 4f);
+                Help("Swapped step sounds play deeper the bigger the animal - a tyrannosaur booms at less than half pitch, wolf-sized is untouched. 0 = play the sound as recorded. Needs world rejoin.");
+                EndServer(serverDecides);
+                Help("Which sound the heavy steps use is the StepSoundOverride list in the config file (creature names to a sound path) - lists cannot be edited from this panel.");
             }
 
             if (ImGui.CollapsingHeader("Nature red in tooth"))
