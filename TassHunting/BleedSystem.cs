@@ -378,8 +378,11 @@ namespace TassHunting
             // ---- HIDE GLANCE (owner design 2026-08-28): a big enough body sometimes turns the
             // edge - no wound, and for a projectile the SAME roll makes the stick gate refuse it
             // (see HideGlance's header). Melee and creature bites roll here directly; hide
-            // protects from everyone. Zero for anything smaller than a bear.
-            float glanceChance = HideGlance.ChanceFor(victim, src.SourceEntity as EntityProjectileBase, cfg);
+            // protects from everyone. Zero for anything smaller than a bear. Sharpness rides the
+            // hit's pre-armor damage (the weapon's own number, before mitigation ate any of it);
+            // if our capture prefix never ran, the final damage stands in.
+            float glanceChance = HideGlance.ChanceFor(victim, src.SourceEntity as EntityProjectileBase, cfg,
+                incomingDamage > 0f ? incomingDamage : damage);
             if (glanceChance > 0f)
             {
                 bool glanced = src.SourceEntity is EntityProjectileBase gp

@@ -4,6 +4,17 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.19 (2026-08-28)
+Sharper metal bites deeper. The chance that thick hide turns an arrow or spear
+now falls as the weapon's damage rises: flint is the baseline and everything
+at or under flint grade bounces exactly as before, but each point of weapon
+damage above it shaves the bounce chance - a steel spear bounces about a
+third less often than a flint one, with copper and the bronzes in between.
+No blade ever gets the bounce below about a third of the base chance: plate
+stays plate. The huge bites of the biggest predators sit on that same floor,
+so crushing jaws mostly punch through armor that turns your spears. Three new
+sliders control the baseline, the per-point step and the floor.
+
 ## 0.14.18 (2026-08-28)
 Big game finally fights like big game. Bleeding used to grow with an animal's
 health, which quietly meant everything - a hare or an 800-health dinosaur -

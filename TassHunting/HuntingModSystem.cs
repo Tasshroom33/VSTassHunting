@@ -125,6 +125,15 @@ namespace TassHunting
         public float GlanceChanceCeiling = 0.8f;
         // A full heavy draw halves the glance chance - the patient shot beats thick hide.
         public bool PowerShotPunchesThrough = true;
+        // SHARPNESS (2026-08-28): sharper metal glances less. Keyed on the hit's DAMAGE (the
+        // real material ladder: flint spear 4.0 ... steel 7.0) - damage TIER is dead data here,
+        // vanilla spears are tier 0 flint through blackbronze and arrows have no tier at all.
+        // At or below Base (flint) the glance curve applies in full; each damage point above it
+        // removes Step from the glance, never below Floor - plate stays plate. A rex-size bite
+        // (24 damage) sits on the floor: crushing force beats armor.
+        public float GlanceSharpnessBase = 4f;
+        public float GlanceSharpnessStep = 0.12f;
+        public float GlanceSharpnessFloor = 0.35f;
         // Per-creature correction, because health measures SIZE, not armor (the engine has no
         // creature armor stat): wildcard entity codes to multipliers on the glance chance.
         // e.g. { "ankylosauria-*": 1.5, "macronaria-*": 0.6 } - plates up, soft hide down.
@@ -536,6 +545,9 @@ namespace TassHunting
             GlanceMaxChance = Vintagestory.API.MathTools.GameMath.Clamp(GlanceMaxChance, 0f, 1f);
             GlanceChanceCeiling = Vintagestory.API.MathTools.GameMath.Clamp(GlanceChanceCeiling, 0f, 1f);
             if (GlanceToughness == null) GlanceToughness = new Dictionary<string, float>();
+            if (GlanceSharpnessBase < 0f) GlanceSharpnessBase = 0f;
+            if (GlanceSharpnessStep < 0f) GlanceSharpnessStep = 0f;
+            GlanceSharpnessFloor = Vintagestory.API.MathTools.GameMath.Clamp(GlanceSharpnessFloor, 0f, 1f);
         }
     }
 

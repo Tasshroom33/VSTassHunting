@@ -498,7 +498,9 @@ namespace TassHunting
             // no durability hit, no break roll, no arrowhead, no stick: the projectile
             // survives intact and ImpactOnEntity (our caller) zeroes its motion right after
             // this returns, so it drops recoverable at the animal's feet.
-            float glance = HideGlance.ChanceFor(target, __instance, HuntingModSystem.Cfg);
+            // (Fallback asker: for a projectile the bleed gate normally rolls first with the
+            // true final damage; this chance only decides when that gate never saw the hit.)
+            float glance = HideGlance.ChanceFor(target, __instance, HuntingModSystem.Cfg, __instance.Damage);
             if (glance > 0f && HideGlance.RollOnce(__instance.EntityId, glance, __instance.World))
             {
                 if (HuntingModSystem.Cfg.BloodDiagnostics)

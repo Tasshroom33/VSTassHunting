@@ -66,6 +66,11 @@ namespace TassHuntingCompatHarness
                 cfg.GlanceMaxChance = 0.5f;
                 cfg.GlanceChanceCeiling = 0.8f;
                 cfg.PowerShotPunchesThrough = true;
+                cfg.GlanceSharpnessBase = 4f;
+                cfg.GlanceSharpnessStep = 0.12f;
+                cfg.GlanceSharpnessFloor = 0.35f;
+                // The live loops hit at damage 1.0 - below the sharpness base, factor exactly 1 -
+                // so the glance statistics measure the pure size curve.
                 cfg.GlanceToughness.Clear();
                 cfg.BleedMinDamage = 0.5f;
                 // A sourceless hit rolls the CREATURE odds ladder for its wound count (hp 0 ->
@@ -108,6 +113,17 @@ namespace TassHuntingCompatHarness
             Check("glance-hard-cap-holds", clamped == 0.8f, $"{clamped:0.000}");
             float punched = HideGlance.Chance(250f, 45f, 200f, 0.5f, 1f, 0.8f, true);
             Check("glance-powershot-halves", Near(punched, rex / 2f, 0.002f), $"{punched:0.000}");
+
+            // Sharpness (0.14.19): flint anchor exact, steel a third off, floor for huge bites,
+            // below-anchor clamps to 1 so weak hits never glance MORE than flint.
+            Check("sharp-flint-is-1", HideGlance.Sharpness(4f, 4f, 0.12f, 0.35f) == 1f);
+            float steel = HideGlance.Sharpness(7f, 4f, 0.12f, 0.35f);
+            Check("sharp-steel-0.64", Near(steel, 0.64f, 0.001f), $"{steel:0.000}");
+            Check("sharp-bite-floors", HideGlance.Sharpness(24f, 4f, 0.12f, 0.35f) == 0.35f);
+            Check("sharp-weak-clamps-to-1", HideGlance.Sharpness(1f, 4f, 0.12f, 0.35f) == 1f);
+            // Combined: steel spear vs the mapped anky = 0.708 * 0.64 = 0.453.
+            float steelAnky = HideGlance.Chance(400f, 45f, 200f, 0.5f, 1.5f * steel, 0.8f, false);
+            Check("sharp-steel-vs-anky-45pct", Near(steelAnky, 0.453f, 0.01f), $"{steelAnky:0.000}");
         }
 
         // A sourceless piercing hit, the RejoinHarness pattern: no attacker entity needed,

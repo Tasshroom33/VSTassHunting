@@ -44,17 +44,36 @@ namespace TassHunting
         }
 
         /// <summary>
-        /// The glance chance for this victim against this projectile (null for melee). Players
-        /// never glance - PvP arrows always bite regardless of modded player health pools.
+        /// SHARPNESS (owner approval 2026-08-28): sharper metal bites deeper. Keyed on the hit's
+        /// DAMAGE, not its damage tier - vanilla spears are tier 0 from flint through blackbronze
+        /// and arrows carry no tier at all, so tier cannot tell the materials apart; the damage
+        /// number IS the material ladder (flint 4.0 ... steel 7.0, asset-verified 1.22.5). At or
+        /// below the base (flint) the factor is exactly 1, so the tuned base curve is untouched;
+        /// each point of damage above it shaves GlanceSharpnessStep off the glance, floored at
+        /// GlanceSharpnessFloor - plate stays plate, no blade turns it to paper. Big creature
+        /// bites (a rex at 24) sit on the floor: crushing force beats armor.
         /// </summary>
-        public static float ChanceFor(Entity victim, EntityProjectileBase proj, HuntingConfig cfg)
+        public static float Sharpness(float hitDamage, float baseDamage, float step, float floor)
+        {
+            float f = 1f - step * (hitDamage - baseDamage);
+            return GameMath.Clamp(f, GameMath.Clamp(floor, 0f, 1f), 1f);
+        }
+
+        /// <summary>
+        /// The glance chance for this victim against this hit (proj null for melee; hitDamage is
+        /// the hit's damage, pre-armor where available). Players never glance - PvP arrows
+        /// always bite regardless of modded player health pools.
+        /// </summary>
+        public static float ChanceFor(Entity victim, EntityProjectileBase proj, HuntingConfig cfg, float hitDamage)
         {
             if (cfg == null || victim == null || victim is EntityPlayer) return 0f;
             float hp = BleedSystem.MaxHealthOf(victim);
             bool punch = cfg.PowerShotPunchesThrough
                 && proj != null && proj.WatchedAttributes.GetBool("tasshunt:powershot");
+            float mult = ToughnessFor(victim, cfg)
+                * Sharpness(hitDamage, cfg.GlanceSharpnessBase, cfg.GlanceSharpnessStep, cfg.GlanceSharpnessFloor);
             return Chance(hp, cfg.GlanceStartHealth, cfg.GlanceRampHealth, cfg.GlanceMaxChance,
-                ToughnessFor(victim, cfg), cfg.GlanceChanceCeiling, punch);
+                mult, cfg.GlanceChanceCeiling, punch);
         }
 
         /// <summary>First matching GlanceToughness entry wins; no entry = 1 (the plain curve).</summary>

@@ -243,6 +243,12 @@ namespace TassHunting
                 Help("Absolute limit after the per-creature multipliers from the config file (GlanceToughness) - nothing is ever arrow-proof.");
                 Checkbox("Power shots punch through hide", () => cfg.PowerShotPunchesThrough, v => cfg.PowerShotPunchesThrough = v);
                 Help("A full heavy draw halves the bounce chance.");
+                SliderFloat("Sharpness baseline (weapon damage)", () => cfg.GlanceSharpnessBase, v => cfg.GlanceSharpnessBase = v, 0f, 10f);
+                Help("Weapons at or below this damage (a flint spear is 4) bounce at the full chance. Sharper metal bounces less.");
+                SliderFloat("Bounce lost per damage point", () => cfg.GlanceSharpnessStep, v => cfg.GlanceSharpnessStep = v, 0f, 0.5f);
+                Help("How much bounce chance each point of weapon damage above the baseline removes. At 0.12, a steel spear bounces about a third less than flint.");
+                SliderFloat("Sharpness floor", () => cfg.GlanceSharpnessFloor, v => cfg.GlanceSharpnessFloor = v, 0f, 1f);
+                Help("No weapon ever gets the bounce chance below this share of it - plate stays plate. Huge predator bites sit here too.");
                 EndServer(serverDecides);
             }
 
