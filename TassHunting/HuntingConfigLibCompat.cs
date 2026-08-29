@@ -251,9 +251,9 @@ namespace TassHunting
                 Help("How much health past the threshold it takes for the bounce chance to get close to its maximum.");
                 SliderFloat("Bounce chance, maximum", () => cfg.GlanceMaxChance, v => cfg.GlanceMaxChance = v, 0f, 1f);
                 SliderFloat("Bounce chance, hard cap", () => cfg.GlanceChanceCeiling, v => cfg.GlanceChanceCeiling = v, 0f, 1f);
-                Help("Absolute limit after the per-creature multipliers from the config file (GlanceToughness) - nothing is ever arrow-proof.");
+                Help("Absolute limit over everything below - nothing is ever arrow-proof. Thick hide and armor are config-file lists (lists cannot be edited from this panel): GlanceHideBase adds bounce for thick-skinned creatures at any size, and sharp metal or a power shot cuts through it; GlanceArmorBase is bone plate - no weapon quality helps against it, only this cap limits it. GlanceToughness scales the size part for soft or tough hide.");
                 Checkbox("Power shots punch through hide", () => cfg.PowerShotPunchesThrough, v => cfg.PowerShotPunchesThrough = v);
-                Help("A full heavy draw halves the bounce chance.");
+                Help("A full heavy draw halves the bounce from hide and size. Armor plate ignores it.");
                 SliderFloat("Sharpness baseline (weapon damage)", () => cfg.GlanceSharpnessBase, v => cfg.GlanceSharpnessBase = v, 0f, 10f);
                 Help("Weapons at or below this damage (a flint spear is 4) bounce at the full chance. Sharper metal bounces less.");
                 SliderFloat("Bounce lost per damage point", () => cfg.GlanceSharpnessStep, v => cfg.GlanceSharpnessStep = v, 0f, 0.5f);

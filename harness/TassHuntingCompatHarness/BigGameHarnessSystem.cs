@@ -72,6 +72,10 @@ namespace TassHuntingCompatHarness
                 // The live loops hit at damage 1.0 - below the sharpness base, factor exactly 1 -
                 // so the glance statistics measure the pure size curve.
                 cfg.GlanceToughness.Clear();
+                // 0.14.38: the hide/armor bases would ride on top of the size curve the live
+                // statistics measure - cleared for the same reason toughness is.
+                cfg.GlanceHideBase.Clear();
+                cfg.GlanceArmorBase.Clear();
                 cfg.BleedMinDamage = 0.5f;
                 // A sourceless hit rolls the CREATURE odds ladder for its wound count (hp 0 ->
                 // bottom rung, 50%), which would be indistinguishable from a glance to this
@@ -127,6 +131,42 @@ namespace TassHuntingCompatHarness
             // Combined: steel spear vs the mapped anky = 0.708 * 0.64 = 0.453.
             float steelAnky = HideGlance.Chance(400f, 45f, 200f, 0.5f, 1.5f * steel, 0.8f, false);
             Check("sharp-steel-vs-anky-45pct", Near(steelAnky, 0.453f, 0.01f), $"{steelAnky:0.000}");
+
+            // ---- THICK HIDE vs ARMOR (0.14.38). Both maps empty must reproduce the old
+            // curve EXACTLY - that identity is what keeps vanilla animals untouched.
+            float sizeRex = HideGlance.Chance(250f, 45f, 200f, 0.5f, 1f, 1f, false);
+            float oldRexSteel = HideGlance.Chance(250f, 45f, 200f, 0.5f, steel, 0.8f, false);
+            float newRexSteel = HideGlance.Combined(0f, 0f, sizeRex, steel, false, 0.8f);
+            Check("combined-empty-maps-are-the-old-curve", Near(newRexSteel, oldRexSteel, 0.0001f),
+                $"{newRexSteel:0.0000} vs {oldRexSteel:0.0000}");
+            // Thick hide floors a SMALL creature: below the size threshold, hide alone bounces.
+            Check("hide-bounces-below-size-threshold", HideGlance.Combined(0.15f, 0f, 0f, 1f, false, 0.8f) == 0.15f);
+            // Sharpness and power shots cut hide...
+            float hideSteel = HideGlance.Combined(0.2f, 0f, 0f, steel, false, 0.8f);
+            Check("sharp-steel-cuts-hide", Near(hideSteel, 0.2f * steel, 0.0001f), $"{hideSteel:0.000}");
+            float hidePunched = HideGlance.Combined(0.2f, 0f, 0f, 1f, true, 0.8f);
+            Check("powershot-halves-hide", Near(hidePunched, 0.1f, 0.0001f), $"{hidePunched:0.000}");
+            // ...and armor ignores both. Prove it both directions: same armor under steel and
+            // under a power shot as under flint.
+            Check("armor-ignores-sharpness", HideGlance.Combined(0f, 0.35f, 0f, steel, false, 0.8f) == 0.35f);
+            Check("armor-ignores-powershot", HideGlance.Combined(0f, 0.35f, 0f, 1f, true, 0.8f) == 0.35f);
+            // The ceiling still rules everything stacked together.
+            Check("combined-ceiling-holds", HideGlance.Combined(0.5f, 0.5f, 0.5f, 1f, false, 0.8f) == 0.8f);
+
+            // Migration v3: SHIPPED plated multipliers leave GlanceToughness (armor covers them
+            // now), a hand-tuned value is the owner's and stays, sauropod softness stays.
+            var mig = new HuntingConfig { Version = 2 };
+            mig.GlanceToughness["ankylosauria-*"] = 1.5f;
+            mig.GlanceToughness["stegosauria-*"] = 1.3f;
+            mig.GlanceToughness["macronaria-*"] = 0.6f;
+            mig.Migrate();
+            Check("migrate-moves-shipped-plate", !mig.GlanceToughness.ContainsKey("ankylosauria-*")
+                && !mig.GlanceToughness.ContainsKey("stegosauria-*") && mig.Version == 3);
+            Check("migrate-keeps-sauropod-softness", mig.GlanceToughness.TryGetValue("macronaria-*", out float soft) && soft == 0.6f);
+            var tuned = new HuntingConfig { Version = 2 };
+            tuned.GlanceToughness["ankylosauria-*"] = 2.0f; // not the shipped number = owner's
+            tuned.Migrate();
+            Check("migrate-keeps-hand-tuned-plate", tuned.GlanceToughness.TryGetValue("ankylosauria-*", out float own) && own == 2.0f);
         }
 
         /// <summary>

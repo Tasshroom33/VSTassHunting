@@ -4,6 +4,22 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.38 (2026-08-29)
+Thick hide and bone armor are now their own things, not just size. Every
+dino family has hide thick enough to turn some shots even when the animal
+is small - a raptor sheds the odd arrow, a carnotaurus about 4 or 5 in
+10, a rex over half - and sharp metal or a full power-shot draw cuts
+through hide like always. Bone plate is new and different: ankylosaurs,
+stegosaurs and the horned dinos carry armor that no weapon quality or
+power shot reduces - an ankylosaurus turns 8 in 10 whatever you bring
+(the never-arrow-proof cap), so plate is fought with patience, not
+better steel. Bleed itself is untouched: wounds that land bleed exactly
+as before, big animals just take real work to open up. A bounced arrow
+still drops at the animal's feet to pick back up. Vanilla animals are
+completely unchanged. Both classifications are config lists
+(GlanceHideBase, GlanceArmorBase) - every family's number is editable,
+and old configs move their plated entries over automatically.
+
 ## 0.14.37 (2026-08-29)
 Predator climbing is on out of the box. The climb-speed fix from 0.14.36
 shipped set to off, so a fresh install still had stairs as a free escape

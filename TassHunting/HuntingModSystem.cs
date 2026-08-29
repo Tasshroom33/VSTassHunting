@@ -188,9 +188,40 @@ namespace TassHunting
         public bool BonesKillSatiates = true;
         // Per-creature correction, because health measures SIZE, not armor (the engine has no
         // creature armor stat): wildcard entity codes to multipliers on the glance chance.
-        // e.g. { "ankylosauria-*": 1.5, "macronaria-*": 0.6 } - plates up, soft hide down.
-        // First matching entry wins. Empty = the plain size curve.
+        // Since 0.14.38 this is the hide-QUALITY corrector only (soft-bodied sauropod down);
+        // plated families moved to GlanceArmorBase below. First matching entry wins.
         public Dictionary<string, float> GlanceToughness = new Dictionary<string, float>();
+
+        // ---- THICK HIDE vs ARMOR (owner order 2026-08-29, see HideGlance.cs) ----
+        // bounce = (hide + size x toughness) x sharpness x powershot + armor, capped by
+        // GlanceChanceCeiling. Both maps wildcards, first match wins, values are flat chances.
+        // THICK HIDE: skin thick enough to turn a shot at ANY body size - even a small dino
+        // repels some arrows. Sharp metal and power shots cut through it.
+        public Dictionary<string, float> GlanceHideBase = new Dictionary<string, float>
+        {
+            // big scaly predators and sea giants
+            ["tyrannosauridae-*"] = 0.15f,
+            ["carcharodontosauridae-*"] = 0.15f,
+            ["abelisauridae-*"] = 0.15f,
+            ["spinosauridae-*"] = 0.15f,
+            ["mosasauridae-*"] = 0.15f,
+            ["macronaria-*"] = 0.15f,
+            // thick-skinned herbivores
+            ["hadrosauroidea-*"] = 0.10f,
+            ["pachycephalosauria-*"] = 0.10f,
+            // feathered - thin skin under the plumage
+            ["therizinosauridae-*"] = 0.05f,
+            ["ornithomimosauria-*"] = 0.05f,
+            ["dromaeosauridae-*"] = 0.05f,
+        };
+        // ARMOR: bone plate. Ignores sharpness AND power shots - no blade quality helps
+        // against plate; only the ceiling caps it, so nothing is ever arrow-proof.
+        public Dictionary<string, float> GlanceArmorBase = new Dictionary<string, float>
+        {
+            ["ankylosauria-*"] = 0.35f,
+            ["stegosauria-*"] = 0.20f,
+            ["ceratopsidae-*"] = 0.15f,
+        };
 
         // ---- KILLER NAMES (owner order 2026-08-29, see KillerNames.cs) ----
         // Death messages and the damage log name the actual animal instead of "a wild
@@ -624,33 +655,55 @@ namespace TassHunting
         /// THE CURRENT CONFIG GENERATION. Bumped when a rebalance makes the old values
         /// incoherent rather than merely different, so Migrate can reset exactly those fields.
         /// </summary>
-        public const int CurrentVersion = 2;
+        public const int CurrentVersion = 3;
 
         /// <summary>
         /// Bring an older config up to the current generation. Returns what it did, or null.
         ///
-        /// WHY THIS OVERWRITES TUNED VALUES: the 2026-08-22 bleed rework halved the per-tick
-        /// damage and doubled the weapon weights in the SAME pass, and added two multipliers
-        /// that compound. An existing file keeps its old 0.05/0.5 damage under the new
-        /// multipliers and the new length ladder, which is far harsher than either the old or
-        /// the new design - the one outcome nobody chose. So the interlocking balance fields
+        /// WHY VERSION 2 OVERWRITES TUNED VALUES: the 2026-08-22 bleed rework halved the
+        /// per-tick damage and doubled the weapon weights in the SAME pass, and added two
+        /// multipliers that compound. An existing file keeps its old 0.05/0.5 damage under the
+        /// new multipliers and the new length ladder, which is far harsher than either the old
+        /// or the new design - the one outcome nobody chose. So the interlocking balance fields
         /// are reset together and the change is logged loudly. Fields outside that set (blood
         /// look, harvest, archery, sticky arrows) are never touched.
+        ///
+        /// VERSION 3 (0.14.38, thick hide vs armor): plated families leave GlanceToughness -
+        /// their bounce now comes from GlanceArmorBase, and keeping the old multiplier too
+        /// would double-count the plate. Only entries still at the SHIPPED values (anky 1.5,
+        /// stego 1.3) are removed; a hand-tuned number is the owner's and stays. The sauropod
+        /// 0.6 stays by design - soft hide is exactly what the multiplier still means.
         /// </summary>
         public string Migrate()
         {
             if (Version >= CurrentVersion) return null;
+            var did = new List<string>();
+            if (Version < 2)
+            {
+                BleedStaticPerTick = 0.02f;
+                BleedPctMaxHealthPerTick = 0.25f;
+                BleedComboMultiplier = 1.25f;
+                BleedArrowWoundWeight = 2f;
+                BleedThrownSpearWoundWeight = 3f;
+                BleedSpearStabWoundWeight = 2f;
+                BleedSlashWoundWeight = 1.5f;
+                did.Add("bleed rebalance: per-tick damage, combo and weapon weights reset to the new "
+                     + "defaults (they interlock with the new size ladder - old values under the new "
+                     + "multipliers would hit far harder than either design intended)");
+            }
+            if (Version < 3 && GlanceToughness != null)
+            {
+                bool moved = false;
+                if (GlanceToughness.TryGetValue("ankylosauria-*", out float av) && Math.Abs(av - 1.5f) < 0.001f)
+                    moved |= GlanceToughness.Remove("ankylosauria-*");
+                if (GlanceToughness.TryGetValue("stegosauria-*", out float sv) && Math.Abs(sv - 1.3f) < 0.001f)
+                    moved |= GlanceToughness.Remove("stegosauria-*");
+                if (moved)
+                    did.Add("plated families moved out of GlanceToughness - their bounce now comes "
+                         + "from the new GlanceArmorBase (armor), not a size multiplier");
+            }
             Version = CurrentVersion;
-            BleedStaticPerTick = 0.02f;
-            BleedPctMaxHealthPerTick = 0.25f;
-            BleedComboMultiplier = 1.25f;
-            BleedArrowWoundWeight = 2f;
-            BleedThrownSpearWoundWeight = 3f;
-            BleedSpearStabWoundWeight = 2f;
-            BleedSlashWoundWeight = 1.5f;
-            return "bleed rebalance: per-tick damage, combo and weapon weights reset to the new "
-                 + "defaults (they interlock with the new size ladder - old values under the new "
-                 + "multipliers would hit far harder than either design intended)";
+            return did.Count == 0 ? "config version raised to " + CurrentVersion : string.Join("; ", did);
         }
 
         /// <summary>Every hand-edited-value rule in one place, applied after EVERY
@@ -676,6 +729,12 @@ namespace TassHunting
             GlanceMaxChance = Vintagestory.API.MathTools.GameMath.Clamp(GlanceMaxChance, 0f, 1f);
             GlanceChanceCeiling = Vintagestory.API.MathTools.GameMath.Clamp(GlanceChanceCeiling, 0f, 1f);
             if (GlanceToughness == null) GlanceToughness = new Dictionary<string, float>();
+            if (GlanceHideBase == null) GlanceHideBase = new Dictionary<string, float>();
+            if (GlanceArmorBase == null) GlanceArmorBase = new Dictionary<string, float>();
+            foreach (var k in new List<string>(GlanceHideBase.Keys))
+                GlanceHideBase[k] = Vintagestory.API.MathTools.GameMath.Clamp(GlanceHideBase[k], 0f, 1f);
+            foreach (var k in new List<string>(GlanceArmorBase.Keys))
+                GlanceArmorBase[k] = Vintagestory.API.MathTools.GameMath.Clamp(GlanceArmorBase[k], 0f, 1f);
             if (GlanceSharpnessBase < 0f) GlanceSharpnessBase = 0f;
             if (GlanceSharpnessStep < 0f) GlanceSharpnessStep = 0f;
             GlanceSharpnessFloor = Vintagestory.API.MathTools.GameMath.Clamp(GlanceSharpnessFloor, 0f, 1f);
