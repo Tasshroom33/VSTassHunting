@@ -22,8 +22,25 @@ $harnessOut = "$root\harness\TassHuntingCompatHarness\bin\Release"
 if (-not (Test-Path "$huntOut\TassHunting.dll")) { throw "TassHunting output missing at $huntOut" }
 
 $sdata = Join-Path $scratch ("biggame\" + [Guid]::NewGuid().ToString("N").Substring(0,8))
-New-Item -ItemType Directory -Force "$sdata\Mods" | Out-Null
+New-Item -ItemType Directory -Force "$sdata\Mods","$sdata\ModConfig" | Out-Null
 Copy-Item $huntOut "$sdata\Mods\tasshunting" -Recurse
+# NEUTRAL BOOT (0.14.40): the mod now SHIPS the tuned world as defaults - stay-wild,
+# retaliation/territorial rosters, the food chain, step sounds - and those bake into the
+# entity TYPES at AssetsFinalize, before any harness stage can pin config. This suite
+# measures the MECHANISMS against vanilla-baseline types (wolf seek 25 as control, its
+# own hunt counts, its own damage patterns), so the boot config zeroes the type-mutating
+# lists. The shipped defaults themselves are covered by the StayWild suite and the field.
+$neutral = [ordered]@{
+    StayWildEnabled = $false
+    LeavesPassthroughEnabled = $false
+    RetaliationCodes = @()
+    TerritorialCodes = @()
+    HuntAppend = @{}
+    CreatureMeleeDamageMul = @{}
+    StepSoundOverride = @{}
+    NonPlayerKillsLeaveBones = $false
+}
+[System.IO.File]::WriteAllText("$sdata\ModConfig\TassHunting.json", ($neutral | ConvertTo-Json -Depth 5))
 New-Item -ItemType Directory -Force "$sdata\Mods\tasshuntingcompatharness" | Out-Null
 Copy-Item "$harnessOut\TassHuntingCompatHarness.dll","$harnessOut\modinfo.json" "$sdata\Mods\tasshuntingcompatharness\"
 

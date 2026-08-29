@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using HarmonyLib;
+using Newtonsoft.Json;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Datastructures;
@@ -101,13 +102,16 @@ namespace TassHunting
         // remember - the 0.14.36 default of 0 shipped the fix disabled).
         public float PredatorStepUpSpeed = 0.10f;
         // Apex predators: always charge, never flee, spot you from range.
-        public string[] ApexCodes = { "bear-black", "bear-brown", "bear-polar" };
+        // 0.14.40 (owner order: "its MY mod - my chosen defaults on by default"): the mod
+        // ships the author's tuned world. The predator dino families are apex out of the box.
+        public string[] ApexCodes = { "bear-black", "bear-brown", "bear-polar",
+            "tyrannosauridae", "carcharodontosauridae", "abelisauridae", "spinosauridae", "mosasauridae" };
         public float ApexSeekRange = 30f;        // unprovoked (vanilla 16)
         public float ApexAggroSeekRange = 40f;   // after you hurt it (vanilla 30)
         public float ApexMaxFollowTimeSec = 240f;// chase timer (vanilla 60)
         public float ApexIdleStopRange = 30f;    // wakes/stands seeing you (vanilla 10/5)
         // Pack hunters: swarm together, hit-and-run alone, flee only when solo.
-        public string[] PackCodes = { "wolf", "hyena" };
+        public string[] PackCodes = { "wolf", "hyena", "dromaeosauridae" };
         public float PackRadius = 24f;           // packmate = same species within this
         public bool SoloHitAndRun = true;
         public bool PackSuppressFlee = true;
@@ -143,6 +147,7 @@ namespace TassHunting
         };
         // Bounce chance by metal tier (owner's numbers, 2026-08-29). Stone ALWAYS bounces
         // off armor - a stone-age hunter cannot arrow a plated dino, and that is the point.
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)] // see HuntAppend
         public Dictionary<string, float> ArmorBounceByMetal = new Dictionary<string, float>
         {
             ["stone"] = 1.00f,
@@ -151,6 +156,7 @@ namespace TassHunting
             ["iron"] = 0.80f,
             ["steel"] = 0.75f,
         };
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)] // see HuntAppend
         public Dictionary<string, float> HideBounceByMetal = new Dictionary<string, float>
         {
             ["stone"] = 0.50f,
@@ -167,6 +173,7 @@ namespace TassHunting
         // Which material token (the last piece of the item code: arrow-flint, spear-generic-
         // steel) sits on which tier. Unlisted materials - modded weapons - are slotted by
         // their damage number instead, so nothing falls through the cracks.
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)] // see HuntAppend
         public Dictionary<string, string> BounceMetalTierByMaterial = new Dictionary<string, string>
         {
             // stone age (and no-metal shafts)
@@ -190,7 +197,13 @@ namespace TassHunting
         // for modded law-breakers (the dino survey found two species biting at double their
         // roster's own damage-vs-health curve); empty by default, first matching entry wins.
         // e.g. { "*-lajasvenator-*": 0.35 } - health, speed and everything else untouched.
-        public Dictionary<string, float> CreatureMeleeDamageMul = new Dictionary<string, float>();
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)] // see HuntAppend
+        public Dictionary<string, float> CreatureMeleeDamageMul = new Dictionary<string, float>
+        {
+            // the two roster law-breakers from the 177-species survey (bite at 2x their own curve)
+            ["*-lajasvenator-*"] = 0.35f,
+            ["*-lusovenator-*"] = 0.35f,
+        };
 
         // ---- RETALIATION + TERRITORY (2026-08-28, see Territory.cs) ----
         // Creatures in RetaliationCodes remember being hurt: anger memory, chase range and
@@ -198,8 +211,16 @@ namespace TassHunting
         // in TerritorialCodes ADDITIONALLY start the fight themselves when a player enters
         // TerritoryRadius - they hold ground, and only cool down after the player is truly
         // gone for the memory duration. Both lists wildcards, both empty by default.
-        public string[] RetaliationCodes = new string[0];
-        public string[] TerritorialCodes = new string[0];
+        public string[] RetaliationCodes = {
+            "ceratopsidae-*", "stegosauria-*", "ankylosauria-*", "hadrosauroidea-*",
+            "pachycephalosauria-*", "therizinosauridae-*", "macronaria-*",
+            "bear-*", "wolf-*", "hyena-*", "fox-*",
+            "tyrannosauridae-*", "carcharodontosauridae-*", "abelisauridae-*",
+            "spinosauridae-*", "mosasauridae-*", "dromaeosauridae-*",
+        };
+        public string[] TerritorialCodes = {
+            "ceratopsidae-*", "stegosauria-*", "ankylosauria-*", "pachycephalosauria-*", "therizinosauridae-*",
+        };
         public float RetaliationSeekRange = 40f;        // anger-chase radius (typical shipped value: 20)
         public float RetaliationMaxFollowTimeSec = 120f;// how long it presses the chase (typical: 30)
         public float RetaliationMemorySeconds = 180f;   // how long it stays angry (typical: 60)
@@ -211,13 +232,30 @@ namespace TassHunting
         // every meleeattack whitelist on that hunter, at load. Codes already present are left
         // alone, so re-applying is harmless. Built for the bloodbath order: dino predators
         // hunting livestock, tamed animals and rival predators. Empty = nothing changes.
-        public Dictionary<string, string[]> HuntAppend = new Dictionary<string, string[]>();
+        // REPLACE-ON-LOAD (0.14.40, on every dictionary that ships defaults): the engine's
+        // config loader MERGES a file's dictionary into the code default (arrays replace,
+        // dicts merge - the Newtonsoft default), so once defaults are non-empty a user could
+        // never remove or empty an entry by editing the file. This attribute makes the file's
+        // dict replace the default outright: present key = the file rules, absent key = the
+        // shipped default. Every StoreModConfig-written file carries complete dicts anyway.
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
+        public Dictionary<string, string[]> HuntAppend = new Dictionary<string, string[]>
+        {
+            ["tyrannosauridae-*"] = new[] { "sheep-*", "goat-*", "chicken-*", "pig-*", "hare-*", "raccoon-*", "fox-*", "tameddeer-*", "semitameddeer-*", "carcharodontosauridae-*", "abelisauridae-*", "spinosauridae-*", "dromaeosauridae-*", "wolf-*", "hyena-*", "bear-*", "drifter-*", "locust-*", "bowtorn-*", "shiver-*" },
+            ["carcharodontosauridae-*"] = new[] { "sheep-*", "goat-*", "chicken-*", "pig-*", "hare-*", "raccoon-*", "fox-*", "tameddeer-*", "semitameddeer-*", "tyrannosauridae-*", "abelisauridae-*", "spinosauridae-*", "dromaeosauridae-*", "wolf-*", "hyena-*", "bear-*", "drifter-*", "locust-*", "bowtorn-*", "shiver-*" },
+            ["abelisauridae-*"] = new[] { "sheep-*", "goat-*", "chicken-*", "pig-*", "hare-*", "raccoon-*", "fox-*", "tameddeer-*", "semitameddeer-*", "tyrannosauridae-*", "carcharodontosauridae-*", "spinosauridae-*", "dromaeosauridae-*", "wolf-*", "hyena-*", "bear-*", "drifter-*", "locust-*", "bowtorn-*", "shiver-*" },
+            ["spinosauridae-*"] = new[] { "sheep-*", "goat-*", "chicken-*", "pig-*", "hare-*", "raccoon-*", "fox-*", "tameddeer-*", "semitameddeer-*", "tyrannosauridae-*", "carcharodontosauridae-*", "abelisauridae-*", "dromaeosauridae-*", "wolf-*", "hyena-*", "bear-*", "drifter-*", "locust-*", "bowtorn-*", "shiver-*" },
+            ["dromaeosauridae-*"] = new[] { "sheep-*", "goat-*", "chicken-*", "pig-*", "hare-*", "raccoon-*", "fox-*", "tameddeer-*", "semitameddeer-*", "tyrannosauridae-*", "carcharodontosauridae-*", "abelisauridae-*", "spinosauridae-*", "wolf-*", "hyena-*", "bear-*", "drifter-*", "locust-*", "bowtorn-*", "shiver-*" },
+            ["wolf-*"] = new[] { "sheep-*", "goat-*", "dromaeosauridae-*", "drifter-*", "locust-*", "bowtorn-*", "shiver-*" },
+            ["hyena-*"] = new[] { "sheep-*", "goat-*", "chicken-*", "drifter-*", "locust-*", "bowtorn-*", "shiver-*" },
+            ["bear-*"] = new[] { "sheep-*", "goat-*", "pig-*", "chicken-*", "drifter-*", "locust-*", "bowtorn-*", "shiver-*" },
+        };
         // A kill with no player behind it leaves BONES, not a corpse: the dead-decay behavior
         // fires immediately (after the short delay below, so the death is visible), placing
         // the creature's own configured decay block and despawning the body. A player kill is
         // a direct killing blow OR bleeding out of player-inflicted wounds (the bleed system's
         // who-bled-me stamp) - a hunter's bled-out quarry always keeps its corpse and loot.
-        public bool NonPlayerKillsLeaveBones = false;
+        public bool NonPlayerKillsLeaveBones = true;
         public float NonPlayerKillBonesDelaySeconds = 4f;
         // How long after a player's hit a creature's death still counts as that player's kill
         // (0.14.25). Covers arrow kills whose shooter reference never resolved, a predator
@@ -240,6 +278,7 @@ namespace TassHunting
         // ABOVE family lines. A creature matching nothing here still gets its real species
         // name instead of "a wild animal". Defaults are the names players actually say
         // (owner order 2026-08-29: ARK-style community slang - Stego, not Plated Back).
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)] // see HuntAppend
         public Dictionary<string, string> KillerCommonNames = new Dictionary<string, string>
         {
             // species with their own famous handle (above their families - first match wins)
@@ -274,11 +313,16 @@ namespace TassHunting
         // domestication behaviors are taken off their entity types at load, so a companion
         // mod installed later cannot hand them back. Off by default: it changes creatures
         // this mod otherwise has no opinion about.
-        public bool StayWildEnabled = false;
+        public bool StayWildEnabled = true;
         // Which creatures. Wildcards, matched against the full entity code AND the bare
         // path, so "tyrannosauridae:*" and "tyrannosauridae-*" both name that family.
-        // Empty = nothing (the switch needs somebody to point at).
-        public string[] StayWildCodes = new string[0];
+        // Ships the full dino roster (0.14.40): dinos are wild animals you fear.
+        public string[] StayWildCodes = {
+            "tyrannosauridae-*", "carcharodontosauridae-*", "abelisauridae-*",
+            "spinosauridae-*", "dromaeosauridae-*", "mosasauridae-*", "macronaria-*",
+            "stegosauria-*", "ankylosauria-*", "ceratopsidae-*", "pachycephalosauria-*",
+            "hadrosauroidea-*", "ornithomimosauria-*", "therizinosauridae-*",
+        };
         // Which behaviors count as domestication. Defaults cover vanilla riding and leashing
         // plus the two Jaunt/PetAI behaviors the dino packs add when those mods are present.
         // "ownable" is deliberately NOT here: on its own it only verifies an existing
@@ -293,7 +337,7 @@ namespace TassHunting
         // players, against everything, which is the deliberate other half of the fairness.
         // Only collision changes: chopping, decay, felling and drops stay vanilla. Off by
         // default: it changes vanilla traversal for everyone, so a server turns it on.
-        public bool LeavesPassthroughEnabled = false;
+        public bool LeavesPassthroughEnabled = true; // 0.14.40: ON by owner order (was his explicit off; superseded by defaults-ship-working)
         // Which blocks. Wildcards against full code and bare path. The default names
         // vanilla's only two solid leaf types (leavesbranchy, leavesbranchystatic);
         // whatever this catches, only Leaves-material blocks are ever touched.
@@ -387,6 +431,7 @@ namespace TassHunting
         // reality: a knapped/metal head survives a snapped shaft, a reed/bone
         // arrow does not leave a reusable tip).
         public bool DropArrowheadOnBreak = true;
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)] // see HuntAppend
         public Dictionary<string, float> ArrowBreakChanceByMaterial = new Dictionary<string, float>
         {
             // neolithic
@@ -528,15 +573,35 @@ namespace TassHunting
         // reaches BigStepsMinRange are re-pointed, so a catch-all "*" swaps big stompers
         // (the dino packs' scratchy scrape recordings) to a proper thud while wolves keep
         // their own quiet steps. e.g. { "*": "game:sounds/creature/shiver/thump*" }.
-        public Dictionary<string, string> StepSoundOverride = new Dictionary<string, string>();
+        [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)] // see HuntAppend
+        public Dictionary<string, string> StepSoundOverride = new Dictionary<string, string>
+        {
+            // The owner-approved heavy step (0.14.32): a proper bear thud for every dino
+            // family, replacing the packs' scratchy scrape recordings. Family keys ONLY -
+            // never "*", which would catch bears through their raised step ranges.
+            ["tyrannosauridae-*"] = "game:sounds/creature/bear/footsteps/dirt/bear-footstep-dirt4",
+            ["carcharodontosauridae-*"] = "game:sounds/creature/bear/footsteps/dirt/bear-footstep-dirt4",
+            ["abelisauridae-*"] = "game:sounds/creature/bear/footsteps/dirt/bear-footstep-dirt4",
+            ["spinosauridae-*"] = "game:sounds/creature/bear/footsteps/dirt/bear-footstep-dirt4",
+            ["dromaeosauridae-*"] = "game:sounds/creature/bear/footsteps/dirt/bear-footstep-dirt4",
+            ["mosasauridae-*"] = "game:sounds/creature/bear/footsteps/dirt/bear-footstep-dirt4",
+            ["macronaria-*"] = "game:sounds/creature/bear/footsteps/dirt/bear-footstep-dirt4",
+            ["stegosauria-*"] = "game:sounds/creature/bear/footsteps/dirt/bear-footstep-dirt4",
+            ["ankylosauria-*"] = "game:sounds/creature/bear/footsteps/dirt/bear-footstep-dirt4",
+            ["ceratopsidae-*"] = "game:sounds/creature/bear/footsteps/dirt/bear-footstep-dirt4",
+            ["pachycephalosauria-*"] = "game:sounds/creature/bear/footsteps/dirt/bear-footstep-dirt4",
+            ["hadrosauroidea-*"] = "game:sounds/creature/bear/footsteps/dirt/bear-footstep-dirt4",
+            ["ornithomimosauria-*"] = "game:sounds/creature/bear/footsteps/dirt/bear-footstep-dirt4",
+            ["therizinosauridae-*"] = "game:sounds/creature/bear/footsteps/dirt/bear-footstep-dirt4",
+        };
         // Deepen overridden steps by body size: pitch = clamp(height^(-0.5 * this), 0.2, 1).
         // Bigger number = deeper. At 2 a 4-block-tall rex plays at 0.25 pitch, a sauropod
         // sits on the 0.2 floor, wolf-sized is never touched. 0 = native pitch.
-        public float StepSoundDeepen = 1.5f;
+        public float StepSoundDeepen = 2f; // 0.14.40: the owner-approved depth ships as default
         // Volume multiplier for overridden steps. Pitch-down softens a sample's attack and a
         // replacement recording may be quieter at source than the pack's tuning assumed;
         // this puts the punch back. 1 = the pack's own step volumes.
-        public float StepSoundVolumeMult = 1f;
+        public float StepSoundVolumeMult = 2.5f; // 0.14.40: pairs with deepen 2.0 (pitch-down softens the attack)
         [ClientPersonal] public bool BleedTickHurtFlash = true;
         [ClientPersonal] public bool BleedHudEnabled = true;
         // Corner the box sits in. One of: LeftTop, LeftMiddle, LeftBottom, RightTop,

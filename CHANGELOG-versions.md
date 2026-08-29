@@ -4,6 +4,20 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.40 (2026-08-29)
+The mod now ships its tuned world out of the box - a fresh install plays
+like the author's server without touching a config file. On by default:
+dinos can never be tamed, roped or ridden (stay wild, all 14 families);
+herbivore dinos fight back when hurt and the tank families guard their
+ground; the predator dino families are apex hunters and raptors hunt in
+packs; dino predators actively hunt livestock, wild game, rival
+predators and drifters; kills with no player involved decay to bones and
+the killer counts as fed; the two overtuned biters are corrected; heavy
+dinos stomp with a proper deep thud instead of the packs' scratchy
+scrapes; and tree leaves are walk-through so nothing snags on canopy.
+Every one of these keeps its switch and its lists - servers that tuned
+their own values keep them, this only changes what a blank config gets.
+
 ## 0.14.39 (2026-08-29)
 The bounce system is now the owner's design, replacing 0.14.38's curve
 the same day. An animal either has thick hide, has bone armor, or is
