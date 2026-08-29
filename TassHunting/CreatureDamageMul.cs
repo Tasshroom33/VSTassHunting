@@ -19,7 +19,7 @@ namespace TassHunting
     /// asset loader at this point (same engine fact PredatorAI relies on), so each type's
     /// meleeattack tasks hold plain damage numbers - every one of them is scaled, since a
     /// species can carry several melee tasks. First matching map entry wins, like
-    /// GlanceToughness.
+    /// the other wildcard maps in this mod.
     /// </summary>
     public static class CreatureDamageMul
     {

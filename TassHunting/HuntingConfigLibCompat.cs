@@ -245,21 +245,10 @@ namespace TassHunting
                 BeginServer(serverDecides);
                 SliderFloat("Bleed levels off above (health)", () => cfg.BleedHealthCeiling, v => cfg.BleedHealthCeiling = v, 0f, 500f);
                 Help("Bleed damage grows with an animal's health up to about here, then levels off - huge modded creatures bleed at a big-animal rate instead of dying to two spears like everything else. 0 = old behavior, bleed keeps growing with health forever.");
-                SliderFloat("Hide can turn a blade above (health)", () => cfg.GlanceStartHealth, v => cfg.GlanceStartHealth = v, 0f, 300f);
-                Help("Anything with more health than this has a chance that arrows and spears bounce off - no stick, no bleeding, the arrow drops at its feet. Below it a hit always bites. Default sits just under a bear.");
-                SliderFloat("Bounce chance grows over (health)", () => cfg.GlanceRampHealth, v => cfg.GlanceRampHealth = v, 10f, 1000f);
-                Help("How much health past the threshold it takes for the bounce chance to get close to its maximum.");
-                SliderFloat("Bounce chance, maximum", () => cfg.GlanceMaxChance, v => cfg.GlanceMaxChance = v, 0f, 1f);
-                SliderFloat("Bounce chance, hard cap", () => cfg.GlanceChanceCeiling, v => cfg.GlanceChanceCeiling = v, 0f, 1f);
-                Help("Absolute limit over everything below - nothing is ever arrow-proof. Thick hide and armor are config-file lists (lists cannot be edited from this panel): GlanceHideBase adds bounce for thick-skinned creatures at any size, and sharp metal or a power shot cuts through it; GlanceArmorBase is bone plate - no weapon quality helps against it, only this cap limits it. GlanceToughness scales the size part for soft or tough hide.");
+                Checkbox("Shots bounce off thick hide and armor", () => cfg.BounceEnabled, v => cfg.BounceEnabled = v);
+                Help("Two kinds of tough animal, both config-file lists (lists cannot be edited from this panel): thick hide (the dinos, bears, moose, elder boars) and bone armor (ankylosaurs, stegosaurs, horned dinos). Your metal decides the odds - against hide, stone bounces half the time down to steel a third; against armor, stone ALWAYS bounces and even steel bounces 3 in 4. A bounced shot does nothing at all - no damage, no wound - and the arrow drops at the animal's feet to pick back up. Animals fighting animals never bounce, and blunt weapons never bounce.");
                 Checkbox("Power shots punch through hide", () => cfg.PowerShotPunchesThrough, v => cfg.PowerShotPunchesThrough = v);
-                Help("A full heavy draw halves the bounce from hide and size. Armor plate ignores it.");
-                SliderFloat("Sharpness baseline (weapon damage)", () => cfg.GlanceSharpnessBase, v => cfg.GlanceSharpnessBase = v, 0f, 10f);
-                Help("Weapons at or below this damage (a flint spear is 4) bounce at the full chance. Sharper metal bounces less.");
-                SliderFloat("Bounce lost per damage point", () => cfg.GlanceSharpnessStep, v => cfg.GlanceSharpnessStep = v, 0f, 0.5f);
-                Help("How much bounce chance each point of weapon damage above the baseline removes. At 0.12, a steel spear bounces about a third less than flint.");
-                SliderFloat("Sharpness floor", () => cfg.GlanceSharpnessFloor, v => cfg.GlanceSharpnessFloor = v, 0f, 1f);
-                Help("No weapon ever gets the bounce chance below this share of it - plate stays plate. Huge predator bites sit here too.");
+                Help("A full heavy draw counts one metal tier better against thick hide - and steel gets one further step. Armor ignores power shots.");
                 EndServer(serverDecides);
             }
 

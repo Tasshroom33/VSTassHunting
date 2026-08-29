@@ -9,122 +9,148 @@ using Vintagestory.GameContent;
 namespace TassHunting
 {
     /// <summary>
-    /// HIDE GLANCE (owner design 2026-08-28): past a size threshold, a body sometimes turns the
-    /// edge - the arrow or spear bounces off instead of biting. One roll per hit decides BOTH
-    /// halves: no wound (BleedSystem.OnSharpHit returns before the ledger) and no stick
-    /// (Patch_ArrowSticksInsteadOfVanishing skips Attach AND the break roll, so the deflected
-    /// projectile survives intact - ImpactOnEntity zeroes its motion after our prefix returns,
-    /// decompile-verified 1.22.5, and it drops recoverable at the animal's feet). A stuck arrow
-    /// that opened no wound, or a bounced arrow that bled, would each read as a bug; the shared
-    /// roll makes them impossible.
+    /// BOUNCE - THICK HIDE vs ARMOR (owner spec 2026-08-29, replaces the health-curve glance
+    /// of 0.14.18-0.14.38 wholesale: "either an animal has armor or thick hide, no need to
+    /// complicate the calc").
     ///
-    /// THE CHANCE, since 0.14.38 (owner order 2026-08-29 "hard define thick hide vs armor"):
+    /// An animal is classified, or it is not - no size math:
+    ///  - ARMOR (ArmorCreatures): bone plate. Bounce by metal tier: stone ALWAYS bounces,
+    ///    copper 90%, bronze 85%, iron 80%, steel 75%. Power shots do nothing. A stone-age
+    ///    hunter genuinely cannot arrow an ankylosaurus - bring metal or a club (blunt hits
+    ///    never bounce; they never bled either).
+    ///  - THICK HIDE (ThickHideCreatures): most dinos, bears, moose, elder boars. Stone 50%
+    ///    down to steel 30%; a power shot counts one tier better, and past steel there is one
+    ///    more rung (HideBouncePastSteel) so a steel power shot still gains.
+    ///  - Unlisted (every other vanilla animal, all players): never bounces - untouched.
     ///
-    ///   bounce = (hide + sizeCurve x toughness) x sharpness x powershot + armor,  clamped to
-    ///   GlanceChanceCeiling
+    /// A BOUNCE IS A NON-EVENT (owner ruling): the prefix on the health behavior skips the
+    /// hit entirely - no damage, no wound, no stick, no hurt flash - and the projectile drops
+    /// recoverable at the animal's feet. Without that, "100% bounce" armor would still die to
+    /// direct-damage chip and the wall would be a lie.
     ///
-    /// Three hard-separated sources, because they lose to different things:
-    ///  - SIZE (the original tanh curve): zero at and below GlanceStartHealth, rising toward
-    ///    GlanceMaxChance. Health is a size proxy - the engine has no creature armor stat.
-    ///    GlanceToughness stays its hide-QUALITY corrector (soft-bodied sauropod down).
-    ///  - THICK HIDE (GlanceHideBase, wildcard codes to a flat chance): skin thick enough to
-    ///    turn a shot regardless of body size - a small dino still repels some arrows. Sharp
-    ///    metal and power shots cut through it, exactly like they cut the size term.
-    ///  - ARMOR (GlanceArmorBase, wildcard codes to a flat chance): bone plate. Immune to
-    ///    sharpness AND to power shots - no blade quality helps against plate; only the hard
-    ///    ceiling caps it, so nothing is ever arrow-proof - there is always a spear that bites.
+    /// ANIMAL FIGHTS BYPASS (owner ruling): a hit whose cause is a living non-player - a rex
+    /// biting an anky, a wolf on a boar - never rolls. Predators must stay able to eat
+    /// armored prey; crushing force beats plate. Player hits and world hits (traps, spikes)
+    /// roll normally.
     ///
-    /// Both maps empty = exactly the pre-0.14.38 curve, so vanilla animals are untouched by
-    /// construction. Power shots halve the hide+size half only - the patient shot is the
-    /// answer to thick hide, and deliberately NOT the answer to plate.
+    /// Metal tier comes from the weapon or arrowhead MATERIAL token (config map), with a
+    /// damage-band fallback for modded weapons that name no known material.
     /// </summary>
     public static class HideGlance
     {
-        /// <summary>Pure curve, exercised directly by the harness.</summary>
-        public static float Chance(float maxHealth, float startHealth, float rampHealth,
-            float maxChance, float toughnessMult, float hardCeiling, bool powerShot)
+        public enum BodyClass { None, ThickHide, Armor }
+
+        /// <summary>The tier ladder, in order. Indexes into the config chance maps by name;
+        /// one virtual rung past steel exists for hide power shots only.</summary>
+        public static readonly string[] TierNames = { "stone", "copper", "bronze", "iron", "steel" };
+
+        // Damage-band fallback for weapons whose material token is unmapped (modded gear).
+        // Aligned to the vanilla ladders: flint spear 4.0, copper 5.0, tin bronze 6.0,
+        // iron 6.8, steel 7.0.
+        private static readonly float[] TierDamageCeilings = { 4.6f, 5.4f, 6.5f, 6.95f };
+
+        /// <summary>Armor wins when an animal is on both lists - plate over skin.</summary>
+        public static BodyClass ClassOf(Entity victim, HuntingConfig cfg)
         {
-            if (maxChance <= 0f || maxHealth <= startHealth) return 0f;
-            float ramp = Math.Max(1f, rampHealth);
-            float g = maxChance * (float)Math.Tanh((maxHealth - startHealth) / ramp);
-            g *= Math.Max(0f, toughnessMult);
-            if (powerShot) g *= 0.5f;
-            return GameMath.Clamp(g, 0f, GameMath.Clamp(hardCeiling, 0f, 1f));
+            if (cfg == null || victim == null || victim is EntityPlayer || victim.Code == null) return BodyClass.None;
+            if (MatchesAny(victim, cfg.ArmorCreatures)) return BodyClass.Armor;
+            if (MatchesAny(victim, cfg.ThickHideCreatures)) return BodyClass.ThickHide;
+            return BodyClass.None;
+        }
+
+        private static bool MatchesAny(Entity victim, string[] patterns)
+        {
+            if (patterns == null || patterns.Length == 0) return false;
+            string full = victim.Code.ToShortString(), path = victim.Code.Path;
+            foreach (string p in patterns)
+            {
+                if (string.IsNullOrEmpty(p)) continue;
+                if (WildcardUtil.Match(p, full) || WildcardUtil.Match(p, path)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>The material token of a weapon or arrow: the last dash segment of its
+        /// item code ("spear-generic-steel" -> "steel", "arrow-flint" -> "flint").</summary>
+        public static string MaterialTokenOf(CollectibleObject col)
+        {
+            string path = col?.Code?.Path;
+            if (string.IsNullOrEmpty(path)) return null;
+            int cut = path.LastIndexOf('-');
+            return (cut >= 0 && cut < path.Length - 1 ? path.Substring(cut + 1) : path).ToLowerInvariant();
+        }
+
+        /// <summary>Tier index 0..4. Unknown material falls back to the damage bands, so a
+        /// modded super-weapon counts as the metal its numbers say it is.</summary>
+        public static int TierOfMaterial(string materialToken, float hitDamage, HuntingConfig cfg)
+        {
+            if (materialToken != null && cfg?.BounceMetalTierByMaterial != null
+                && cfg.BounceMetalTierByMaterial.TryGetValue(materialToken, out string name))
+            {
+                int idx = Array.IndexOf(TierNames, name);
+                if (idx >= 0) return idx;
+            }
+            for (int i = 0; i < TierDamageCeilings.Length; i++)
+                if (hitDamage <= TierDamageCeilings[i]) return i;
+            return TierNames.Length - 1;
         }
 
         /// <summary>
-        /// SHARPNESS (owner approval 2026-08-28): sharper metal bites deeper. Keyed on the hit's
-        /// DAMAGE, not its damage tier - vanilla spears are tier 0 from flint through blackbronze
-        /// and arrows carry no tier at all, so tier cannot tell the materials apart; the damage
-        /// number IS the material ladder (flint 4.0 ... steel 7.0, asset-verified 1.22.5). At or
-        /// below the base (flint) the factor is exactly 1, so the tuned base curve is untouched;
-        /// each point of damage above it shaves GlanceSharpnessStep off the glance, floored at
-        /// GlanceSharpnessFloor - plate stays plate, no blade turns it to paper. Big creature
-        /// bites (a rex at 24) sit on the floor: crushing force beats armor.
+        /// The whole table, pure. Armor reads its tier straight and ignores power shots; hide
+        /// counts a power shot one tier better, with the past-steel rung as the top step so
+        /// steel still gains something.
         /// </summary>
-        public static float Sharpness(float hitDamage, float baseDamage, float step, float floor)
+        public static float ChanceOf(BodyClass cls, int tier, bool powerShot, HuntingConfig cfg)
         {
-            float f = 1f - step * (hitDamage - baseDamage);
-            return GameMath.Clamp(f, GameMath.Clamp(floor, 0f, 1f), 1f);
+            if (cfg == null || cls == BodyClass.None) return 0f;
+            tier = GameMath.Clamp(tier, 0, TierNames.Length - 1);
+            if (cls == BodyClass.Armor)
+                return Lookup(cfg.ArmorBounceByMetal, TierNames[tier]);
+            if (powerShot)
+            {
+                tier++;
+                if (tier >= TierNames.Length) return GameMath.Clamp(cfg.HideBouncePastSteel, 0f, 1f);
+            }
+            return Lookup(cfg.HideBounceByMetal, TierNames[tier]);
+        }
+
+        private static float Lookup(Dictionary<string, float> map, string tierName)
+        {
+            if (map == null || !map.TryGetValue(tierName, out float v)) return 0f;
+            return GameMath.Clamp(v, 0f, 1f);
         }
 
         /// <summary>
-        /// The three sources composed - pure, exercised directly by the harness. sizeChance
-        /// arrives already toughness-scaled but UNsharpened and UNclamped; hide and size lose
-        /// to sharpness and power shots together, armor loses to neither.
+        /// The bounce chance for one hit. src may be null when called from the stick gate
+        /// (the projectile carries its shooter); proj null for melee. Bypass rules live here:
+        /// unclassified victims, players, blunt hits, and any hit whose cause is a living
+        /// non-player creature never bounce.
         /// </summary>
-        public static float Combined(float hideBase, float armorBase, float sizeChance,
-            float sharpness, bool powerShot, float hardCeiling)
+        public static float ChanceFor(Entity victim, DamageSource src, EntityProjectileBase proj,
+            HuntingConfig cfg, float hitDamage)
         {
-            float pierce = sharpness * (powerShot ? 0.5f : 1f);
-            float c = (Math.Max(0f, hideBase) + Math.Max(0f, sizeChance)) * pierce + Math.Max(0f, armorBase);
-            return GameMath.Clamp(c, 0f, GameMath.Clamp(hardCeiling, 0f, 1f));
-        }
+            if (cfg == null || !cfg.BounceEnabled) return 0f;
+            BodyClass cls = ClassOf(victim, cfg);
+            if (cls == BodyClass.None) return 0f;
 
-        /// <summary>
-        /// The glance chance for this victim against this hit (proj null for melee; hitDamage is
-        /// the hit's damage, pre-armor where available). Players never glance - PvP arrows
-        /// always bite regardless of modded player health pools.
-        /// </summary>
-        public static float ChanceFor(Entity victim, EntityProjectileBase proj, HuntingConfig cfg, float hitDamage)
-        {
-            if (cfg == null || victim == null || victim is EntityPlayer) return 0f;
-            float hp = BleedSystem.MaxHealthOf(victim);
+            // ANIMAL FIGHTS BYPASS: the cause is the shooter for a projectile, the attacker
+            // for melee. A living non-player cause = creature business, no bounce.
+            Entity cause = proj != null ? proj.FiredBy : src?.GetCauseEntity();
+            if (cause != null && !(cause is EntityPlayer)) return 0f;
+
+            string token = proj != null
+                ? MaterialTokenOf(proj.ProjectileStack?.Collectible)
+                : MaterialTokenOf((src?.SourceEntity as EntityAgent)?.RightHandItemSlot?.Itemstack?.Collectible);
+            int tier = TierOfMaterial(token, hitDamage, cfg);
             bool punch = cfg.PowerShotPunchesThrough
                 && proj != null && proj.WatchedAttributes.GetBool("tasshunt:powershot");
-            float sharp = Sharpness(hitDamage, cfg.GlanceSharpnessBase, cfg.GlanceSharpnessStep, cfg.GlanceSharpnessFloor);
-            // Size half: toughness-scaled, ceiling deferred to Combined (1f = no clamp here),
-            // sharpness and power shot deferred too so armor stays outside their reach.
-            float size = Chance(hp, cfg.GlanceStartHealth, cfg.GlanceRampHealth, cfg.GlanceMaxChance,
-                ToughnessFor(victim, cfg), 1f, false);
-            return Combined(MapValueFor(victim, cfg.GlanceHideBase, 0f),
-                MapValueFor(victim, cfg.GlanceArmorBase, 0f),
-                size, sharp, punch, cfg.GlanceChanceCeiling);
+            return ChanceOf(cls, tier, punch, cfg);
         }
 
-        /// <summary>First matching GlanceToughness entry wins; no entry = 1 (the plain curve).</summary>
-        public static float ToughnessFor(Entity victim, HuntingConfig cfg)
-            => MapValueFor(victim, cfg?.GlanceToughness, 1f);
-
-        /// <summary>First matching wildcard entry wins (full code and bare path, the map
-        /// convention everywhere in this mod); no entry = the fallback.</summary>
-        public static float MapValueFor(Entity victim, Dictionary<string, float> map, float fallback)
-        {
-            if (map == null || map.Count == 0 || victim?.Code == null) return fallback;
-            string full = victim.Code.ToShortString();
-            string path = victim.Code.Path;
-            foreach (var kv in map)
-            {
-                if (WildcardUtil.Match(kv.Key, full) || WildcardUtil.Match(kv.Key, path)) return kv.Value;
-            }
-            return fallback;
-        }
-
-        // ---- one roll per projectile hit, shared between the bleed gate and the stick gate ----
-        // The engine calls DealDamage (-> OnSharpHit) before DamageProjectile (-> stick prefix),
-        // but the registry is deliberately order-agnostic: whichever gate asks FIRST rolls, the
-        // other reads the stored verdict. Covers hits the bleed gate never sees (damage under
-        // BleedMinDamage, another mod's prefix swallowing the damage call).
+        // ---- one roll per projectile hit, shared between the damage gate and the stick gate ----
+        // The engine calls DealDamage (-> our health-behavior prefix) before DamageProjectile
+        // (-> stick prefix), but the registry is deliberately order-agnostic: whichever gate
+        // asks FIRST rolls, the other reads the stored verdict.
 
         private static readonly Dictionary<long, (bool glanced, long atMs)> Rolls
             = new Dictionary<long, (bool, long)>();

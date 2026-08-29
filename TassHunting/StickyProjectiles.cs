@@ -493,14 +493,15 @@ namespace TassHunting
             bool isArrow = path.Contains("arrow");
             if (!isArrow && !path.Contains("spear")) return true;
 
-            // HIDE GLANCE (owner design 2026-08-28): the bleed gate's roll for this same hit
-            // (one roll per projectile, whoever asks first - see HideGlance). Deflected =
+            // BOUNCE (thick hide / armor, 0.14.39): the damage gate's roll for this same hit
+            // (one roll per projectile, whoever asks first - see HideGlance). Bounced =
             // no durability hit, no break roll, no arrowhead, no stick: the projectile
             // survives intact and ImpactOnEntity (our caller) zeroes its motion right after
             // this returns, so it drops recoverable at the animal's feet.
-            // (Fallback asker: for a projectile the bleed gate normally rolls first with the
-            // true final damage; this chance only decides when that gate never saw the hit.)
-            float glance = HideGlance.ChanceFor(target, __instance, HuntingModSystem.Cfg, __instance.Damage);
+            // (Fallback asker: the damage prefix normally rolls first; this chance only
+            // decides when that gate never saw the hit. src null - the projectile carries
+            // its own shooter for the animal-fight bypass.)
+            float glance = HideGlance.ChanceFor(target, null, __instance, HuntingModSystem.Cfg, __instance.Damage);
             if (glance > 0f && HideGlance.RollOnce(__instance.EntityId, glance, __instance.World))
             {
                 if (HuntingModSystem.Cfg.BloodDiagnostics)

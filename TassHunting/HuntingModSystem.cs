@@ -114,35 +114,77 @@ namespace TassHunting
         public float PackAggroSeekRange = 25f;   // vanilla 15
         public float PackMaxFollowTimeSec = 240f;
 
-        // ---- BIG GAME (owner design 2026-08-28, see HideGlance.cs) ----
+        // ---- BIG GAME: the bleed size ceiling (2026-08-28) ----
         // Bleed damage grows with an animal's max health up to about this value, then levels
         // off (effHP = C * tanh(HP/C)). Below ~half the ceiling the curve IS the old straight
         // line, so vanilla animals are untouched; a 400 hp modded giant bleeds at a big-animal
         // rate instead of a monster rate. 0 = off (bleed keeps growing forever, old behavior).
         public float BleedHealthCeiling = 100f;
-        // Past this much max health, hide has a chance to turn a blade: no stick, no wound.
-        // Default sits just under a bear (66) - every smaller vanilla animal always takes the
-        // hit, which keeps the 0.14.16 "player weapons always wound" promise where a random
-        // miss would read as a bug (owner revised the rule 2026-08-28: refusal is allowed
-        // exactly when the target's size explains it on screen).
-        public float GlanceStartHealth = 45f;
-        // How much health past the threshold it takes for the chance to approach its maximum.
-        public float GlanceRampHealth = 200f;
-        public float GlanceMaxChance = 0.5f;
-        // Absolute clamp applied AFTER the per-creature multiplier below: nothing is ever
-        // arrow-proof, whatever the config says - there is always a spear that bites.
-        public float GlanceChanceCeiling = 0.8f;
-        // A full heavy draw halves the glance chance - the patient shot beats thick hide.
+
+        // ---- BOUNCE: THICK HIDE vs ARMOR (owner spec 2026-08-29, see HideGlance.cs) ----
+        // Replaces the 0.14.18-0.14.38 health-curve glance wholesale (owner: "either an
+        // animal has armor or thick hide, no need to complicate the calc"). An animal is on
+        // one of the two lists or it never bounces; the chance is a straight lookup by the
+        // weapon's metal tier. A bounce is a NON-EVENT: no damage, no wound, no stick - the
+        // arrow drops recoverable. Animals fighting animals never bounce (predators must
+        // stay able to eat armored prey). Blunt weapons never bounce.
+        public bool BounceEnabled = true;
+        // Bone plate. Armor wins when a creature matches both lists.
+        public string[] ArmorCreatures = {
+            "ankylosauria-*", "stegosauria-*", "ceratopsidae-*",
+        };
+        // Thick skin: the rest of the dino roster, plus the vanilla thick-hided three.
+        public string[] ThickHideCreatures = {
+            "tyrannosauridae-*", "carcharodontosauridae-*", "abelisauridae-*",
+            "spinosauridae-*", "dromaeosauridae-*", "mosasauridae-*", "macronaria-*",
+            "hadrosauroidea-*", "ornithomimosauria-*", "therizinosauridae-*",
+            "pachycephalosauria-*",
+            "bear-*", "deer-moose-*", "pig-*-elder-*",
+        };
+        // Bounce chance by metal tier (owner's numbers, 2026-08-29). Stone ALWAYS bounces
+        // off armor - a stone-age hunter cannot arrow a plated dino, and that is the point.
+        public Dictionary<string, float> ArmorBounceByMetal = new Dictionary<string, float>
+        {
+            ["stone"] = 1.00f,
+            ["copper"] = 0.90f,
+            ["bronze"] = 0.85f,
+            ["iron"] = 0.80f,
+            ["steel"] = 0.75f,
+        };
+        public Dictionary<string, float> HideBounceByMetal = new Dictionary<string, float>
+        {
+            ["stone"] = 0.50f,
+            ["copper"] = 0.45f,
+            ["bronze"] = 0.40f,
+            ["iron"] = 0.35f,
+            ["steel"] = 0.30f,
+        };
+        // The rung past steel, reachable only by a steel power shot against hide.
+        public float HideBouncePastSteel = 0.25f;
+        // A full heavy draw counts one metal tier better AGAINST HIDE (and steel gets the
+        // past-steel rung). Armor ignores power shots entirely.
         public bool PowerShotPunchesThrough = true;
-        // SHARPNESS (2026-08-28): sharper metal glances less. Keyed on the hit's DAMAGE (the
-        // real material ladder: flint spear 4.0 ... steel 7.0) - damage TIER is dead data here,
-        // vanilla spears are tier 0 flint through blackbronze and arrows have no tier at all.
-        // At or below Base (flint) the glance curve applies in full; each damage point above it
-        // removes Step from the glance, never below Floor - plate stays plate. A rex-size bite
-        // (24 damage) sits on the floor: crushing force beats armor.
-        public float GlanceSharpnessBase = 4f;
-        public float GlanceSharpnessStep = 0.12f;
-        public float GlanceSharpnessFloor = 0.35f;
+        // Which material token (the last piece of the item code: arrow-flint, spear-generic-
+        // steel) sits on which tier. Unlisted materials - modded weapons - are slotted by
+        // their damage number instead, so nothing falls through the cracks.
+        public Dictionary<string, string> BounceMetalTierByMaterial = new Dictionary<string, string>
+        {
+            // stone age (and no-metal shafts)
+            ["flint"] = "stone", ["obsidian"] = "stone", ["chert"] = "stone",
+            ["granite"] = "stone", ["andesite"] = "stone", ["basalt"] = "stone",
+            ["peridotite"] = "stone", ["bone"] = "stone", ["crude"] = "stone",
+            ["erel"] = "stone", ["wood"] = "stone",
+            // copper age castables
+            ["copper"] = "copper", ["gold"] = "copper", ["silver"] = "copper",
+            ["scrap"] = "copper",
+            // bronzes
+            ["tinbronze"] = "bronze", ["bismuthbronze"] = "bronze", ["blackbronze"] = "bronze",
+            // iron age (the ornate ceremonial spears hit like it)
+            ["iron"] = "iron", ["meteoriciron"] = "iron",
+            ["ornategold"] = "iron", ["ornatesilver"] = "iron",
+            // steel
+            ["steel"] = "steel",
+        };
         // CREATURE MELEE DAMAGE (2026-08-28, see CreatureDamageMul.cs): wildcard entity codes
         // to multipliers on their melee bite, applied to the meleeattack tasks at load. Built
         // for modded law-breakers (the dino survey found two species biting at double their
@@ -186,42 +228,6 @@ namespace TassHunting
         // pausing its hunt exactly as eating the carcass would have) - the carcass it would
         // have eaten is the bones. Off = the old chain-killing behavior.
         public bool BonesKillSatiates = true;
-        // Per-creature correction, because health measures SIZE, not armor (the engine has no
-        // creature armor stat): wildcard entity codes to multipliers on the glance chance.
-        // Since 0.14.38 this is the hide-QUALITY corrector only (soft-bodied sauropod down);
-        // plated families moved to GlanceArmorBase below. First matching entry wins.
-        public Dictionary<string, float> GlanceToughness = new Dictionary<string, float>();
-
-        // ---- THICK HIDE vs ARMOR (owner order 2026-08-29, see HideGlance.cs) ----
-        // bounce = (hide + size x toughness) x sharpness x powershot + armor, capped by
-        // GlanceChanceCeiling. Both maps wildcards, first match wins, values are flat chances.
-        // THICK HIDE: skin thick enough to turn a shot at ANY body size - even a small dino
-        // repels some arrows. Sharp metal and power shots cut through it.
-        public Dictionary<string, float> GlanceHideBase = new Dictionary<string, float>
-        {
-            // big scaly predators and sea giants
-            ["tyrannosauridae-*"] = 0.15f,
-            ["carcharodontosauridae-*"] = 0.15f,
-            ["abelisauridae-*"] = 0.15f,
-            ["spinosauridae-*"] = 0.15f,
-            ["mosasauridae-*"] = 0.15f,
-            ["macronaria-*"] = 0.15f,
-            // thick-skinned herbivores
-            ["hadrosauroidea-*"] = 0.10f,
-            ["pachycephalosauria-*"] = 0.10f,
-            // feathered - thin skin under the plumage
-            ["therizinosauridae-*"] = 0.05f,
-            ["ornithomimosauria-*"] = 0.05f,
-            ["dromaeosauridae-*"] = 0.05f,
-        };
-        // ARMOR: bone plate. Ignores sharpness AND power shots - no blade quality helps
-        // against plate; only the ceiling caps it, so nothing is ever arrow-proof.
-        public Dictionary<string, float> GlanceArmorBase = new Dictionary<string, float>
-        {
-            ["ankylosauria-*"] = 0.35f,
-            ["stegosauria-*"] = 0.20f,
-            ["ceratopsidae-*"] = 0.15f,
-        };
 
         // ---- KILLER NAMES (owner order 2026-08-29, see KillerNames.cs) ----
         // Death messages and the damage log name the actual animal instead of "a wild
@@ -655,7 +661,7 @@ namespace TassHunting
         /// THE CURRENT CONFIG GENERATION. Bumped when a rebalance makes the old values
         /// incoherent rather than merely different, so Migrate can reset exactly those fields.
         /// </summary>
-        public const int CurrentVersion = 3;
+        public const int CurrentVersion = 4;
 
         /// <summary>
         /// Bring an older config up to the current generation. Returns what it did, or null.
@@ -668,11 +674,10 @@ namespace TassHunting
         /// are reset together and the change is logged loudly. Fields outside that set (blood
         /// look, harvest, archery, sticky arrows) are never touched.
         ///
-        /// VERSION 3 (0.14.38, thick hide vs armor): plated families leave GlanceToughness -
-        /// their bounce now comes from GlanceArmorBase, and keeping the old multiplier too
-        /// would double-count the plate. Only entries still at the SHIPPED values (anky 1.5,
-        /// stego 1.3) are removed; a hand-tuned number is the owner's and stays. The sauropod
-        /// 0.6 stays by design - soft hide is exactly what the multiplier still means.
+        /// VERSION 4 (0.14.39): the health-curve glance (0.14.18-0.14.38, including the
+        /// short-lived v3 hide/armor maps) is replaced by the classified bounce tables. The
+        /// old Glance* keys no longer exist as fields, so the loader drops them from the file
+        /// on write-back; nothing needs transforming - the models do not translate.
         /// </summary>
         public string Migrate()
         {
@@ -691,17 +696,9 @@ namespace TassHunting
                      + "defaults (they interlock with the new size ladder - old values under the new "
                      + "multipliers would hit far harder than either design intended)");
             }
-            if (Version < 3 && GlanceToughness != null)
-            {
-                bool moved = false;
-                if (GlanceToughness.TryGetValue("ankylosauria-*", out float av) && Math.Abs(av - 1.5f) < 0.001f)
-                    moved |= GlanceToughness.Remove("ankylosauria-*");
-                if (GlanceToughness.TryGetValue("stegosauria-*", out float sv) && Math.Abs(sv - 1.3f) < 0.001f)
-                    moved |= GlanceToughness.Remove("stegosauria-*");
-                if (moved)
-                    did.Add("plated families moved out of GlanceToughness - their bounce now comes "
-                         + "from the new GlanceArmorBase (armor), not a size multiplier");
-            }
+            if (Version < 4)
+                did.Add("glance curve replaced by the thick-hide/armor bounce tables - the old "
+                     + "Glance* dials are retired and leave the file on this save");
             Version = CurrentVersion;
             return did.Count == 0 ? "config version raised to " + CurrentVersion : string.Join("; ", did);
         }
@@ -722,22 +719,18 @@ namespace TassHunting
             if (StayWildCodes == null) StayWildCodes = new string[0];
             if (StayWildBehaviors == null) StayWildBehaviors = new string[0];
 
-            // Big game: keep every glance number inside its meaningful range on all load paths.
+            // Big game / bounce: keep every number inside its meaningful range on all load paths.
             if (BleedHealthCeiling < 0f) BleedHealthCeiling = 0f;
-            if (GlanceStartHealth < 0f) GlanceStartHealth = 0f;
-            GlanceRampHealth = Math.Max(1f, GlanceRampHealth);
-            GlanceMaxChance = Vintagestory.API.MathTools.GameMath.Clamp(GlanceMaxChance, 0f, 1f);
-            GlanceChanceCeiling = Vintagestory.API.MathTools.GameMath.Clamp(GlanceChanceCeiling, 0f, 1f);
-            if (GlanceToughness == null) GlanceToughness = new Dictionary<string, float>();
-            if (GlanceHideBase == null) GlanceHideBase = new Dictionary<string, float>();
-            if (GlanceArmorBase == null) GlanceArmorBase = new Dictionary<string, float>();
-            foreach (var k in new List<string>(GlanceHideBase.Keys))
-                GlanceHideBase[k] = Vintagestory.API.MathTools.GameMath.Clamp(GlanceHideBase[k], 0f, 1f);
-            foreach (var k in new List<string>(GlanceArmorBase.Keys))
-                GlanceArmorBase[k] = Vintagestory.API.MathTools.GameMath.Clamp(GlanceArmorBase[k], 0f, 1f);
-            if (GlanceSharpnessBase < 0f) GlanceSharpnessBase = 0f;
-            if (GlanceSharpnessStep < 0f) GlanceSharpnessStep = 0f;
-            GlanceSharpnessFloor = Vintagestory.API.MathTools.GameMath.Clamp(GlanceSharpnessFloor, 0f, 1f);
+            if (ArmorCreatures == null) ArmorCreatures = new string[0];
+            if (ThickHideCreatures == null) ThickHideCreatures = new string[0];
+            if (ArmorBounceByMetal == null) ArmorBounceByMetal = new Dictionary<string, float>();
+            if (HideBounceByMetal == null) HideBounceByMetal = new Dictionary<string, float>();
+            if (BounceMetalTierByMaterial == null) BounceMetalTierByMaterial = new Dictionary<string, string>();
+            foreach (var k in new List<string>(ArmorBounceByMetal.Keys))
+                ArmorBounceByMetal[k] = Vintagestory.API.MathTools.GameMath.Clamp(ArmorBounceByMetal[k], 0f, 1f);
+            foreach (var k in new List<string>(HideBounceByMetal.Keys))
+                HideBounceByMetal[k] = Vintagestory.API.MathTools.GameMath.Clamp(HideBounceByMetal[k], 0f, 1f);
+            HideBouncePastSteel = Vintagestory.API.MathTools.GameMath.Clamp(HideBouncePastSteel, 0f, 1f);
             if (CreatureMeleeDamageMul == null) CreatureMeleeDamageMul = new Dictionary<string, float>();
             if (StepSoundOverride == null) StepSoundOverride = new Dictionary<string, string>();
             StepSoundDeepen = Vintagestory.API.MathTools.GameMath.Clamp(StepSoundDeepen, 0f, 4f);

@@ -15,7 +15,7 @@ $vs      = "C:\Users\8byteTass\AppData\Roaming\Vintagestory1.22.5"
 $srvExe  = "$vs\VintagestoryServer.exe"
 $realMods = "C:\Users\8byteTass\AppData\Roaming\VintagestoryData\Mods"
 $scratch = "C:\Users\8BYTET~1\AppData\Local\Temp\claude\j--Root-Games-VintageStoryCustomMods\672b375a-aca2-44a8-857a-f9572589a3de\scratchpad"
-$port    = 42492   # distinct from live 42420 and the other harness ports (42487-42491)
+$port    = 42494   # live 42420, butcher 42487, factions 42488/42489, staywild 42491, biggame 42492, tweaks 42493
 
 # Only the packs the checks need: the dino core, the rex family, and the raptors.
 $dinoZips = @("DinoRuntime_2.0.0.zip", "TyrantKing_2.0.0.zip", "BirdsOfPrey_2.0.0.zip")

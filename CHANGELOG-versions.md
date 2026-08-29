@@ -4,6 +4,25 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.39 (2026-08-29)
+The bounce system is now the owner's design, replacing 0.14.38's curve
+the same day. An animal either has thick hide, has bone armor, or is
+normal - no size math. Your metal decides everything: against thick hide
+(the dinos, bears, moose, elder boars) stone bounces half the time,
+copper 45%, bronze 40%, iron 35%, steel 30%; against bone armor
+(ankylosaurs, stegosaurs, horned dinos) stone ALWAYS bounces, copper 9
+in 10, bronzes 85%, iron 8 in 10, steel still 3 in 4 - you cannot arrow
+a plated dino with stone-age gear, period. A bounced shot now does
+NOTHING: no damage, no wound, no stick - the arrow just drops at the
+animal's feet to pick back up. A full power-shot draw counts one metal
+tier better against hide (steel gets one extra step); armor ignores
+power shots. Animals fighting animals never bounce, so predators still
+eat armored prey, and blunt weapons never bounce - a club always lands.
+Every other animal, and all of vanilla except the three named, is
+completely untouched. Bleed itself is unchanged. Both rosters and both
+chance tables are config lists; old config files upgrade themselves and
+drop the retired dials.
+
 ## 0.14.38 (2026-08-29)
 Thick hide and bone armor are now their own things, not just size. Every
 dino family has hide thick enough to turn some shots even when the animal

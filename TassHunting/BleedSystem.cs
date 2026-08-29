@@ -320,6 +320,23 @@ namespace TassHunting
         }
 
         /// <summary>
+        /// Is this a hit the bounce may judge: sharp by damage type, or sharp by the
+        /// attacker's held tool (vanilla melee is always typed Blunt - the engine fact
+        /// OnSharpHit documents). Blunt weapons, our own bleed ticks and heals never bounce.
+        /// </summary>
+        public static bool IsSharpHit(DamageSource src)
+        {
+            if (src == null || src.Type == EnumDamageType.Heal || src.Source == EnumDamageSource.Internal) return false;
+            bool typedSharp = src.Type == EnumDamageType.PiercingAttack || src.Type == EnumDamageType.SlashingAttack;
+            if (src.SourceEntity is EntityProjectileBase) return typedSharp;
+            EnumTool? tool = (src.SourceEntity as EntityAgent)?.RightHandItemSlot?.Itemstack?.Collectible?.Tool;
+            return typedSharp
+                || tool == EnumTool.Spear || tool == EnumTool.Pike || tool == EnumTool.Javelin
+                || tool == EnumTool.Knife || tool == EnumTool.Sword || tool == EnumTool.Axe
+                || tool == EnumTool.Sickle || tool == EnumTool.Scythe;
+        }
+
+        /// <summary>
         /// Classify a landed hit and open a wound if it was sharp. Called from the
         /// OnEntityReceiveDamage postfix with the FINAL damage (post armor/shields) and with
         /// incomingDamage as the hit ARRIVED (pre armor/shields), the pair that tells us how
@@ -375,28 +392,9 @@ namespace TassHunting
                 }
             }
 
-            // ---- HIDE GLANCE (owner design 2026-08-28): a big enough body sometimes turns the
-            // edge - no wound, and for a projectile the SAME roll makes the stick gate refuse it
-            // (see HideGlance's header). Melee and creature bites roll here directly; hide
-            // protects from everyone. Zero for anything smaller than a bear. Sharpness rides the
-            // hit's pre-armor damage (the weapon's own number, before mitigation ate any of it);
-            // if our capture prefix never ran, the final damage stands in.
-            float glanceChance = HideGlance.ChanceFor(victim, src.SourceEntity as EntityProjectileBase, cfg,
-                incomingDamage > 0f ? incomingDamage : damage);
-            if (glanceChance > 0f)
-            {
-                bool glanced = src.SourceEntity is EntityProjectileBase gp
-                    ? HideGlance.RollOnce(gp.EntityId, glanceChance, victim.World)
-                    : victim.World.Rand.NextDouble() < glanceChance;
-                if (glanced)
-                {
-                    if (cfg.BloodDiagnostics)
-                        victim.World.Logger.Notification("[TassHunting] hide glance on {0} (chance {1:0.00}): no wound{2}",
-                            victim.Code?.ToShortString(), glanceChance,
-                            src.SourceEntity is EntityProjectileBase ? ", projectile will not stick" : "");
-                    return; // the hide turned the edge
-                }
-            }
+            // (The bounce - thick hide / armor, 0.14.39 - is decided BEFORE this runs, in
+            // Patch_BleedOnSharpHit.Prefix: a bounced hit skips the whole health path, so a
+            // hit that reaches here landed for real and always may wound.)
 
             // ---- WHO SWUNG: one multiplier per attacker class, 0 = that class never opens a
             // wound. GetCauseEntity is the SHOOTER for a projectile (CauseEntity = FiredBy,
@@ -865,23 +863,64 @@ namespace TassHunting
 
     /// <summary>
     /// The one hit funnel: every damage event on an entity with health passes through here, with
-    /// the final (post-handler) damage value. Sharp ones open wounds.
+    /// the final (post-handler) damage value. Sharp ones open wounds - unless they bounce.
     /// </summary>
     [HarmonyPatch(typeof(EntityBehaviorHealth), nameof(EntityBehaviorHealth.OnEntityReceiveDamage))]
     public static class Patch_BleedOnSharpHit
     {
-        /// <summary>
-        /// The damage as it ARRIVED, before ApplyOnDamageDelegates (armor, shields, other mods)
-        /// subtracted anything. Read-only by design: this prefix never skips the original and
-        /// never edits the value, so it cannot change what any other mod sees.
-        /// </summary>
-        public static void Prefix(float damage, out float __state) => __state = damage;
-
-        public static void Postfix(EntityBehaviorHealth __instance, DamageSource damageSource, float damage, float __state)
+        public struct HitState
         {
+            public float Incoming;
+            public bool Bounced;
+        }
+
+        /// <summary>
+        /// Captures the pre-armor damage, and since 0.14.39 decides the BOUNCE (owner ruling:
+        /// bounce means no damage): a bounced hit skips the whole health path - no damage, no
+        /// onDamaged delegates, no hurt flash, and the shared roll makes the stick gate drop
+        /// the projectile recoverable. That skip is what makes "stone always bounces off
+        /// armor" a real wall instead of chip damage. Victims are never players (ClassOf
+        /// refuses them) and never creature-vs-creature (the bypass), so the player-side
+        /// delegate chains - PvP shields, death witnesses, downed - never lose a hit to this.
+        /// </summary>
+        public static bool Prefix(EntityBehaviorHealth __instance, DamageSource damageSource, float damage, out HitState __state)
+        {
+            __state = new HitState { Incoming = damage };
+            try
+            {
+                Entity victim = __instance?.entity;
+                var cfg = HuntingModSystem.Cfg;
+                if (cfg == null || !cfg.BounceEnabled || victim == null) return true;
+                if (victim.World?.Side != EnumAppSide.Server || !victim.Alive || damage <= 0f) return true;
+                if (!BleedSystem.IsSharpHit(damageSource)) return true; // blunt never bounces
+
+                var proj = damageSource.SourceEntity as EntityProjectileBase;
+                float chance = HideGlance.ChanceFor(victim, damageSource, proj, cfg, damage);
+                if (chance <= 0f) return true;
+                bool bounced = proj != null
+                    ? HideGlance.RollOnce(proj.EntityId, chance, victim.World)
+                    : victim.World.Rand.NextDouble() < chance;
+                if (!bounced) return true;
+
+                __state.Bounced = true;
+                if (cfg.BloodDiagnostics)
+                    victim.World.Logger.Notification("[TassHunting] bounce off {0} (chance {1:0.00}): no damage, no wound{2}",
+                        victim.Code?.ToShortString(), chance,
+                        proj != null ? ", projectile drops recoverable" : "");
+                return false; // the hide or the plate turned it - the hit never happened
+            }
+            catch (Exception)
+            {
+                return true; // the bounce must never break damage handling
+            }
+        }
+
+        public static void Postfix(EntityBehaviorHealth __instance, DamageSource damageSource, float damage, HitState __state)
+        {
+            if (__state.Bounced) return; // a non-event: no credit stamp, no wound, no heal hook
             try { BleedSystem.StampPlayerHit(__instance.entity, damageSource, damage); }
             catch (Exception) { /* credit is best-effort, never breaks damage */ }
-            try { BleedSystem.OnSharpHit(__instance.entity, damageSource, damage, __state); }
+            try { BleedSystem.OnSharpHit(__instance.entity, damageSource, damage, __state.Incoming); }
             catch (Exception) { /* bleed must never break damage handling */ }
             // The same funnel carries healing: a finished bandage/poultice closes every wound.
             try { BleedSystem.OnHealItemApplied(__instance.entity, damageSource); }

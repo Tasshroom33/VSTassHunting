@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using TassHunting;
 using Vintagestory.API.Common;
@@ -61,21 +61,12 @@ namespace TassHuntingCompatHarness
                 var cfg = HuntingModSystem.Cfg;
                 cfg.BleedEnabled = true;
                 cfg.BleedHealthCeiling = 100f;
-                cfg.GlanceStartHealth = 45f;
-                cfg.GlanceRampHealth = 200f;
-                cfg.GlanceMaxChance = 0.5f;
-                cfg.GlanceChanceCeiling = 0.8f;
+                cfg.BounceEnabled = true;
                 cfg.PowerShotPunchesThrough = true;
-                cfg.GlanceSharpnessBase = 4f;
-                cfg.GlanceSharpnessStep = 0.12f;
-                cfg.GlanceSharpnessFloor = 0.35f;
-                // The live loops hit at damage 1.0 - below the sharpness base, factor exactly 1 -
-                // so the glance statistics measure the pure size curve.
-                cfg.GlanceToughness.Clear();
-                // 0.14.38: the hide/armor bases would ride on top of the size curve the live
-                // statistics measure - cleared for the same reason toughness is.
-                cfg.GlanceHideBase.Clear();
-                cfg.GlanceArmorBase.Clear();
+                // Live loops start with NOTHING classified: the wound statistics must measure
+                // the bleed ladder, not bounces. LiveGlance classifies the pig itself.
+                cfg.ArmorCreatures = new string[0];
+                cfg.ThickHideCreatures = new string[0];
                 cfg.BleedMinDamage = 0.5f;
                 // A sourceless hit rolls the CREATURE odds ladder for its wound count (hp 0 ->
                 // bottom rung, 50%), which would be indistinguishable from a glance to this
@@ -107,66 +98,37 @@ namespace TassHuntingCompatHarness
             float sauro = WoundMath.EffectiveHealth(800f, 100f);
             Check("eff-sauropod-saturates", sauro > 99f && sauro < 100f, $"eff(800)={sauro:0.00}");
 
-            // Glance curve landmarks. tanh(1.025)=0.7719 -> rex 0.386.
-            Check("glance-wolf-exact-zero", HideGlance.Chance(44f, 45f, 200f, 0.5f, 1f, 0.8f, false) == 0f);
-            Check("glance-deer-exact-zero", HideGlance.Chance(30f, 45f, 200f, 0.5f, 1f, 0.8f, false) == 0f);
-            float bear = HideGlance.Chance(66f, 45f, 200f, 0.5f, 1f, 0.8f, false);
-            Check("glance-bear-about-5pct", Near(bear, 0.0524f, 0.004f), $"{bear:0.0000}");
-            float rex = HideGlance.Chance(250f, 45f, 200f, 0.5f, 1f, 0.8f, false);
-            Check("glance-rex-about-39pct", Near(rex, 0.386f, 0.01f), $"{rex:0.000}");
-            float anky = HideGlance.Chance(400f, 45f, 200f, 0.5f, 1.5f, 0.8f, false);
-            Check("glance-toughness-multiplies", Near(anky, 0.708f, 0.01f), $"{anky:0.000}");
-            float clamped = HideGlance.Chance(400f, 45f, 200f, 0.5f, 5f, 0.8f, false);
-            Check("glance-hard-cap-holds", clamped == 0.8f, $"{clamped:0.000}");
-            float punched = HideGlance.Chance(250f, 45f, 200f, 0.5f, 1f, 0.8f, true);
-            Check("glance-powershot-halves", Near(punched, rex / 2f, 0.002f), $"{punched:0.000}");
+            // ---- BOUNCE TABLES (0.14.39): straight lookups by class and metal tier, the
+            // owner's numbers. Tier indexes: 0 stone, 1 copper, 2 bronze, 3 iron, 4 steel.
+            var bcfg = new HuntingConfig(); // shipped defaults
+            Check("hide-stone-50", HideGlance.ChanceOf(HideGlance.BodyClass.ThickHide, 0, false, bcfg) == 0.50f);
+            Check("hide-copper-45", HideGlance.ChanceOf(HideGlance.BodyClass.ThickHide, 1, false, bcfg) == 0.45f);
+            Check("hide-steel-30", HideGlance.ChanceOf(HideGlance.BodyClass.ThickHide, 4, false, bcfg) == 0.30f);
+            Check("armor-stone-always-bounces", HideGlance.ChanceOf(HideGlance.BodyClass.Armor, 0, false, bcfg) == 1f);
+            Check("armor-copper-90", HideGlance.ChanceOf(HideGlance.BodyClass.Armor, 1, false, bcfg) == 0.90f);
+            Check("armor-steel-75", HideGlance.ChanceOf(HideGlance.BodyClass.Armor, 4, false, bcfg) == 0.75f);
+            Check("unclassified-never-bounces", HideGlance.ChanceOf(HideGlance.BodyClass.None, 0, false, bcfg) == 0f);
+            // Power shot: one tier better against hide, the past-steel rung tops it out, and
+            // armor is unmoved - proven both directions (stone AND steel).
+            Check("powershot-hide-one-tier-up", HideGlance.ChanceOf(HideGlance.BodyClass.ThickHide, 0, true, bcfg) == 0.45f);
+            Check("powershot-steel-past-steel", HideGlance.ChanceOf(HideGlance.BodyClass.ThickHide, 4, true, bcfg) == 0.25f);
+            Check("powershot-armor-unmoved", HideGlance.ChanceOf(HideGlance.BodyClass.Armor, 0, true, bcfg) == 1f
+                && HideGlance.ChanceOf(HideGlance.BodyClass.Armor, 4, true, bcfg) == 0.75f);
 
-            // Sharpness (0.14.19): flint anchor exact, steel a third off, floor for huge bites,
-            // below-anchor clamps to 1 so weak hits never glance MORE than flint.
-            Check("sharp-flint-is-1", HideGlance.Sharpness(4f, 4f, 0.12f, 0.35f) == 1f);
-            float steel = HideGlance.Sharpness(7f, 4f, 0.12f, 0.35f);
-            Check("sharp-steel-0.64", Near(steel, 0.64f, 0.001f), $"{steel:0.000}");
-            Check("sharp-bite-floors", HideGlance.Sharpness(24f, 4f, 0.12f, 0.35f) == 0.35f);
-            Check("sharp-weak-clamps-to-1", HideGlance.Sharpness(1f, 4f, 0.12f, 0.35f) == 1f);
-            // Combined: steel spear vs the mapped anky = 0.708 * 0.64 = 0.453.
-            float steelAnky = HideGlance.Chance(400f, 45f, 200f, 0.5f, 1.5f * steel, 0.8f, false);
-            Check("sharp-steel-vs-anky-45pct", Near(steelAnky, 0.453f, 0.01f), $"{steelAnky:0.000}");
+            // Material tiers: the token map, and the damage-band fallback for modded weapons.
+            Check("tier-flint-is-stone", HideGlance.TierOfMaterial("flint", 0f, bcfg) == 0);
+            Check("tier-gold-is-copper", HideGlance.TierOfMaterial("gold", 0f, bcfg) == 1);
+            Check("tier-blackbronze-is-bronze", HideGlance.TierOfMaterial("blackbronze", 0f, bcfg) == 2);
+            Check("tier-meteoric-is-iron", HideGlance.TierOfMaterial("meteoriciron", 0f, bcfg) == 3);
+            Check("tier-steel-is-steel", HideGlance.TierOfMaterial("steel", 0f, bcfg) == 4);
+            Check("tier-unknown-low-damage-stone", HideGlance.TierOfMaterial("unobtanium", 1f, bcfg) == 0);
+            Check("tier-unknown-iron-damage-iron", HideGlance.TierOfMaterial("unobtanium", 6.8f, bcfg) == 3);
+            Check("tier-unknown-huge-damage-steel", HideGlance.TierOfMaterial("unobtanium", 12f, bcfg) == 4);
 
-            // ---- THICK HIDE vs ARMOR (0.14.38). Both maps empty must reproduce the old
-            // curve EXACTLY - that identity is what keeps vanilla animals untouched.
-            float sizeRex = HideGlance.Chance(250f, 45f, 200f, 0.5f, 1f, 1f, false);
-            float oldRexSteel = HideGlance.Chance(250f, 45f, 200f, 0.5f, steel, 0.8f, false);
-            float newRexSteel = HideGlance.Combined(0f, 0f, sizeRex, steel, false, 0.8f);
-            Check("combined-empty-maps-are-the-old-curve", Near(newRexSteel, oldRexSteel, 0.0001f),
-                $"{newRexSteel:0.0000} vs {oldRexSteel:0.0000}");
-            // Thick hide floors a SMALL creature: below the size threshold, hide alone bounces.
-            Check("hide-bounces-below-size-threshold", HideGlance.Combined(0.15f, 0f, 0f, 1f, false, 0.8f) == 0.15f);
-            // Sharpness and power shots cut hide...
-            float hideSteel = HideGlance.Combined(0.2f, 0f, 0f, steel, false, 0.8f);
-            Check("sharp-steel-cuts-hide", Near(hideSteel, 0.2f * steel, 0.0001f), $"{hideSteel:0.000}");
-            float hidePunched = HideGlance.Combined(0.2f, 0f, 0f, 1f, true, 0.8f);
-            Check("powershot-halves-hide", Near(hidePunched, 0.1f, 0.0001f), $"{hidePunched:0.000}");
-            // ...and armor ignores both. Prove it both directions: same armor under steel and
-            // under a power shot as under flint.
-            Check("armor-ignores-sharpness", HideGlance.Combined(0f, 0.35f, 0f, steel, false, 0.8f) == 0.35f);
-            Check("armor-ignores-powershot", HideGlance.Combined(0f, 0.35f, 0f, 1f, true, 0.8f) == 0.35f);
-            // The ceiling still rules everything stacked together.
-            Check("combined-ceiling-holds", HideGlance.Combined(0.5f, 0.5f, 0.5f, 1f, false, 0.8f) == 0.8f);
-
-            // Migration v3: SHIPPED plated multipliers leave GlanceToughness (armor covers them
-            // now), a hand-tuned value is the owner's and stays, sauropod softness stays.
+            // Migration: any pre-v4 file lands on v4 and the note names the bounce swap.
             var mig = new HuntingConfig { Version = 2 };
-            mig.GlanceToughness["ankylosauria-*"] = 1.5f;
-            mig.GlanceToughness["stegosauria-*"] = 1.3f;
-            mig.GlanceToughness["macronaria-*"] = 0.6f;
-            mig.Migrate();
-            Check("migrate-moves-shipped-plate", !mig.GlanceToughness.ContainsKey("ankylosauria-*")
-                && !mig.GlanceToughness.ContainsKey("stegosauria-*") && mig.Version == 3);
-            Check("migrate-keeps-sauropod-softness", mig.GlanceToughness.TryGetValue("macronaria-*", out float soft) && soft == 0.6f);
-            var tuned = new HuntingConfig { Version = 2 };
-            tuned.GlanceToughness["ankylosauria-*"] = 2.0f; // not the shipped number = owner's
-            tuned.Migrate();
-            Check("migrate-keeps-hand-tuned-plate", tuned.GlanceToughness.TryGetValue("ankylosauria-*", out float own) && own == 2.0f);
+            string msg = mig.Migrate();
+            Check("migrate-to-v4-names-bounce", mig.Version == 4 && msg != null && msg.Contains("bounce"));
         }
 
         /// <summary>
@@ -514,26 +476,42 @@ namespace TassHuntingCompatHarness
             Check("pig-spawned", pig != null);
             if (pig == null) { Done(); return; }
 
-            // Zero band is DETERMINISTIC: a deer-size body takes every single hit.
-            SetSize(pig, 30f);
-            int g30 = GlancedOutOf(pig, 150);
-            Check("live-30hp-never-glances", g30 == 0, $"{g30}/150 glanced");
+            // UNCLASSIFIED is deterministic: an unlisted animal takes every single hit -
+            // the vanilla-untouched half of the spec. (The harness hits are sourceless at
+            // damage 1.0: no attacker to bypass on, damage-band fallback = stone tier.)
+            var hb = pig.GetBehavior<Vintagestory.GameContent.EntityBehaviorHealth>();
+            int g0 = GlancedOutOf(pig, 150);
+            Check("live-unlisted-never-bounces", g0 == 0, $"{g0}/150 bounced");
 
-            // Bear band: ~5.2%, 400 hits, 3 sigma ~ [7,35] -> accept 3..45.
-            SetSize(pig, 66f);
-            int g66 = GlancedOutOf(pig, 400);
-            Check("live-66hp-glances-rarely", g66 >= 3 && g66 <= 45, $"{g66}/400 glanced (~{g66 / 4.0:0.0}%, expect ~5.2%)");
+            // THICK HIDE at stone tier = 50%. 400 hits, 3 sigma = +-30 -> accept 170..230.
+            cfg.ThickHideCreatures = new[] { "pig-*" };
+            int gHide = GlancedOutOf(pig, 400);
+            Check("live-hide-stone-about-half", gHide >= 170 && gHide <= 230,
+                $"{gHide}/400 bounced ({gHide / 4.0:0.0}%, expect 50%)");
 
-            // Giant band: plain curve at 400 hp = 0.5*tanh(355/200) = 47.2%.
-            // 400 hits, 3 sigma ~ +-7.5% -> accept 39.7..54.7%.
-            SetSize(pig, 400f);
-            int g400 = GlancedOutOf(pig, 400);
-            float pct = g400 / 400f;
-            Check("live-400hp-glances-at-curve", pct >= 0.397f && pct <= 0.547f, $"{g400}/400 glanced ({pct:P1}, expect 47.2%)");
+            // ARMOR at stone tier = 100%, deterministic - and armor WINS when a creature is
+            // on both lists (the pig still matches thick hide here).
+            cfg.ArmorCreatures = new[] { "pig-*" };
+            int gArmor = GlancedOutOf(pig, 150);
+            Check("live-armor-stone-always-bounces", gArmor == 150, $"{gArmor}/150 bounced");
 
-            // Ceiling both directions on the SAME body: open one wound with glance disabled,
-            // read the published per-tick damage after a real tick, flip the ceiling, repeat.
-            cfg.GlanceMaxChance = 0f; // no glance interference for the damage half
+            // BOUNCE IS NO DAMAGE (owner ruling), both directions on the same body: a
+            // guaranteed bounce leaves health untouched, unclassifying makes the same hit
+            // land again.
+            hb.Health = hb.MaxHealth;
+            pig.ReceiveDamage(Sharp(), 3f);
+            Check("live-bounce-deals-no-damage", hb.Health == hb.MaxHealth, $"health {hb.Health}/{hb.MaxHealth}");
+            cfg.ArmorCreatures = new string[0];
+            cfg.ThickHideCreatures = new string[0];
+            pig.ReceiveDamage(Sharp(), 3f);
+            Check("live-unclassified-hit-lands-again", hb.Health < hb.MaxHealth, $"health {hb.Health}/{hb.MaxHealth}");
+            hb.Health = hb.MaxHealth;
+            SetSize(pig, 400f); // the bleed tick checks below expect a 400 hp body
+            BleedSystem.ClearWounds(pig);
+
+            // Ceiling both directions on the SAME body: open one wound (nothing classified,
+            // so nothing bounces), read the published per-tick damage after a real tick,
+            // flip the ceiling, repeat.
             BleedSystem.ClearWounds(pig);
             pig.ReceiveDamage(Sharp(), 1.0f);
             _sapi.Event.RegisterCallback(_ =>

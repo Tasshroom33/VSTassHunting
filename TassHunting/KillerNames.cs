@@ -149,7 +149,7 @@ namespace TassHunting
             }
         }
 
-        /// <summary>First matching config pattern wins (same convention as GlanceToughness
+        /// <summary>First matching config pattern wins (same convention as
         /// and CreatureMeleeDamageMul): put specific species lines above family lines.</summary>
         private static string MatchCommonName(Dictionary<string, string> map, AssetLocation code)
         {
