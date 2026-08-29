@@ -57,14 +57,14 @@ namespace TassHuntingCompatHarness
 
                 // ---- the naming layer, through the engine's own call ----
                 string? rexName = NameOfSpawned("tyrannosauridae-tyrannosaurus-adult-male");
-                Check("rex-named-with-species-flourish", rexName == "Tyrannosaurus - Tyrant Lizard King", rexName);
+                Check("rex-named-with-species-override", rexName == "Tyrannosaurus - T-Rex", rexName);
 
                 string? tarboName = NameOfSpawned("tyrannosauridae-tarbosaurus-adult-male");
-                Check("family-only-dino-gets-family-name", tarboName == "Tarbosaurus - Tyrant King", tarboName);
+                Check("family-only-dino-gets-family-name", tarboName == "Tarbosaurus - Rex", tarboName);
 
                 string? raptorName = NameOfSpawned("dromaeosauridae-velociraptor-adult-male");
                 if (raptorName == null) _sapi.Logger.Notification("[killernames] no velociraptor type - raptor check skipped");
-                else Check("velociraptor-flourish", raptorName == "Velociraptor - Swift Thief", raptorName);
+                else Check("velociraptor-family-name", raptorName == "Velociraptor - Raptor", raptorName);
 
                 string? wolfName = NameOfSpawned("wolf-eurasian-adult-male");
                 Check("vanilla-wolf-untouched", wolfName == "a wolf", wolfName);
@@ -75,7 +75,7 @@ namespace TassHuntingCompatHarness
                 Check("switch-off-restores-wild-animal", rexOff == generic, rexOff);
                 cfg.KillerNamesEnabled = true;
                 string? rexOn = NameOfSpawned("tyrannosauridae-tyrannosaurus-adult-male");
-                Check("switch-back-on-names-again", rexOn == "Tyrannosaurus - Tyrant Lizard King", rexOn);
+                Check("switch-back-on-names-again", rexOn == "Tyrannosaurus - T-Rex", rexOn);
 
                 // ---- the death-message patch is really attached ----
                 var simType = AccessTools.TypeByName("Vintagestory.Server.ServerSystemEntitySimulation");

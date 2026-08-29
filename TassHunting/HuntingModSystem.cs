@@ -190,31 +190,33 @@ namespace TassHunting
         // as killed by whatever put them down, not just "died".
         public bool KillerNamesEnabled = true;
         // Wildcard entity codes to the "common known name" shown after the species:
-        // "Tyrannosaurus - Tyrant Lizard King". First matching entry wins, so specific
-        // species lines go ABOVE family lines. A creature matching nothing here still gets
-        // its real species name instead of "a wild animal". The family defaults below use
-        // each dino pack's own title as the family's common name.
+        // "Tyrannosaurus - T-Rex". First matching entry wins, so specific species lines go
+        // ABOVE family lines. A creature matching nothing here still gets its real species
+        // name instead of "a wild animal". Defaults are the names players actually say
+        // (owner order 2026-08-29: ARK-style community slang - Stego, not Plated Back).
         public Dictionary<string, string> KillerCommonNames = new Dictionary<string, string>
         {
-            // species flourishes (above their families on purpose - first match wins)
-            ["*-tyrannosaurus-*"] = "Tyrant Lizard King",
-            ["*-velociraptor-*"] = "Swift Thief",
-            ["*-triceratops-*"] = "Three-Horned Face",
-            // one line per installed dino family, named after its pack
-            ["tyrannosauridae-*"] = "Tyrant King",
+            // species with their own famous handle (above their families - first match wins)
+            ["*-tyrannosaurus-*"] = "T-Rex",
+            ["*-carcharodontosaurus-*"] = "Carcha",
+            ["*-parasaurolophus-*"] = "Parasaur",
+            ["*-baryonyx-*"] = "Bary",
+            ["*-gallimimus-*"] = "Galli",
+            // one line per installed dino family
+            ["tyrannosauridae-*"] = "Rex",
             ["dromaeosauridae-*"] = "Raptor",
-            ["abelisauridae-*"] = "Carnivorous Bull",
-            ["carcharodontosauridae-*"] = "Sharp Tooth",
-            ["spinosauridae-*"] = "Sailed Spine",
-            ["therizinosauridae-*"] = "Scythe Claws",
-            ["mosasauridae-*"] = "Ocean Tyrant",
-            ["macronaria-*"] = "Long Neck",
-            ["stegosauria-*"] = "Plated Back",
-            ["ankylosauria-*"] = "Fused Body",
-            ["ceratopsidae-*"] = "Horned Crown",
-            ["pachycephalosauria-*"] = "Domed Head",
-            ["ornithomimosauria-*"] = "Horrible Hands",
-            ["hadrosauroidea-*"] = "Shovel Mouth",
+            ["abelisauridae-*"] = "Carno",
+            ["carcharodontosauridae-*"] = "Giga",
+            ["spinosauridae-*"] = "Spino",
+            ["therizinosauridae-*"] = "Scary Chicken",
+            ["mosasauridae-*"] = "Mosa",
+            ["macronaria-*"] = "Bronto",
+            ["stegosauria-*"] = "Stego",
+            ["ankylosauria-*"] = "Anky",
+            ["ceratopsidae-*"] = "Trike",
+            ["pachycephalosauria-*"] = "Pachy",
+            ["ornithomimosauria-*"] = "Ostrich Dino",
+            ["hadrosauroidea-*"] = "Duckbill",
         };
         // How long a witnessed killing blow can wait for the bleed-out death it caused
         // (going down, being dragged, dying minutes later still names the killer).

@@ -4,6 +4,16 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.35 (2026-08-29)
+Dino kill messages now use the names players actually say. The common name
+after the dash switched from pack titles to gamer shorthand: "killed by
+Tarbosaurus - Rex", "Dakotaraptor - Raptor", "Carnotaurus - Carno",
+"Giganotosaurus - Giga", "Stegosaurus - Stego", "Ankylosaurus - Anky",
+"Triceratops - Trike", "Therizinosaurus - Scary Chicken", plus Spino, Mosa,
+Bronto, Pachy, Ostrich Dino and Duckbill for the rest, with T-Rex, Carcha,
+Parasaur, Bary and Galli as species standouts. All of it is still the
+KillerCommonNames config list - rewrite any line to taste.
+
 ## 0.14.34 (2026-08-29)
 Death messages name the real killer. "Killed by a wild animal" becomes the
 actual animal - the dino packs ship their name keys where the engine never
