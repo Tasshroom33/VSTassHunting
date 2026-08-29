@@ -303,6 +303,16 @@ namespace TassHunting
                 EndServer(serverDecides);
             }
 
+            if (ImGui.CollapsingHeader("Death messages"))
+            {
+                BeginServer(serverDecides);
+                Checkbox("Name the real killer", () => cfg.KillerNamesEnabled, v => cfg.KillerNamesEnabled = v);
+                Help("Death messages and the damage log say what actually got you - killed by Tyrannosaurus - Tyrant King instead of killed by a wild animal. Which common name goes after the dash is the KillerCommonNames list in the config file - lists cannot be edited from this panel.");
+                SliderFloat("A killing blow is remembered (sec)", () => cfg.KillerWitnessMemorySeconds, v => cfg.KillerWitnessMemorySeconds = v, 0f, 7200f);
+                Help("Going down and bleeding out later still names what downed you, as long as the death comes within this long. 0 = off: those deaths just say the player died.");
+                EndServer(serverDecides);
+            }
+
             if (ImGui.CollapsingHeader("Harvest and pickup"))
             {
                 BeginServer(serverDecides);

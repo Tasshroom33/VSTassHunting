@@ -4,6 +4,22 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.34 (2026-08-29)
+Death messages name the real killer. "Killed by a wild animal" becomes the
+actual animal - the dino packs ship their name keys where the engine never
+looks, so every dino death read as "wild animal"; now a rex kill reads
+"killed by Tyrannosaurus - Tyrant Lizard King" and every other modded
+creature gets its real species name. The common name after the dash is a
+config list (KillerCommonNames), preloaded with each dino family named
+after its pack; unlisted creatures still show their species. The damage
+log improves the same way ("attacked by a Velociraptor"). And a player
+who goes down and bleeds out minutes later is still reported as killed by
+whatever downed them, instead of just "died" - including when the downed
+mod loses track (relog while down, admin force-down). One switch
+(KillerNamesEnabled, on by default), /tassdeathnames shows what it is
+doing, and nothing about how deaths are recorded for other mods changes -
+only the chat wording.
+
 ## 0.14.33 (2026-08-28)
 New switch: tree leaves can be made walk-through (off by default). The
 branchy leaf clumps around trunks lose their solid box, the way most

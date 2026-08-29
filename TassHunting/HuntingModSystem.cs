@@ -183,6 +183,44 @@ namespace TassHunting
         // First matching entry wins. Empty = the plain size curve.
         public Dictionary<string, float> GlanceToughness = new Dictionary<string, float>();
 
+        // ---- KILLER NAMES (owner order 2026-08-29, see KillerNames.cs) ----
+        // Death messages and the damage log name the actual animal instead of "a wild
+        // animal" (the dino packs ship their name keys into the wrong lang domain, so the
+        // engine never finds them), and a downed player who bleeds out is still reported
+        // as killed by whatever put them down, not just "died".
+        public bool KillerNamesEnabled = true;
+        // Wildcard entity codes to the "common known name" shown after the species:
+        // "Tyrannosaurus - Tyrant Lizard King". First matching entry wins, so specific
+        // species lines go ABOVE family lines. A creature matching nothing here still gets
+        // its real species name instead of "a wild animal". The family defaults below use
+        // each dino pack's own title as the family's common name.
+        public Dictionary<string, string> KillerCommonNames = new Dictionary<string, string>
+        {
+            // species flourishes (above their families on purpose - first match wins)
+            ["*-tyrannosaurus-*"] = "Tyrant Lizard King",
+            ["*-velociraptor-*"] = "Swift Thief",
+            ["*-triceratops-*"] = "Three-Horned Face",
+            // one line per installed dino family, named after its pack
+            ["tyrannosauridae-*"] = "Tyrant King",
+            ["dromaeosauridae-*"] = "Raptor",
+            ["abelisauridae-*"] = "Carnivorous Bull",
+            ["carcharodontosauridae-*"] = "Sharp Tooth",
+            ["spinosauridae-*"] = "Sailed Spine",
+            ["therizinosauridae-*"] = "Scythe Claws",
+            ["mosasauridae-*"] = "Ocean Tyrant",
+            ["macronaria-*"] = "Long Neck",
+            ["stegosauria-*"] = "Plated Back",
+            ["ankylosauria-*"] = "Fused Body",
+            ["ceratopsidae-*"] = "Horned Crown",
+            ["pachycephalosauria-*"] = "Domed Head",
+            ["ornithomimosauria-*"] = "Horrible Hands",
+            ["hadrosauroidea-*"] = "Shovel Mouth",
+        };
+        // How long a witnessed killing blow can wait for the bleed-out death it caused
+        // (going down, being dragged, dying minutes later still names the killer).
+        // 0 turns the witness off: a lost-cause death goes back to "Player X died."
+        public float KillerWitnessMemorySeconds = 1800f;
+
         // ---- STAY WILD (see StayWild.cs) ----
         // Named creatures can never be tamed, petted, roped, owned or ridden - the
         // domestication behaviors are taken off their entity types at load, so a companion
@@ -644,6 +682,8 @@ namespace TassHunting
             if (HuntAppend == null) HuntAppend = new Dictionary<string, string[]>();
             NonPlayerKillBonesDelaySeconds = Vintagestory.API.MathTools.GameMath.Clamp(NonPlayerKillBonesDelaySeconds, 1f, 300f);
             PlayerKillCreditSeconds = Vintagestory.API.MathTools.GameMath.Clamp(PlayerKillCreditSeconds, 0f, 3600f);
+            if (KillerCommonNames == null) KillerCommonNames = new Dictionary<string, string>();
+            KillerWitnessMemorySeconds = Vintagestory.API.MathTools.GameMath.Clamp(KillerWitnessMemorySeconds, 0f, 7200f);
         }
     }
 
@@ -902,6 +942,16 @@ namespace TassHunting
         {
             sapi = api;
             StickyProjectiles.StartServer(api);
+
+            // Killer names + the bleed-out witness (see KillerNames.cs). Needs the shared
+            // Harmony instance; if Start's patching block failed outright there is nothing
+            // to attach to, and that failure already screamed in the log.
+            try
+            {
+                if (harmony != null) KillerNames.StartServer(api, harmony);
+                else api.Logger.Warning("[TassHunting] killer names skipped - Harmony never initialized this session.");
+            }
+            catch (Exception ex) { api.Logger.Error("[TassHunting] killer names failed to start: {0}", ex); }
 
             // CONFIG SYNC (field report earwiq 2026-08-10, see HuntingConfigSync):
             // the server's config is the world's config. Sent at join AND at
