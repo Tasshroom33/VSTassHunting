@@ -91,6 +91,13 @@ namespace TassHunting
         // All ADULT predators (vanilla "predator"+"adult" entity tags: wolves, bears, foxes,
         // hyenas, modded creatures that tag themselves) move this much faster. 1 = off.
         public float PredatorSpeedMult = 1.2f;
+        // Step-climb rate for adult predators, engine units (blocks up per second = value x 60;
+        // vanilla 0.07 = 4.2 bl/s, single consumer TryStep, decompile-verified 1.22.7). StepUp
+        // Advanced players sprint-climb at StepSpeed x 6 (1.2 -> 7.2 bl/s), which made any
+        // staircase or steep hillside a free escape from every predator - flat speed never
+        // enters that race. 0.10 = predators climb 6.0: steep ground still helps a runner but
+        // no longer guarantees the escape. 0 = leave vanilla.
+        public float PredatorStepUpSpeed = 0f;
         // Apex predators: always charge, never flee, spot you from range.
         public string[] ApexCodes = { "bear-black", "bear-brown", "bear-polar" };
         public float ApexSeekRange = 30f;        // unprovoked (vanilla 16)
@@ -208,7 +215,7 @@ namespace TassHunting
             ["abelisauridae-*"] = "Carno",
             ["carcharodontosauridae-*"] = "Giga",
             ["spinosauridae-*"] = "Spino",
-            ["therizinosauridae-*"] = "Scary Chicken",
+            ["therizinosauridae-*"] = "Tickle Chicken",
             ["mosasauridae-*"] = "Mosa",
             ["macronaria-*"] = "Bronto",
             ["stegosauria-*"] = "Stego",
@@ -904,6 +911,8 @@ namespace TassHunting
             catch (Exception ex) { api.Logger.Error("[TassHunting] PredatorAI apply failed: {0}", ex); }
             try { PredatorAI.ApplySpeed(api); }
             catch (Exception ex) { api.Logger.Error("[TassHunting] predator speed apply failed: {0}", ex); }
+            try { PredatorAI.ApplyStepUp(api); }
+            catch (Exception ex) { api.Logger.Error("[TassHunting] predator climb rate apply failed: {0}", ex); }
             try { CreatureDamageMul.Apply(api); }
             catch (Exception ex) { api.Logger.Error("[TassHunting] creature damage apply failed: {0}", ex); }
             try { Territory.Apply(api); }

@@ -4,6 +4,12 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.36 (2026-08-29)
+Therizinosaurs are now the "Tickle Chicken" - the name ARK players
+actually use - so the kill line reads "killed by Therizinosaurus -
+Tickle Chicken". One word changed from 0.14.35's "Scary Chicken";
+still one editable line in the KillerCommonNames config list.
+
 ## 0.14.35 (2026-08-29)
 Dino kill messages now use the names players actually say. The common name
 after the dash switched from pack titles to gamer shorthand: "killed by
