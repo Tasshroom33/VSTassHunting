@@ -96,8 +96,10 @@ namespace TassHunting
         // Advanced players sprint-climb at StepSpeed x 6 (1.2 -> 7.2 bl/s), which made any
         // staircase or steep hillside a free escape from every predator - flat speed never
         // enters that race. 0.10 = predators climb 6.0: steep ground still helps a runner but
-        // no longer guarantees the escape. 0 = leave vanilla.
-        public float PredatorStepUpSpeed = 0f;
+        // no longer guarantees the escape. 0 = leave vanilla. Ships ON at 0.10 (owner order
+        // 2026-08-29: features he asked for default to working, not to a switch he must
+        // remember - the 0.14.36 default of 0 shipped the fix disabled).
+        public float PredatorStepUpSpeed = 0.10f;
         // Apex predators: always charge, never flee, spot you from range.
         public string[] ApexCodes = { "bear-black", "bear-brown", "bear-polar" };
         public float ApexSeekRange = 30f;        // unprovoked (vanilla 16)

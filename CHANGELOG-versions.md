@@ -4,6 +4,13 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.37 (2026-08-29)
+Predator climbing is on out of the box. The climb-speed fix from 0.14.36
+shipped set to off, so a fresh install still had stairs as a free escape
+until someone remembered the switch; it now ships at 0.10 - predators
+keep pace up steep ground from the first boot. Servers that already set
+their own number keep it, and 0 still turns it off.
+
 ## 0.14.36 (2026-08-29)
 Predators can climb after you. Sprinting up stairs or a steep hillside
 used to be a free escape from every predator on the server - creatures
