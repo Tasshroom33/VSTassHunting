@@ -24,8 +24,16 @@
       <HintPath>$(VsInstall)/Lib/Newtonsoft.Json.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="VintagestoryLib">
+      <HintPath>$(VINTAGE_STORY)/VintagestoryLib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="VSEssentials">
       <HintPath>$(VsInstall)/Mods/VSEssentials.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(VsInstall)/Lib/0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="protobuf-net">
