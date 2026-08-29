@@ -221,6 +221,8 @@ namespace TassHunting
                 BeginServer(serverDecides);
                 SliderFloat("Predator speed multiplier", () => cfg.PredatorSpeedMult, v => cfg.PredatorSpeedMult = v, 0.5f, 2f);
                 Help("All adult predators (wolves, bears, foxes, hyenas - anything the game tags as an adult predator) move this much faster. 1 = vanilla speed. Needs world rejoin.");
+                SliderFloat("Predator climb speed", () => cfg.PredatorStepUpSpeed, v => cfg.PredatorStepUpSpeed = v, 0f, 0.2f);
+                Help("How fast adult predators step up blocks when they chase. The game default is 0.07 (about 4 blocks of height per second) and running speed never changes it, so sprinting up stairs or a steep hill is a free escape - especially with a step-up mod. 0.10 to 0.12 keeps predators on your heels uphill without touching flat-ground speed. 0 = game default. Needs world rejoin.");
                 Checkbox("Animals flee away from you", () => cfg.FleeAwayFromHunterEnabled, v => cfg.FleeAwayFromHunterEnabled = v);
                 Help("Vanilla sometimes makes a shot animal run straight at the shooter.");
                 Checkbox("Tougher predators", () => cfg.PredatorOverhaulEnabled, v => cfg.PredatorOverhaulEnabled = v);

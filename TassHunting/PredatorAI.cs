@@ -108,6 +108,45 @@ namespace TassHunting
             api.Logger.Event("[TassHunting] predator speed x{0:0.##}: {1} adult predator types, {2} AI tasks scaled.", mult, types, tasksTouched);
         }
 
+        /// <summary>
+        /// PREDATOR CLIMB (owner decision 2026-08-29, "option 1"): raise the step-up rate of
+        /// predator-tagged adults. The engine lifts a stepping entity at stepUpSpeed * 60
+        /// blocks/s (TryStep is the single engine consumer, decompile-verified 1.22.7) and
+        /// every creature ships the 0.07 default = 4.2 bl/s, while StepUp Advanced players
+        /// sprint-climb at StepSpeed x 6 (7.2 on this server) - so a 45-degree staircase
+        /// outran every predator regardless of PredatorSpeedMult. Same tag vocabulary as
+        /// ApplySpeed (predator + adult; pups keep pup feet). Server behaviors only: creature
+        /// stepping is server physics, clients just interpolate positions. 0 = off.
+        /// </summary>
+        public static void ApplyStepUp(ICoreAPI api)
+        {
+            float speed = HuntingModSystem.Cfg.PredatorStepUpSpeed;
+            if (speed <= 0f) return;
+
+            var reg = api.EntityTagRegistry;
+            if (reg == null) return;
+            reg.TryCreateTagSet(out TagSetFast predatorTag, new[] { "predator" });
+            reg.TryCreateTagSet(out TagSetFast adultTag, new[] { "adult" });
+            if (predatorTag.IsEmpty)
+            {
+                api.Logger.Warning("[TassHunting] 'predator' entity tag not found in this game version - predator climb rate inactive.");
+                return;
+            }
+
+            int types = 0;
+            foreach (var et in api.World.EntityTypes)
+            {
+                if (et?.Tags == null || !et.Tags.Overlaps(in predatorTag)) continue;
+                if (!adultTag.IsEmpty && !et.Tags.Overlaps(in adultTag)) continue; // pups keep pup feet
+
+                var phys = FindServerBehavior(et, "controlledphysics");
+                if (phys == null) continue;
+                phys["stepUpSpeed"] = speed;
+                types++;
+            }
+            api.Logger.Event("[TassHunting] predator climb rate {0:0.###} ({1:0.#} blocks up/s): {2} adult predator types.", speed, speed * 60f, types);
+        }
+
         private static bool MatchesAny(string path, string[] prefixes)
         {
             foreach (var p in prefixes)

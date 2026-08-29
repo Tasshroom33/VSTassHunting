@@ -5,7 +5,17 @@ Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
 ## 0.14.36 (2026-08-29)
-Therizinosaurs are now the "Tickle Chicken" - the name ARK players
+Predators can climb after you. Sprinting up stairs or a steep hillside
+used to be a free escape from every predator on the server - creatures
+step up blocks at a fixed slow rate that the speed boost never touched,
+and step-up mods let players climb almost twice as fast on top of it. A
+new dial (PredatorStepUpSpeed, shown as "Predator climb speed" in the
+Animals panel, off by default) raises how fast adult predators step up
+blocks while chasing; flat-ground speed does not change at all. Set to
+0.10 on this server: steep ground still slows the chase down, it just no
+longer ends it.
+
+Also: therizinosaurs are now the "Tickle Chicken" - the name ARK players
 actually use - so the kill line reads "killed by Therizinosaurus -
 Tickle Chicken". One word changed from 0.14.35's "Scary Chicken";
 still one editable line in the KillerCommonNames config list.
