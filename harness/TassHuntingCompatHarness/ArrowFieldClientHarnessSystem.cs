@@ -134,12 +134,16 @@ namespace TassHuntingCompatHarness
         private Item _arrowItem;
         private float _dropOnImpactChance;
 
-        private void FireOverlap(Entity target, string volley, bool forceBreak)
+        private void FireOverlap(Entity target, string volley, bool forceBreak, bool asPlayer)
         {
             var etype = _sapi.World.GetEntityType(new AssetLocation("game", "arrow-copper"));
             var proj = etype == null ? null : _sapi.World.ClassRegistry.CreateEntity(etype) as EntityProjectileBase;
             if (proj == null) return;
-            proj.FiredBy = _plr?.Entity;               // THE REAL PLAYER: real firedBy stamp, real tassOwner UID
+            // Run-3 experiment: volley V fires AS THE REAL PLAYER (real firedBy stamp),
+            // volley N fires shooterless - the headless ledger engaged 15/15 shooterless,
+            // the two client runs engaged 0/20 as the player. Same world, both variants:
+            // whichever half engages pins the cause.
+            proj.FiredBy = asPlayer ? _plr?.Entity : null;
             proj.Damage = 5f;
             proj.DamageTier = 0;
             proj.ProjectileStack = new ItemStack(_arrowItem, 1);
@@ -156,8 +160,44 @@ namespace TassHuntingCompatHarness
             _sapi.World.SpawnPriorityEntity(ent);
 
             var rec = new ArrowRec { Id = ent.EntityId, Volley = volley, FiredMs = _sapi.World.ElapsedMilliseconds };
-            rec.Events.Add($"t+0ms FIRED[{volley}]{(forceBreak ? " forceBreak" : "")} at pig {tp.X:0.0},{tp.Y:0.0},{tp.Z:0.0}");
+            rec.Events.Add($"t+0ms FIRED[{volley}]{(forceBreak ? " forceBreak" : "")}{(asPlayer ? " asPlayer" : " shooterless")} at pig {tp.X:0.0},{tp.Y:0.0},{tp.Z:0.0}");
             _ledger[ent.EntityId] = rec;
+            foreach (int delay in new[] { 500, 1500, 3000 })
+                _sapi.Event.RegisterCallback(_ => Probe(rec), delay);
+        }
+
+        private void Probe(ArrowRec r)
+        {
+            try
+            {
+                var e = _sapi.World.GetEntityById(r.Id);
+                long ms = _sapi.World.ElapsedMilliseconds - r.FiredMs;
+                if (e == null)
+                {
+                    r.Events.Add($"t+{ms}ms probe: entity gone (despawned={r.Despawned} reason={(r.Despawned ? r.Reason.ToString() : "-")})");
+                    return;
+                }
+                var sp = e.ServerPos; var cp = e.Pos;
+                var pb = e as EntityProjectileBase;
+                r.Events.Add($"t+{ms}ms probe: ServerPos {sp.X:0.00},{sp.Y:0.00},{sp.Z:0.00} m({sp.Motion.X:0.00},{sp.Motion.Y:0.00},{sp.Motion.Z:0.00}) Pos {cp.X:0.00},{cp.Y:0.00},{cp.Z:0.00} stuck={e.WatchedAttributes.GetBool("stuck", false)} sa_target={e.WatchedAttributes.GetLong("sa_target", 0L)} entityHit={pb?.EntityHit}");
+            }
+            catch (Exception ex) { _sapi.Logger.Error("[arrowfield] probe: {0}", ex); }
+        }
+
+        private void DumpEvents(string volley, int n)
+        {
+            foreach (var r in _ledger.Values.Where(r => r.Volley == volley).OrderBy(r => r.FiredMs).Take(n))
+                foreach (var ev in r.Events)
+                    Note("  id={0} {1}", r.Id, ev);
+        }
+
+        private int EngagedIn(string volley) => _ledger.Values.Count(r => r.Volley == volley && IsEngaged(r));
+
+        private bool IsEngaged(ArrowRec r)
+        {
+            if (r.Despawned && r.Reason == EnumDespawnReason.Death) return true;
+            var e = _sapi.World.GetEntityById(r.Id);
+            return e is EntityProjectileBase pb && pb.EntityHit;
         }
 
         // ---------------- inventory accounting ----------------
@@ -218,11 +258,30 @@ namespace TassHuntingCompatHarness
                 cfg.ProjectilePickupRadius = 4f;         // the vacuum under test
                 cfg.PickupOnlyOwnProjectiles = true;     // the firedBy filter under test
                 cfg.ArrowOwnerLockSeconds = 120f;        // the UID owner lock under test
+                // Runs 1-3 solved: TrueAimPostfix (a real feature, working correctly)
+                // repositions any player-fired projectile to the shooter's eye at
+                // PreInitialize - so harness arrows spawned AT the pig teleported back
+                // to the player and never engaged. Off for the harness: our spawn
+                // placement IS the aim, and volley V can finally run the player-owned
+                // impact paths.
+                cfg.TrueAimSpawnEnabled = false;
 
                 _arrowItem = _sapi.World.GetItem(new AssetLocation("game", "arrow-copper"));
                 float breakChance = _arrowItem?.Attributes?["breakChanceOnImpact"].AsFloat(0.5f) ?? 0.5f;
                 _dropOnImpactChance = 1f - breakChance;
                 Check("arrow-item-exists", _arrowItem != null, $"breakChanceOnImpact={breakChance:0.000}");
+
+                // RUN-1 LESSON (2026-08-30): with FiredBy = a real player, the engine's
+                // CanDealDamage checks the SHOOTER'S attackcreatures privilege - without it
+                // DealDamage AND DamageProjectile are silently skipped (no bounce, no stick,
+                // no break; the arrow just falls). Run 1: 0 engagements, 0 diagnostics.
+                // Grant it so the impact paths actually run for a real shooter.
+                bool hadPriv = _plr.HasPrivilege(Privilege.attackcreatures);
+                if (!hadPriv)
+                {
+                    try { _sapi.Permissions.GrantPrivilege(_plr.PlayerUID, Privilege.attackcreatures); } catch (Exception e) { Note("priv grant failed: {0}", e.Message); }
+                }
+                Note("attackcreatures privilege: before={0} after={1}", hadPriv, _plr.HasPrivilege(Privilege.attackcreatures));
 
                 var pe = _plr.Entity;
                 _arrowsBase = CountInInventory("arrow-copper");
@@ -267,14 +326,30 @@ namespace TassHuntingCompatHarness
 
                 switch (_phase)
                 {
-                    case 1: // VOLLEY: 20 real-owner arrows vs armor (expect ~18 bounce, ~2 stick)
+                    case 1: // VOLLEY V: 20 arrows AS THE PLAYER vs armor
                         if (_fired < 20)
                         {
-                            if (_clock >= _fired * 0.5) { if (_pig.Alive) FireOverlap(_pig, "V", false); _fired++; }
+                            if (_clock >= _fired * 0.5) { if (_pig.Alive) FireOverlap(_pig, "V", false, true); _fired++; }
                         }
                         else if (_clock >= 20 * 0.5 + 6)
                         {
-                            Snapshot("volley settles");
+                            Snapshot("volley V (asPlayer) settles");
+                            Check("volleyV-asplayer-engages", EngagedIn("V") >= 15, $"{EngagedIn("V")}/20 hit (EntityHit)");
+                            DumpEvents("V", 2);
+                            NextPhase(10);
+                        }
+                        break;
+
+                    case 10: // VOLLEY N: 10 shooterless arrows - the controlled comparison
+                        if (_fired < 10)
+                        {
+                            if (_clock >= _fired * 0.5) { if (_pig.Alive) FireOverlap(_pig, "N", false, false); _fired++; }
+                        }
+                        else if (_clock >= 10 * 0.5 + 6)
+                        {
+                            Snapshot("volley N (shooterless) settles");
+                            Check("volleyN-shooterless-engages", EngagedIn("N") >= 7, $"{EngagedIn("N")}/10 hit (EntityHit)");
+                            DumpEvents("N", 2);
                             SetPhaseAttr("volleyed");   // client: count + photograph the field
                             NextPhase(2);
                         }
@@ -309,10 +384,17 @@ namespace TassHuntingCompatHarness
                         }
                         break;
 
-                    case 5: // FORCED BREAKS: 6 arrows at DropOnImpactChance=0 -> 6 heads on the ground
+                    case 5: // FORCED BREAKS: 6 arrows at DropOnImpactChance=0 -> 6 heads on the ground.
+                        // UNCLASSIFY the pig first (run-1 lesson, 2026-08-30): against armor the
+                        // 90% bounce eats the break roll before it happens (0.9^6 = 53% chance of
+                        // zero breaks - exactly what run 1 rolled), and the head-pickup path -
+                        // the path the field report is about - goes untested.
+                        // Shooterless like the headless round proved: the head path must run
+                        // this time even if the asPlayer engagement question is still open.
+                        if (_fired == 0) HuntingModSystem.Cfg.ArmorCreatures = new string[0];
                         if (_fired < 6)
                         {
-                            if (_clock >= _fired * 0.5) { if (_pig.Alive) FireOverlap(_pig, "B", true); _fired++; }
+                            if (_clock >= _fired * 0.5) { if (_pig.Alive) FireOverlap(_pig, "B", true, false); _fired++; }
                         }
                         else if (_clock >= 6 * 0.5 + 4)
                         {
@@ -386,7 +468,12 @@ namespace TassHuntingCompatHarness
             if (next == null) return true;
 
             var p = next.ServerPos ?? next.Pos;
-            _plr.Entity.TeleportToDouble(p.X + 0.5, p.Y + 1.0, p.Z + 0.5);
+            // +0.3, not +1.0 (run-3 lesson): vanilla collect centers its 1.5-block reach
+            // at the player's CHEST (~+0.85). A +1.0 teleport put that center ~1.85 above
+            // the arrow - just past vanilla's vertical reach - so unowned arrows (which
+            // the own-arrows vacuum rightly skips) were never collected. A walking player
+            // has their feet at the arrow's level; +0.3 reproduces that.
+            _plr.Entity.TeleportToDouble(p.X + 0.5, p.Y + 0.3, p.Z + 0.5);
             _hops++;
             _dwell = 1.4;
             return false;
@@ -406,10 +493,17 @@ namespace TassHuntingCompatHarness
 
         private int CountCollected() => _ledger.Values.Count(r => r.Despawned && r.Reason == EnumDespawnReason.PickedUp);
 
+        private int CountEngaged() => _ledger.Values.Count(r =>
+        {
+            if (r.Despawned && r.Reason == EnumDespawnReason.Death) return true; // a break IS an engagement
+            var e = _sapi.World.GetEntityById(r.Id);
+            return e is EntityProjectileBase pb && pb.EntityHit;
+        });
+
         private void Snapshot(string label)
         {
-            Note("SNAPSHOT {0}: fired={1} collected={2} lying={3} riding={4} broke={5} headsSpawned={6} invArrows={7} invHeads={8} pig={9}",
-                label, _ledger.Count, CountCollected(), CountLying(), CountRiding(),
+            Note("SNAPSHOT {0}: fired={1} engaged={2} collected={3} lying={4} riding={5} broke={6} headsSpawned={7} invArrows={8} invHeads={9} pig={10}",
+                label, _ledger.Count, CountEngaged(), CountCollected(), CountLying(), CountRiding(),
                 _ledger.Values.Count(r => r.Despawned && r.Reason == EnumDespawnReason.Death),
                 _headsSpawned, CountInInventory("arrow-copper"), CountInInventory("arrowhead-copper"),
                 _pig == null ? "?" : $"{_pig.ServerPos.X:0.0},{_pig.ServerPos.Y:0.0},{_pig.ServerPos.Z:0.0} alive={_pig.Alive}");
