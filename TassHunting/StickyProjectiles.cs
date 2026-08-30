@@ -344,7 +344,18 @@ namespace TassHunting
             {
                 var s = kv.Value;
                 var arrow = sapi.World.GetEntityById(s.ArrowId);
-                if (arrow == null || !arrow.Alive) { toRemove.Add(kv.Key); affectedTargets.Add(s.TargetId); continue; }
+                if (arrow == null || !arrow.Alive)
+                {
+                    // Arrow fate log (2026-08-30, gated like all arrow diagnostics): the
+                    // ride record drops here when the arrow left the loaded world - either
+                    // unloaded WITH its chunk (saved; OnEntityLoaded rehydrates it) or dead
+                    // (its own despawn line says why).
+                    if (HuntingModSystem.Cfg.BloodDiagnostics)
+                        sapi.Logger.Notification(
+                            "[TassHunting] arrow fate: riding arrow id={0} left the loaded world ({1}) - record dropped, target was {2}",
+                            s.ArrowId, arrow == null ? "unloaded with its chunk, saved" : "died", s.TargetId);
+                    toRemove.Add(kv.Key); affectedTargets.Add(s.TargetId); continue;
+                }
 
                 var target = sapi.World.GetEntityById(s.TargetId);
 
@@ -368,6 +379,10 @@ namespace TassHunting
                     // detach, resume gravity, fall to the ground RECOVERABLE.
                     // (The old Die(Expire) despawned it, giving nothing to pick
                     // up - only animal death dropped arrows.)
+                    if (HuntingModSystem.Cfg.BloodDiagnostics)
+                        sapi.Logger.Notification(
+                            "[TassHunting] arrow fate: id={0} worked loose (stick timer up) at {1:0.0},{2:0.0},{3:0.0} - falls recoverable, target was {4}",
+                            s.ArrowId, arrow.Pos.X, arrow.Pos.Y, arrow.Pos.Z, s.TargetId);
                     arrow.WatchedAttributes.SetBool("stuck", false);
                     arrow.WatchedAttributes.RemoveAttribute("sa_target");
                     arrow.Pos.Motion.Set(0.0, -0.02, 0.0);
@@ -393,6 +408,11 @@ namespace TassHunting
                 {
                     // Release: clear the stuck flag so gravity resumes - the
                     // projectile falls with the kill and lands recoverable.
+                    if (HuntingModSystem.Cfg.BloodDiagnostics)
+                        sapi.Logger.Notification(
+                            "[TassHunting] arrow fate: id={0} released at {1:0.0},{2:0.0},{3:0.0} because its target {4} {5} - falls recoverable",
+                            s.ArrowId, arrow.Pos.X, arrow.Pos.Y, arrow.Pos.Z, s.TargetId,
+                            target == null ? "is gone (fled out of loaded range, or despawned)" : "died");
                     arrow.WatchedAttributes.SetBool("stuck", false);
                     arrow.WatchedAttributes.RemoveAttribute("sa_target"); // client stops driving it
                     arrow.Pos.Motion.Set(0.0, -0.02, 0.0);

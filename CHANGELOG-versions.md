@@ -4,6 +4,16 @@ One entry per release, written in the same commit that bumps modinfo.json.
 Each line says what a player would notice. The packager refuses to zip a
 version that has no entry here and prints the entry with every new zip.
 
+## 0.14.41 (2026-08-30)
+Nothing changes in play. For hunting down a missing arrow: the debug log
+switch (off by default, "Debug log" in the Blood section of the config
+panel) now also records every arrow's fate in the server log - bounced,
+stuck, worked loose, released when the animal died or fled out of range,
+broke, picked up, or expired lying on the ground - each with a position.
+Flip it on, reproduce, grep "arrow fate", flip it off. Built after a
+301-arrow test campaign proved the arrow economy itself loses nothing;
+this is the tracing for whatever a live server does differently.
+
 ## 0.14.40 (2026-08-29)
 The mod now ships its tuned world out of the box - a fresh install plays
 like the author's server without touching a config file. On by default:

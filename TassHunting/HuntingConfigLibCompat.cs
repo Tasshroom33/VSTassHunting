@@ -121,8 +121,8 @@ namespace TassHunting
                 Help("How big the pool is. 1 = small, higher = a wide pool.");
                 SliderFloat("Pool stays (sec)", () => cfg.CorpsePoolLifetimeSeconds, v => cfg.CorpsePoolLifetimeSeconds = v, 5f, 600f);
                 Help("How long the pool stays on the ground before it dries up.");
-                Checkbox("Log pool details (debug)", () => cfg.BloodDiagnostics, v => cfg.BloodDiagnostics = v);
-                Help("Prints each pool's size and lifetime. Read it in chat with /tassbloodc.");
+                Checkbox("Debug log (blood + arrow fates)", () => cfg.BloodDiagnostics, v => cfg.BloodDiagnostics = v);
+                Help("Off normally. On, the server log records blood pool details and what happened to every arrow: bounced, stuck, worked loose, released by a kill, broke, picked up, or expired on the ground - with where. Turn on to hunt a missing arrow, then turn back off.");
                 ImGui.PopID();
             }
 

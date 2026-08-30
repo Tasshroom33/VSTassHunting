@@ -1073,6 +1073,39 @@ namespace TassHunting
             sapi = api;
             StickyProjectiles.StartServer(api);
 
+            // ARROW FATE LOG (field 2026-08-30, "four arrows missing from a tight pickup
+            // loop"): the local machinery was proven conservation-tight (301 harness arrows,
+            // none unaccounted), but NOTHING logged the terminal transitions, so a live
+            // recurrence left zero trace. Behind BloodDiagnostics (off by default): every
+            // projectile despawn names its reason and position, so the next missing arrow's
+            // last moment is one grep away. The handler is registered unconditionally and
+            // reads the flag per event - flipping the debug switch in the panel applies live.
+            api.Event.OnEntityDespawn += (entity, despawnData) =>
+            {
+                try
+                {
+                    if (!Cfg.BloodDiagnostics) return;
+                    if (!(entity is Vintagestory.GameContent.EntityProjectileBase)) return;
+                    var reason = despawnData?.Reason ?? EnumDespawnReason.Removed;
+                    var p = entity.ServerPos ?? entity.Pos;
+                    string owner = entity.WatchedAttributes.GetString("tassOwner", null);
+                    long firedMs = entity.WatchedAttributes.GetLong("tassFiredMs", 0L);
+                    string what =
+                        reason == EnumDespawnReason.Death ? "BROKE" :
+                        reason == EnumDespawnReason.PickedUp ? "picked up" :
+                        reason == EnumDespawnReason.Expire ? "EXPIRED (vanilla despawn timer - it lay unrecovered too long)" :
+                        reason == EnumDespawnReason.Unload ? "chunk unloaded (saved, comes back with the chunk)" :
+                        reason.ToString();
+                    api.Logger.Notification(
+                        "[TassHunting] arrow fate: {0} id={1} {2} at {3:0.0},{4:0.0},{5:0.0} (riding={6}, owner={7}, aged {8})",
+                        entity.Code?.Path, entity.EntityId, what, p.X, p.Y, p.Z,
+                        entity.WatchedAttributes.GetLong("sa_target", 0L),
+                        owner ?? "-",
+                        firedMs > 0 ? ((api.World.ElapsedMilliseconds - firedMs) / 1000) + "s" : "-");
+                }
+                catch (Exception) { /* the fate log must never break despawning */ }
+            };
+
             // Killer names + the bleed-out witness (see KillerNames.cs). Needs the shared
             // Harmony instance; if Start's patching block failed outright there is nothing
             // to attach to, and that failure already screamed in the log.
